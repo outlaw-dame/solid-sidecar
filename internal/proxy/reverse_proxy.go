@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlaw-dame/solid-sidecar/internal/audit"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
@@ -27,9 +28,17 @@ var hopByHopHeaders = []string{
 	"Upgrade",
 }
 
-// New creates the Phase 1 CSS reverse proxy. It keeps behavior intentionally
-// boring: forward method/path/query/body to CSS, apply backend timeouts, set
-// standard forwarded headers, and strip hop-by-hop headers.
+var spoofableForwardedHeaders = []string{
+	"Forwarded",
+	"X-Forwarded-For",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+	"X-Real-IP",
+}
+
+// New creates the CSS reverse proxy. It keeps behavior intentionally boring:
+// forward method/path/query/body to CSS, apply backend timeouts, set trusted
+// forwarded headers, and strip hop-by-hop and spoofable forwarded headers.
 func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 	backend, err := url.Parse(cfg.Backend.URL)
 	if err != nil {
@@ -44,19 +53,22 @@ func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 	transport.ResponseHeaderTimeout = cfg.Backend.Timeout
 	transport.ExpectContinueTimeout = time.Second
 
-	reverseProxy := httputil.NewSingleHostReverseProxy(backend)
-	originalDirector := reverseProxy.Director
-	reverseProxy.Director = func(req *http.Request) {
-		originalHost := req.Host
-		originalScheme := schemeFor(req)
-		stripHopByHopHeaders(req.Header)
-		originalDirector(req)
-		req.Host = backend.Host
-		req.Header.Set("X-Forwarded-Host", originalHost)
-		req.Header.Set("X-Forwarded-Proto", originalScheme)
-		if requestID := observability.RequestIDFromContext(req.Context()); requestID != "" {
-			req.Header.Set("X-Request-ID", requestID)
-		}
+	reverseProxy := &httputil.ReverseProxy{
+		Rewrite: func(proxyRequest *httputil.ProxyRequest) {
+			originalHost := proxyRequest.In.Host
+			originalScheme := schemeFor(proxyRequest.In)
+			clientIP := audit.RemoteIP(proxyRequest.In)
+			proxyRequest.SetURL(backend)
+			proxyRequest.Out.Host = backend.Host
+			stripHopByHopHeaders(proxyRequest.Out.Header)
+			stripSpoofableForwardedHeaders(proxyRequest.Out.Header)
+			proxyRequest.Out.Header.Set("X-Forwarded-For", clientIP)
+			proxyRequest.Out.Header.Set("X-Forwarded-Host", originalHost)
+			proxyRequest.Out.Header.Set("X-Forwarded-Proto", originalScheme)
+			if requestID := observability.RequestIDFromContext(proxyRequest.In.Context()); requestID != "" {
+				proxyRequest.Out.Header.Set("X-Request-ID", requestID)
+			}
+		},
 	}
 	reverseProxy.Transport = roundTripperWithTimeout{base: transport, timeout: cfg.Backend.Timeout}
 	reverseProxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
@@ -115,12 +127,15 @@ func stripHopByHopHeaders(header http.Header) {
 	}
 }
 
+func stripSpoofableForwardedHeaders(header http.Header) {
+	for _, h := range spoofableForwardedHeaders {
+		header.Del(h)
+	}
+}
+
 func schemeFor(req *http.Request) string {
 	if req.TLS != nil {
 		return "https"
-	}
-	if forwarded := req.Header.Get("X-Forwarded-Proto"); forwarded != "" && !strings.ContainsAny(forwarded, "\r\n,;") {
-		return strings.ToLower(forwarded)
 	}
 	return "http"
 }
