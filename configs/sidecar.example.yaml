@@ -1,0 +1,21 @@
+# Example Phase 1 Solid sidecar configuration.
+# The sidecar listens publicly and reverse-proxies to Community Solid Server.
+server:
+  address: ":8443"
+  read_header_timeout: "5s"
+  read_timeout: "15s"
+  write_timeout: "15s"
+  idle_timeout: "60s"
+  shutdown_timeout: "10s"
+
+backend:
+  url: "http://127.0.0.1:3000"
+  health_path: "/"
+  timeout: "30s"
+
+limits:
+  # 32 MiB default. Tune higher only after deciding upload/media handling policy.
+  max_body_bytes: 33554432
+
+log:
+  level: "info"
