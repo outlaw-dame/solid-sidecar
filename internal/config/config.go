@@ -20,17 +20,19 @@ const (
 	defaultServerTimeout   = 15 * time.Second
 	defaultReadHeaderLimit = 5 * time.Second
 	defaultShutdownTimeout = 10 * time.Second
+	defaultMaxHeaderBytes  = 1 << 20 // 1 MiB, matching net/http's default.
 )
 
-// Config is the complete Phase 1 sidecar configuration.
-// It intentionally covers only the service shell: listener, backend CSS target,
-// proxy limits, and timeouts. Auth, policy kernels, and Rust integrations belong
-// to later phases and should not be smuggled into this type early.
+// Config is the complete sidecar configuration for the current Go gateway.
+// It intentionally avoids auth/RDF/Rust settings until those later phases have
+// explicit contracts.
 type Config struct {
-	Server  ServerConfig
-	Backend BackendConfig
-	Limits  LimitsConfig
-	Log     LogConfig
+	Server    ServerConfig
+	Backend   BackendConfig
+	Limits    LimitsConfig
+	RateLimit RateLimitConfig
+	Security  SecurityConfig
+	Log       LogConfig
 }
 
 type ServerConfig struct {
@@ -40,6 +42,7 @@ type ServerConfig struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ShutdownTimeout   time.Duration
+	MaxHeaderBytes    int
 }
 
 type BackendConfig struct {
@@ -50,6 +53,16 @@ type BackendConfig struct {
 
 type LimitsConfig struct {
 	MaxBodyBytes int64
+}
+
+type RateLimitConfig struct {
+	Enabled           bool
+	RequestsPerWindow int
+	Window            time.Duration
+}
+
+type SecurityConfig struct {
+	AllowedOrigins []string
 }
 
 type LogConfig struct {
@@ -66,16 +79,21 @@ func Defaults() Config {
 			WriteTimeout:      defaultServerTimeout,
 			IdleTimeout:       60 * time.Second,
 			ShutdownTimeout:   defaultShutdownTimeout,
+			MaxHeaderBytes:    defaultMaxHeaderBytes,
 		},
 		Backend: BackendConfig{
 			URL:        defaultBackendURL,
 			HealthPath: defaultBackendHealth,
 			Timeout:    defaultProxyTimeout,
 		},
-		Limits: LimitsConfig{
-			MaxBodyBytes: defaultMaxBodyBytes,
+		Limits: LimitsConfig{MaxBodyBytes: defaultMaxBodyBytes},
+		RateLimit: RateLimitConfig{
+			Enabled:           true,
+			RequestsPerWindow: 600,
+			Window:            time.Minute,
 		},
-		Log: LogConfig{Level: "info"},
+		Security: SecurityConfig{},
+		Log:      LogConfig{Level: "info"},
 	}
 }
 
@@ -185,6 +203,12 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.Server.IdleTimeout)
 	case "server.shutdown_timeout":
 		return parseDuration(value, &cfg.Server.ShutdownTimeout)
+	case "server.max_header_bytes":
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("server.max_header_bytes must be an integer: %w", err)
+		}
+		cfg.Server.MaxHeaderBytes = parsed
 	case "backend.url":
 		cfg.Backend.URL = value
 	case "backend.health_path":
@@ -197,6 +221,22 @@ func setValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("limits.max_body_bytes must be an integer: %w", err)
 		}
 		cfg.Limits.MaxBodyBytes = parsed
+	case "rate_limit.enabled":
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("rate_limit.enabled must be boolean: %w", err)
+		}
+		cfg.RateLimit.Enabled = parsed
+	case "rate_limit.requests_per_window":
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("rate_limit.requests_per_window must be an integer: %w", err)
+		}
+		cfg.RateLimit.RequestsPerWindow = parsed
+	case "rate_limit.window":
+		return parseDuration(value, &cfg.RateLimit.Window)
+	case "security.allowed_origins":
+		cfg.Security.AllowedOrigins = splitCSV(value)
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	default:
@@ -229,6 +269,24 @@ func applyEnv(cfg *Config) {
 			cfg.Limits.MaxBodyBytes = parsed
 		}
 	}
+	if value := os.Getenv("SOLID_SIDECAR_RATE_LIMIT_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.RateLimit.Enabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_RATE_LIMIT_REQUESTS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.RateLimit.RequestsPerWindow = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_RATE_LIMIT_WINDOW"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.RateLimit.Window = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_ALLOWED_ORIGINS"); value != "" {
+		cfg.Security.AllowedOrigins = splitCSV(value)
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
@@ -255,6 +313,9 @@ func Validate(cfg Config) error {
 	if cfg.Server.ShutdownTimeout <= 0 {
 		return errors.New("server.shutdown_timeout must be positive")
 	}
+	if cfg.Server.MaxHeaderBytes <= 0 {
+		return errors.New("server.max_header_bytes must be positive")
+	}
 	backend, err := url.Parse(cfg.Backend.URL)
 	if err != nil {
 		return fmt.Errorf("backend.url is invalid: %w", err)
@@ -274,10 +335,39 @@ func Validate(cfg Config) error {
 	if cfg.Limits.MaxBodyBytes <= 0 {
 		return errors.New("limits.max_body_bytes must be positive")
 	}
+	if cfg.RateLimit.Enabled {
+		if cfg.RateLimit.RequestsPerWindow <= 0 {
+			return errors.New("rate_limit.requests_per_window must be positive when rate limiting is enabled")
+		}
+		if cfg.RateLimit.Window <= 0 {
+			return errors.New("rate_limit.window must be positive when rate limiting is enabled")
+		}
+	}
+	for _, origin := range cfg.Security.AllowedOrigins {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("security.allowed_origins contains invalid origin %q", origin)
+		}
+		if parsed.Path != "" && parsed.Path != "/" {
+			return fmt.Errorf("security.allowed_origins must not include paths: %q", origin)
+		}
+	}
 	switch cfg.Log.Level {
 	case "debug", "info", "warn", "error":
 		return nil
 	default:
 		return errors.New("log.level must be one of debug, info, warn, error")
 	}
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
