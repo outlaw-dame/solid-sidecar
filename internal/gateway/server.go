@@ -11,6 +11,8 @@ import (
 	"github.com/outlaw-dame/solid-sidecar/internal/health"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 	"github.com/outlaw-dame/solid-sidecar/internal/proxy"
+	"github.com/outlaw-dame/solid-sidecar/internal/ratelimit"
+	"github.com/outlaw-dame/solid-sidecar/internal/safety"
 )
 
 type Server struct {
@@ -34,7 +36,22 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.Handle("GET /readyz", health.ReadinessHandler(probe))
 	mux.Handle("/", proxyHandler)
 
-	handler := observability.RequestID(observability.AccessLog(logger, secureHeaders(mux)))
+	var limiter *ratelimit.Limiter
+	if cfg.RateLimit.Enabled {
+		limiter = ratelimit.New(cfg.RateLimit.RequestsPerWindow, cfg.RateLimit.Window)
+	}
+
+	handler := observability.RequestID(
+		observability.AccessLog(logger,
+			safety.SecurityHeaders(
+				safety.RejectUnsafeRequests(logger,
+					safety.NewOriginPolicy(cfg.Security.AllowedOrigins).Middleware(
+						ratelimit.Middleware(logger, limiter, mux),
+					),
+				),
+			),
+		),
+	)
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Address,
 		Handler:           handler,
@@ -42,6 +59,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,
+		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 	return &Server{cfg: cfg, logger: logger, http: httpServer}, nil
 }
@@ -59,14 +77,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	defer cancel()
 	s.logger.Info("solid sidecar shutting down")
 	return s.http.Shutdown(shutdownCtx)
-}
-
-func secureHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		next.ServeHTTP(w, r)
-	})
 }
 
 // ShutdownDelayForTests exposes the configured timeout to tests without making
