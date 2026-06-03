@@ -13,13 +13,19 @@ import (
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
 
-func TestReverseProxyForwardsPathQueryAndHeaders(t *testing.T) {
+func TestReverseProxyForwardsPathQueryAndTrustedHeaders(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.String() != "/alice/profile/card?x=1" {
 			t.Fatalf("unexpected backend URL: %s", r.URL.String())
 		}
 		if r.Header.Get("X-Forwarded-Host") != "pod.example" {
 			t.Fatalf("missing forwarded host: %q", r.Header.Get("X-Forwarded-Host"))
+		}
+		if r.Header.Get("X-Forwarded-Proto") != "http" {
+			t.Fatalf("unexpected forwarded proto: %q", r.Header.Get("X-Forwarded-Proto"))
+		}
+		if r.Header.Get("X-Forwarded-For") != "192.0.2.15" {
+			t.Fatalf("unexpected forwarded for: %q", r.Header.Get("X-Forwarded-For"))
 		}
 		if r.Header.Get("Connection") != "" {
 			t.Fatalf("hop-by-hop header leaked: %q", r.Header.Get("Connection"))
@@ -37,7 +43,10 @@ func TestReverseProxyForwardsPathQueryAndHeaders(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodGet, "http://pod.example/alice/profile/card?x=1", nil)
 	req.Host = "pod.example"
+	req.RemoteAddr = "192.0.2.15:1111"
 	req.Header.Set("Connection", "close")
+	req.Header.Set("X-Forwarded-For", "203.0.113.99")
+	req.Header.Set("X-Forwarded-Proto", "https")
 	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
