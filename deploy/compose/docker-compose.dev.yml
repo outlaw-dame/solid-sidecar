@@ -1,0 +1,33 @@
+services:
+  css:
+    image: solidproject/community-server:latest
+    command:
+      - -c
+      - config/file-no-setup.json
+      - -f
+      - /data
+      - -b
+      - http://localhost:8443/
+    ports:
+      - "3000:3000"
+    volumes:
+      - css-data:/data
+
+  sidecar:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.sidecar
+    command:
+      - -config
+      - /etc/solid-sidecar/sidecar.yaml
+    environment:
+      SOLID_SIDECAR_BACKEND_URL: http://css:3000
+    ports:
+      - "8443:8443"
+    volumes:
+      - ../../configs/sidecar.example.yaml:/etc/solid-sidecar/sidecar.yaml:ro
+    depends_on:
+      - css
+
+volumes:
+  css-data:
