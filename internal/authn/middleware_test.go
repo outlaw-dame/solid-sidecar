@@ -60,7 +60,7 @@ func TestMiddlewareRejectsBearerWithDPoPProof(t *testing.T) {
 func TestMiddlewareAcceptsValidDPoPAuthorization(t *testing.T) {
 	privateKey := mustP256Key(t)
 	accessToken := "access-token"
-	now := time.Unix(1_700_000_000, 0)
+	now := time.Now().UTC()
 	proof := mustDPoPProof(t, privateKey, ProofClaims{
 		HTM: "GET",
 		HTU: "https://pod.example/resource",
@@ -71,7 +71,6 @@ func TestMiddlewareAcceptsValidDPoPAuthorization(t *testing.T) {
 	cfg := defaultAuthConfig()
 	cfg.PublicBaseURL = "https://pod.example"
 	cache := NewReplayCache()
-	cache.now = func() time.Time { return now }
 	called := false
 	handler := Middleware(cfg, testLogger(), cache, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
