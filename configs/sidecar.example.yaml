@@ -1,4 +1,4 @@
-# Example Phase 1 Solid sidecar configuration.
+# Example Phase 2 Solid sidecar configuration.
 # The sidecar listens publicly and reverse-proxies to Community Solid Server.
 server:
   address: ":8443"
@@ -7,6 +7,7 @@ server:
   write_timeout: "15s"
   idle_timeout: "60s"
   shutdown_timeout: "10s"
+  max_header_bytes: 1048576
 
 backend:
   url: "http://127.0.0.1:3000"
@@ -16,6 +17,17 @@ backend:
 limits:
   # 32 MiB default. Tune higher only after deciding upload/media handling policy.
   max_body_bytes: 33554432
+
+rate_limit:
+  enabled: true
+  requests_per_window: 600
+  window: "1m"
+
+security:
+  # Empty means the sidecar does not enforce an Origin allowlist and leaves CORS
+  # behavior to CSS. Set a comma-separated list to make the sidecar enforce the
+  # boundary before requests reach CSS.
+  allowed_origins: ""
 
 log:
   level: "info"
