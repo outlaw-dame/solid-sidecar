@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/outlaw-dame/solid-sidecar/internal/authn"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
 	"github.com/outlaw-dame/solid-sidecar/internal/health"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
@@ -40,13 +41,16 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if cfg.RateLimit.Enabled {
 		limiter = ratelimit.New(cfg.RateLimit.RequestsPerWindow, cfg.RateLimit.Window)
 	}
+	authCache := authn.NewReplayCache()
 
 	handler := observability.RequestID(
 		observability.AccessLog(logger,
 			safety.SecurityHeaders(
 				safety.RejectUnsafeRequests(logger,
 					safety.NewOriginPolicy(cfg.Security.AllowedOrigins).Middleware(
-						ratelimit.Middleware(logger, limiter, mux),
+						ratelimit.Middleware(logger, limiter,
+							authn.Middleware(cfg.Auth, logger, authCache, mux),
+						),
 					),
 				),
 			),
