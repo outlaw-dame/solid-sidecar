@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -146,5 +145,3 @@ func padCurveCoordinate(value []byte) []byte {
 	copy(padded[32-len(value):], value)
 	return padded
 }
-
-var _ = big.Int{}
