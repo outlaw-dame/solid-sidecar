@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/authz_decision.schema.json",
+  "title": "Solid Sidecar Authorization Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "decision",
+    "reason_code",
+    "cache_ttl_seconds",
+    "audit"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "authz.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "deny", "abstain"]
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "kernel_abstain_shadow_mode",
+        "invalid_request",
+        "unsupported_schema_version",
+        "missing_requested_modes",
+        "unsafe_resource_uri",
+        "policy_not_loaded",
+        "policy_allow",
+        "policy_deny",
+        "kernel_error"
+      ]
+    },
+    "status_hint": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "cache_ttl_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300
+    },
+    "policy_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "resource_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_hash", "policy_hash"],
+      "properties": {
+        "request_hash": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "policy_hash": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}
