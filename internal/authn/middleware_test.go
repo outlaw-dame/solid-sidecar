@@ -91,7 +91,7 @@ func TestMiddlewareAcceptsValidDPoPAuthorization(t *testing.T) {
 
 func defaultAuthConfig() config.AuthConfig {
 	return config.AuthConfig{
-		PreflightEnabled:                 true,
+		PreflightEnabled:                true,
 		RequireDPoPForDPoPAuthorization: true,
 		ValidateDPoPSignature:           true,
 		MaxClockSkew:                    time.Minute,

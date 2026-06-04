@@ -66,7 +66,7 @@ type SecurityConfig struct {
 }
 
 type AuthConfig struct {
-	PreflightEnabled                 bool
+	PreflightEnabled                bool
 	RequireDPoPForDPoPAuthorization bool
 	ValidateDPoPSignature           bool
 	MaxClockSkew                    time.Duration
@@ -103,7 +103,7 @@ func Defaults() Config {
 		},
 		Security: SecurityConfig{},
 		Auth: AuthConfig{
-			PreflightEnabled:                 true,
+			PreflightEnabled:                true,
 			RequireDPoPForDPoPAuthorization: true,
 			ValidateDPoPSignature:           true,
 			MaxClockSkew:                    5 * time.Minute,
