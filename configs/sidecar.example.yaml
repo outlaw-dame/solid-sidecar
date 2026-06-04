@@ -1,4 +1,4 @@
-# Example Phase 2 Solid sidecar configuration.
+# Example Phase 3 Solid sidecar configuration.
 # The sidecar listens publicly and reverse-proxies to Community Solid Server.
 server:
   address: ":8443"
@@ -28,6 +28,18 @@ security:
   # behavior to CSS. Set a comma-separated list to make the sidecar enforce the
   # boundary before requests reach CSS.
   allowed_origins: ""
+
+auth:
+  # Phase 3 only performs authentication preflight checks. CSS remains the final
+  # Solid authorization authority.
+  preflight_enabled: true
+  require_dpop_for_dpop_authorization: true
+  validate_dpop_signature: true
+  max_clock_skew: "5m"
+  replay_window: "10m"
+  # Set this in production so DPoP htu is compared against the public sidecar URL
+  # instead of the internal listener URL.
+  public_base_url: ""
 
 log:
   level: "info"
