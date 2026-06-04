@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -98,8 +99,7 @@ func TestModesForMethod(t *testing.T) {
 }
 
 func TestResourceURIRequiresHost(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/relative", nil)
-	req.Host = ""
+	req := &http.Request{URL: &url.URL{Path: "/relative"}}
 
 	if _, err := resourceURIForRequest(req, ""); err == nil {
 		t.Fatal("expected missing host to fail")
