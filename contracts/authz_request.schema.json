@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/authz_request.schema.json",
+  "title": "Solid Sidecar Authorization Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "method",
+    "resource_uri",
+    "requested_modes",
+    "now_unix"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "authz.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]
+    },
+    "resource_uri": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096
+    },
+    "agent_webid": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096
+    },
+    "client_id": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "issuer": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096
+    },
+    "origin": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "requested_modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["read", "append", "write", "control"]
+      }
+    },
+    "resource_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "policy_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "resource_metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
+    },
+    "policy_documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["uri", "sha256", "content_type"],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "now_unix": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
