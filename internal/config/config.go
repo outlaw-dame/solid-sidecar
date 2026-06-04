@@ -24,14 +24,14 @@ const (
 )
 
 // Config is the complete sidecar configuration for the current Go gateway.
-// It intentionally avoids auth/RDF/Rust settings until those later phases have
-// explicit contracts.
+// Auth is limited to Phase 3 preflight checks; CSS remains the Solid authority.
 type Config struct {
 	Server    ServerConfig
 	Backend   BackendConfig
 	Limits    LimitsConfig
 	RateLimit RateLimitConfig
 	Security  SecurityConfig
+	Auth      AuthConfig
 	Log       LogConfig
 }
 
@@ -65,6 +65,15 @@ type SecurityConfig struct {
 	AllowedOrigins []string
 }
 
+type AuthConfig struct {
+	PreflightEnabled                 bool
+	RequireDPoPForDPoPAuthorization bool
+	ValidateDPoPSignature           bool
+	MaxClockSkew                    time.Duration
+	ReplayWindow                    time.Duration
+	PublicBaseURL                   string
+}
+
 type LogConfig struct {
 	Level string
 }
@@ -93,7 +102,14 @@ func Defaults() Config {
 			Window:            time.Minute,
 		},
 		Security: SecurityConfig{},
-		Log:      LogConfig{Level: "info"},
+		Auth: AuthConfig{
+			PreflightEnabled:                 true,
+			RequireDPoPForDPoPAuthorization: true,
+			ValidateDPoPSignature:           true,
+			MaxClockSkew:                    5 * time.Minute,
+			ReplayWindow:                    10 * time.Minute,
+		},
+		Log: LogConfig{Level: "info"},
 	}
 }
 
@@ -237,6 +253,18 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.RateLimit.Window)
 	case "security.allowed_origins":
 		cfg.Security.AllowedOrigins = splitCSV(value)
+	case "auth.preflight_enabled":
+		return parseBool(value, &cfg.Auth.PreflightEnabled, "auth.preflight_enabled")
+	case "auth.require_dpop_for_dpop_authorization":
+		return parseBool(value, &cfg.Auth.RequireDPoPForDPoPAuthorization, "auth.require_dpop_for_dpop_authorization")
+	case "auth.validate_dpop_signature":
+		return parseBool(value, &cfg.Auth.ValidateDPoPSignature, "auth.validate_dpop_signature")
+	case "auth.max_clock_skew":
+		return parseDuration(value, &cfg.Auth.MaxClockSkew)
+	case "auth.replay_window":
+		return parseDuration(value, &cfg.Auth.ReplayWindow)
+	case "auth.public_base_url":
+		cfg.Auth.PublicBaseURL = value
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	default:
@@ -249,6 +277,15 @@ func parseDuration(value string, dest *time.Duration) error {
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		return fmt.Errorf("duration %q is invalid: %w", value, err)
+	}
+	*dest = parsed
+	return nil
+}
+
+func parseBool(value string, dest *bool, name string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("%s must be boolean: %w", name, err)
 	}
 	*dest = parsed
 	return nil
@@ -287,6 +324,29 @@ func applyEnv(cfg *Config) {
 	if value := os.Getenv("SOLID_SIDECAR_ALLOWED_ORIGINS"); value != "" {
 		cfg.Security.AllowedOrigins = splitCSV(value)
 	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_PREFLIGHT_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.PreflightEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_VALIDATE_DPOP_SIGNATURE"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.ValidateDPoPSignature = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_MAX_CLOCK_SKEW"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Auth.MaxClockSkew = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_REPLAY_WINDOW"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Auth.ReplayWindow = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL"); value != "" {
+		cfg.Auth.PublicBaseURL = value
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
@@ -298,20 +358,8 @@ func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.Server.Address) == "" {
 		return errors.New("server.address is required")
 	}
-	if cfg.Server.ReadHeaderTimeout <= 0 {
-		return errors.New("server.read_header_timeout must be positive")
-	}
-	if cfg.Server.ReadTimeout <= 0 {
-		return errors.New("server.read_timeout must be positive")
-	}
-	if cfg.Server.WriteTimeout <= 0 {
-		return errors.New("server.write_timeout must be positive")
-	}
-	if cfg.Server.IdleTimeout <= 0 {
-		return errors.New("server.idle_timeout must be positive")
-	}
-	if cfg.Server.ShutdownTimeout <= 0 {
-		return errors.New("server.shutdown_timeout must be positive")
+	if cfg.Server.ReadHeaderTimeout <= 0 || cfg.Server.ReadTimeout <= 0 || cfg.Server.WriteTimeout <= 0 || cfg.Server.IdleTimeout <= 0 || cfg.Server.ShutdownTimeout <= 0 {
+		return errors.New("server timeouts must be positive")
 	}
 	if cfg.Server.MaxHeaderBytes <= 0 {
 		return errors.New("server.max_header_bytes must be positive")
@@ -336,11 +384,8 @@ func Validate(cfg Config) error {
 		return errors.New("limits.max_body_bytes must be positive")
 	}
 	if cfg.RateLimit.Enabled {
-		if cfg.RateLimit.RequestsPerWindow <= 0 {
-			return errors.New("rate_limit.requests_per_window must be positive when rate limiting is enabled")
-		}
-		if cfg.RateLimit.Window <= 0 {
-			return errors.New("rate_limit.window must be positive when rate limiting is enabled")
+		if cfg.RateLimit.RequestsPerWindow <= 0 || cfg.RateLimit.Window <= 0 {
+			return errors.New("rate limit settings must be positive when enabled")
 		}
 	}
 	for _, origin := range cfg.Security.AllowedOrigins {
@@ -350,6 +395,23 @@ func Validate(cfg Config) error {
 		}
 		if parsed.Path != "" && parsed.Path != "/" {
 			return fmt.Errorf("security.allowed_origins must not include paths: %q", origin)
+		}
+	}
+	if cfg.Auth.PreflightEnabled {
+		if cfg.Auth.MaxClockSkew <= 0 {
+			return errors.New("auth.max_clock_skew must be positive when auth preflight is enabled")
+		}
+		if cfg.Auth.ReplayWindow <= 0 {
+			return errors.New("auth.replay_window must be positive when auth preflight is enabled")
+		}
+		if cfg.Auth.PublicBaseURL != "" {
+			parsed, err := url.Parse(cfg.Auth.PublicBaseURL)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+				return fmt.Errorf("auth.public_base_url is invalid: %q", cfg.Auth.PublicBaseURL)
+			}
+			if parsed.RawQuery != "" || parsed.Fragment != "" {
+				return errors.New("auth.public_base_url must not include query or fragment")
+			}
 		}
 	}
 	switch cfg.Log.Level {
