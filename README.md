@@ -1,6 +1,6 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. A Rust policy-kernel scaffold now exists in shadow mode for future deterministic authorization work, but it is not wired into request handling and does not replace CSS authorization.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. Rust and Go authorization-contract scaffolds now exist in shadow mode for future deterministic policy work, but they are not wired into request handling and do not replace CSS authorization.
 
 ## Current phase
 
@@ -10,8 +10,9 @@ Implemented:
 - Phase 2 front-door hardening.
 - Phase 3 auth preflight for DPoP-shaped Solid requests.
 - Phase 4 Rust policy-kernel scaffold in shadow mode.
+- Phase 4.1 Go authorization-contract plumbing in shadow mode.
 
-Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, notification fan-out.
+Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
 ## Project structure
 
@@ -24,6 +25,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
+- `internal/authz/`: authorization-contract request builder, shadow evaluator, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
