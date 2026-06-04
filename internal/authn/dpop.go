@@ -206,7 +206,7 @@ func rsaPublicKey(key jwk) (*rsa.PublicKey, error) {
 	}
 	n := new(big.Int).SetBytes(nBytes)
 	e := new(big.Int).SetBytes(eBytes).Int64()
-	if n.Sign() <= 0 || e < 3 || e > 1<<31-1 {
+	if n.Sign() <= 0 || e < 3 || e > (1<<31)-1 {
 		return nil, errors.New("RSA jwk parameters are invalid")
 	}
 	return &rsa.PublicKey{N: n, E: int(e)}, nil
@@ -226,9 +226,6 @@ func expectedHTU(r *http.Request, publicBaseURL string) string {
 	path := r.URL.EscapedPath()
 	if path == "" {
 		path = "/"
-	}
-	if r.URL.RawQuery != "" {
-		path += "?" + r.URL.RawQuery
 	}
 	if publicBaseURL != "" {
 		base, err := url.Parse(publicBaseURL)
@@ -251,6 +248,7 @@ func normalizeHTU(value string) string {
 	if err != nil {
 		return value
 	}
+	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
 }
