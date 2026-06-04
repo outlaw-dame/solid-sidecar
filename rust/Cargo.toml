@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/solid-policy-kernel"
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.76"
+license = "MIT"
+repository = "https://github.com/outlaw-dame/solid-sidecar"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+panic = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
