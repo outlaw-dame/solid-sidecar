@@ -1,12 +1,15 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. Phase 1 is a Go-only MVP that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go-only sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, and reverse proxying to CSS.
 
 ## Current phase
 
-Implemented: Phase 1 Go sidecar MVP.
+Implemented:
 
-Not implemented yet: Phase 2 hardening, Solid-OIDC/DPoP validation, WAC/ACP policy kernels, RDF parsing, Rust services, notification fan-out.
+- Phase 1 Go sidecar MVP.
+- Phase 2 front-door hardening.
+
+Not implemented yet: Solid-OIDC/DPoP validation, WAC/ACP policy kernels, RDF parsing, Rust services, notification fan-out.
 
 ## Project structure
 
@@ -16,6 +19,9 @@ Not implemented yet: Phase 2 hardening, Solid-OIDC/DPoP validation, WAC/ACP poli
 - `internal/proxy/`: CSS reverse proxy and body limits.
 - `internal/health/`: liveness and CSS readiness probe.
 - `internal/observability/`: structured logging and request IDs.
+- `internal/safety/`: request validation, security headers, optional Origin policy.
+- `internal/ratelimit/`: per-IP fixed-window rate limiter.
+- `internal/audit/`: redacted rejection audit helpers.
 - `configs/`: example sidecar configs.
 - `deploy/`: Docker and Compose development deployment.
 - `docs/`: architecture and implementation notes.
@@ -61,6 +67,10 @@ Default config lives at `configs/sidecar.example.yaml`. Environment overrides:
 - `SOLID_SIDECAR_BACKEND_URL`
 - `SOLID_SIDECAR_BACKEND_HEALTH_PATH`
 - `SOLID_SIDECAR_MAX_BODY_BYTES`
+- `SOLID_SIDECAR_RATE_LIMIT_ENABLED`
+- `SOLID_SIDECAR_RATE_LIMIT_REQUESTS`
+- `SOLID_SIDECAR_RATE_LIMIT_WINDOW`
+- `SOLID_SIDECAR_ALLOWED_ORIGINS`
 - `SOLID_SIDECAR_LOG_LEVEL`
 
 Flags:
@@ -75,5 +85,6 @@ solid-sidecar -config configs/sidecar.example.yaml -listen :8443 -backend-url ht
 gofmt -w .
 go test ./...
 go vet ./...
+go test -race ./...
 go build ./cmd/solid-sidecar
 ```
