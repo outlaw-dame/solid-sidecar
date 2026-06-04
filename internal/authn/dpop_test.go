@@ -26,7 +26,7 @@ func TestDPoPVerifierAcceptsValidES256Proof(t *testing.T) {
 		ATH: accessTokenHash(accessToken),
 	})
 	verifier := NewDPoPVerifier(config.AuthConfig{
-		PreflightEnabled:       true,
+		PreflightEnabled:      true,
 		ValidateDPoPSignature: true,
 		MaxClockSkew:          time.Minute,
 		ReplayWindow:          10 * time.Minute,
@@ -50,7 +50,7 @@ func TestDPoPVerifierRejectsWrongATH(t *testing.T) {
 		ATH: accessTokenHash("different-token"),
 	})
 	verifier := NewDPoPVerifier(config.AuthConfig{
-		PreflightEnabled:       true,
+		PreflightEnabled:      true,
 		ValidateDPoPSignature: true,
 		MaxClockSkew:          time.Minute,
 		ReplayWindow:          10 * time.Minute,
@@ -75,7 +75,7 @@ func TestDPoPVerifierRejectsReplay(t *testing.T) {
 		ATH: accessTokenHash(accessToken),
 	})
 	verifier := NewDPoPVerifier(config.AuthConfig{
-		PreflightEnabled:       true,
+		PreflightEnabled:      true,
 		ValidateDPoPSignature: true,
 		MaxClockSkew:          time.Minute,
 		ReplayWindow:          10 * time.Minute,
