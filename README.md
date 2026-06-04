@@ -1,6 +1,6 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go-only sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go-only sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS.
 
 ## Current phase
 
@@ -8,8 +8,9 @@ Implemented:
 
 - Phase 1 Go sidecar MVP.
 - Phase 2 front-door hardening.
+- Phase 3 auth preflight for DPoP-shaped Solid requests.
 
-Not implemented yet: Solid-OIDC/DPoP validation, WAC/ACP policy kernels, RDF parsing, Rust services, notification fan-out.
+Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP policy kernels, RDF parsing, Rust services, notification fan-out.
 
 ## Project structure
 
@@ -21,6 +22,7 @@ Not implemented yet: Solid-OIDC/DPoP validation, WAC/ACP policy kernels, RDF par
 - `internal/observability/`: structured logging and request IDs.
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
+- `internal/authn/`: OAuth/DPoP request preflight and replay cache.
 - `internal/audit/`: redacted rejection audit helpers.
 - `configs/`: example sidecar configs.
 - `deploy/`: Docker and Compose development deployment.
@@ -71,6 +73,11 @@ Default config lives at `configs/sidecar.example.yaml`. Environment overrides:
 - `SOLID_SIDECAR_RATE_LIMIT_REQUESTS`
 - `SOLID_SIDECAR_RATE_LIMIT_WINDOW`
 - `SOLID_SIDECAR_ALLOWED_ORIGINS`
+- `SOLID_SIDECAR_AUTH_PREFLIGHT_ENABLED`
+- `SOLID_SIDECAR_AUTH_VALIDATE_DPOP_SIGNATURE`
+- `SOLID_SIDECAR_AUTH_MAX_CLOCK_SKEW`
+- `SOLID_SIDECAR_AUTH_REPLAY_WINDOW`
+- `SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL`
 - `SOLID_SIDECAR_LOG_LEVEL`
 
 Flags:
