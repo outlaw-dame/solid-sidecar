@@ -1,6 +1,6 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go-only sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. A Rust policy-kernel scaffold now exists in shadow mode for future deterministic authorization work, but it is not wired into request handling and does not replace CSS authorization.
 
 ## Current phase
 
@@ -9,8 +9,9 @@ Implemented:
 - Phase 1 Go sidecar MVP.
 - Phase 2 front-door hardening.
 - Phase 3 auth preflight for DPoP-shaped Solid requests.
+- Phase 4 Rust policy-kernel scaffold in shadow mode.
 
-Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP policy kernels, RDF parsing, Rust services, notification fan-out.
+Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, notification fan-out.
 
 ## Project structure
 
@@ -24,6 +25,8 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP p
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
 - `internal/audit/`: redacted rejection audit helpers.
+- `contracts/`: JSON schemas for sidecar/kernel interfaces.
+- `rust/`: Rust workspace for deterministic internal kernels.
 - `configs/`: example sidecar configs.
 - `deploy/`: Docker and Compose development deployment.
 - `docs/`: architecture and implementation notes.
@@ -94,4 +97,13 @@ go test ./...
 go vet ./...
 go test -race ./...
 go build ./cmd/solid-sidecar
+```
+
+Rust policy-kernel checks, once Rust tooling is available:
+
+```sh
+cd rust
+cargo fmt --check
+cargo test
+cargo clippy --workspace --all-targets -- -D warnings
 ```
