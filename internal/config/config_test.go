@@ -21,6 +21,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.RateLimit.Enabled {
 		t.Fatal("rate limit should be enabled by default")
 	}
+	if !cfg.Auth.PreflightEnabled || !cfg.Auth.ValidateDPoPSignature {
+		t.Fatalf("auth preflight defaults are unsafe: %+v", cfg.Auth)
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -46,6 +49,13 @@ rate_limit:
   window: "30s"
 security:
   allowed_origins: "https://app.example, https://admin.example"
+auth:
+  preflight_enabled: true
+  require_dpop_for_dpop_authorization: true
+  validate_dpop_signature: true
+  max_clock_skew: "2m"
+  replay_window: "11m"
+  public_base_url: "https://pod.example"
 log:
   level: "debug"
 `)
@@ -77,6 +87,9 @@ log:
 	if len(cfg.Security.AllowedOrigins) != 2 {
 		t.Fatalf("allowed origins mismatch: %#v", cfg.Security.AllowedOrigins)
 	}
+	if cfg.Auth.MaxClockSkew != 2*time.Minute || cfg.Auth.ReplayWindow != 11*time.Minute || cfg.Auth.PublicBaseURL != "https://pod.example" {
+		t.Fatalf("auth config mismatch: %+v", cfg.Auth)
+	}
 }
 
 func TestValidateRejectsBadBackendURL(t *testing.T) {
@@ -95,11 +108,21 @@ func TestValidateRejectsOriginWithPath(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBadAuthPublicBaseURL(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.PublicBaseURL = "https://pod.example/?bad=true"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
 func TestEnvOverrides(t *testing.T) {
 	t.Setenv("SOLID_SIDECAR_ADDRESS", ":9555")
 	t.Setenv("SOLID_SIDECAR_BACKEND_URL", "http://localhost:3010")
 	t.Setenv("SOLID_SIDECAR_RATE_LIMIT_ENABLED", "false")
 	t.Setenv("SOLID_SIDECAR_ALLOWED_ORIGINS", "https://app.example")
+	t.Setenv("SOLID_SIDECAR_AUTH_PREFLIGHT_ENABLED", "false")
+	t.Setenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL", "https://pod.example")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -112,6 +135,12 @@ func TestEnvOverrides(t *testing.T) {
 	}
 	if cfg.RateLimit.Enabled {
 		t.Fatal("rate limit env override failed")
+	}
+	if cfg.Auth.PreflightEnabled {
+		t.Fatal("auth preflight env override failed")
+	}
+	if cfg.Auth.PublicBaseURL != "https://pod.example" {
+		t.Fatalf("auth public base URL override mismatch: %q", cfg.Auth.PublicBaseURL)
 	}
 	if len(cfg.Security.AllowedOrigins) != 1 || cfg.Security.AllowedOrigins[0] != "https://app.example" {
 		t.Fatalf("allowed origins override mismatch: %#v", cfg.Security.AllowedOrigins)
