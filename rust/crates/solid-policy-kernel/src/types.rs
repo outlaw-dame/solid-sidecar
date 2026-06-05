@@ -13,6 +13,7 @@ pub enum AccessMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyDocument {
     pub uri: String,
     pub sha256: String,
@@ -20,6 +21,7 @@ pub struct PolicyDocument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthzRequest {
     pub schema_version: String,
     pub request_id: String,
@@ -68,12 +70,14 @@ pub enum ReasonCode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditFields {
     pub request_hash: String,
     pub policy_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthzDecision {
     pub schema_version: String,
     pub request_id: String,
