@@ -1,50 +1,34 @@
+use serde::Deserialize;
 use solid_policy_kernel::{evaluate, AuthzDecision, AuthzRequest, KernelConfig};
 use std::fs;
 use std::path::PathBuf;
 
-#[test]
-fn rust_kernel_matches_shared_shadow_fixture() -> Result<(), Box<dyn std::error::Error>> {
-    let request: AuthzRequest = read_fixture("authz_request.valid.json")?;
-    let expected: AuthzDecision = read_fixture("authz_decision.shadow.json")?;
+#[derive(Debug, Deserialize)]
+struct FixtureManifest {
+    schema_version: String,
+    cases: Vec<FixtureCase>,
+}
 
-    let actual = evaluate(&request, &KernelConfig::default());
-
-    assert_eq!(actual, expected);
-    Ok(())
+#[derive(Debug, Deserialize)]
+struct FixtureCase {
+    name: String,
+    request: String,
+    decision: String,
 }
 
 #[test]
-fn rust_kernel_matches_shared_invalid_fixtures() -> Result<(), Box<dyn std::error::Error>> {
-    let fixtures = [
-        (
-            "authz_request.unsupported_schema.json",
-            "authz_decision.unsupported_schema.json",
-        ),
-        (
-            "authz_request.invalid_request_id.json",
-            "authz_decision.invalid_request_id.json",
-        ),
-        (
-            "authz_request.unsupported_method.json",
-            "authz_decision.unsupported_method.json",
-        ),
-        (
-            "authz_request.missing_modes.json",
-            "authz_decision.missing_modes.json",
-        ),
-        (
-            "authz_request.unsafe_uri.json",
-            "authz_decision.unsafe_uri.json",
-        ),
-    ];
+fn rust_kernel_matches_shared_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest: FixtureManifest = read_fixture("authz_manifest.json")?;
+    assert_eq!(manifest.schema_version, "authz.fixture-manifest.v1");
+    assert!(!manifest.cases.is_empty(), "fixture manifest must not be empty");
 
-    for (request_fixture, decision_fixture) in fixtures {
-        let request: AuthzRequest = read_fixture(request_fixture)?;
-        let expected: AuthzDecision = read_fixture(decision_fixture)?;
+    for fixture in manifest.cases {
+        let request: AuthzRequest = read_fixture(&fixture.request)?;
+        let expected: AuthzDecision = read_fixture(&fixture.decision)?;
 
         let actual = evaluate(&request, &KernelConfig::default());
 
-        assert_eq!(actual, expected, "fixture pair {request_fixture} / {decision_fixture}");
+        assert_eq!(actual, expected, "fixture case {}", fixture.name);
     }
 
     Ok(())
