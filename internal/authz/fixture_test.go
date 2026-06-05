@@ -17,10 +17,44 @@ func TestShadowEvaluatorMatchesSharedFixture(t *testing.T) {
 		t.Fatalf("Evaluate returned error: %v", err)
 	}
 
-	if actual != expected {
-		actualBytes, _ := json.MarshalIndent(actual, "", "  ")
-		expectedBytes, _ := json.MarshalIndent(expected, "", "  ")
-		t.Fatalf("decision mismatch\nactual:   %s\nexpected: %s", actualBytes, expectedBytes)
+	assertDecisionEqual(t, actual, expected)
+}
+
+func TestShadowEvaluatorMatchesSharedInvalidFixtures(t *testing.T) {
+	tests := []struct {
+		name         string
+		requestFile  string
+		decisionFile string
+	}{
+		{
+			name:         "unsupported schema",
+			requestFile:  "authz_request.unsupported_schema.json",
+			decisionFile: "authz_decision.unsupported_schema.json",
+		},
+		{
+			name:         "missing modes",
+			requestFile:  "authz_request.missing_modes.json",
+			decisionFile: "authz_decision.missing_modes.json",
+		},
+		{
+			name:         "unsafe uri",
+			requestFile:  "authz_request.unsafe_uri.json",
+			decisionFile: "authz_decision.unsafe_uri.json",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := readFixture[Request](t, test.requestFile)
+			expected := readFixture[Decision](t, test.decisionFile)
+
+			actual, err := NewShadowEvaluator().Evaluate(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Evaluate returned error: %v", err)
+			}
+
+			assertDecisionEqual(t, actual, expected)
+		})
 	}
 }
 
@@ -31,6 +65,15 @@ func TestAuditForRequestMatchesSharedFixture(t *testing.T) {
 
 	if actual != expected.Audit {
 		t.Fatalf("audit mismatch: got %+v, want %+v", actual, expected.Audit)
+	}
+}
+
+func assertDecisionEqual(t *testing.T, actual, expected Decision) {
+	t.Helper()
+	if actual != expected {
+		actualBytes, _ := json.MarshalIndent(actual, "", "  ")
+		expectedBytes, _ := json.MarshalIndent(expected, "", "  ")
+		t.Fatalf("decision mismatch\nactual:   %s\nexpected: %s", actualBytes, expectedBytes)
 	}
 }
 
