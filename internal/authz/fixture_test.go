@@ -32,6 +32,16 @@ func TestShadowEvaluatorMatchesSharedInvalidFixtures(t *testing.T) {
 			decisionFile: "authz_decision.unsupported_schema.json",
 		},
 		{
+			name:         "invalid request id",
+			requestFile:  "authz_request.invalid_request_id.json",
+			decisionFile: "authz_decision.invalid_request_id.json",
+		},
+		{
+			name:         "unsupported method",
+			requestFile:  "authz_request.unsupported_method.json",
+			decisionFile: "authz_decision.unsupported_method.json",
+		},
+		{
 			name:         "missing modes",
 			requestFile:  "authz_request.missing_modes.json",
 			decisionFile: "authz_decision.missing_modes.json",
