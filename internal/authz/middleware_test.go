@@ -57,6 +57,56 @@ func TestMiddlewarePassesThroughOnAbstain(t *testing.T) {
 	}
 }
 
+func TestMiddlewarePassesThroughOnShadowDeny(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	evaluator := &fakeEvaluator{decision: Decision{
+		SchemaVersion:   SchemaVersion,
+		Decision:        DecisionDeny,
+		ReasonCode:      ReasonInvalidRequest,
+		StatusHint:      httpBadRequestStatus,
+		PolicyVersion:   "policy-v1",
+		ResourceVersion: "resource-v1",
+		Audit: AuditFields{
+			RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			PolicyHash:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
+	}}
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
+
+	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if !evaluator.seen {
+		t.Fatal("expected evaluator to be called")
+	}
+	if !nextCalled {
+		t.Fatal("shadow deny decisions must still pass through to CSS")
+	}
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
+	}
+	logOutput := logs.String()
+	for _, expected := range []string{
+		`"msg":"authz shadow decision"`,
+		`"request_id":"req-1"`,
+		`"decision":"deny"`,
+		`"reason_code":"invalid_request"`,
+		`"status_hint":400`,
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
+		}
+	}
+}
+
 func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
 	evaluator := &fakeEvaluator{}
 	nextCalled := false
