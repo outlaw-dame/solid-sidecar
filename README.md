@@ -13,6 +13,7 @@ Implemented:
 - Phase 4.1 Go authorization-contract plumbing in shadow mode.
 - Phase 4.2 optional Go authz shadow observation wiring, disabled by default.
 - Phase 4.3 shared Go/Rust authorization-contract fixtures.
+- Phase 4.4 Go/Rust contract validation hardening.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -27,7 +28,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, shadow evaluator, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -101,7 +102,7 @@ When enabled, the sidecar builds `authz.v1` request contracts and logs shadow de
 
 ## Contract fixtures
 
-Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned.
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
 
 Flags:
 
