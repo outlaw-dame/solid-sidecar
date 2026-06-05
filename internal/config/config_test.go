@@ -24,6 +24,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.Auth.PreflightEnabled || !cfg.Auth.ValidateDPoPSignature {
 		t.Fatalf("auth preflight defaults are unsafe: %+v", cfg.Auth)
 	}
+	if cfg.Authz.ShadowEnabled {
+		t.Fatal("authz shadow mode must be disabled by default")
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -55,6 +58,9 @@ auth:
   validate_dpop_signature: true
   max_clock_skew: "2m"
   replay_window: "11m"
+  public_base_url: "https://pod.example"
+authz:
+  shadow_enabled: true
   public_base_url: "https://pod.example"
 log:
   level: "debug"
@@ -90,6 +96,9 @@ log:
 	if cfg.Auth.MaxClockSkew != 2*time.Minute || cfg.Auth.ReplayWindow != 11*time.Minute || cfg.Auth.PublicBaseURL != "https://pod.example" {
 		t.Fatalf("auth config mismatch: %+v", cfg.Auth)
 	}
+	if !cfg.Authz.ShadowEnabled || cfg.Authz.PublicBaseURL != "https://pod.example" {
+		t.Fatalf("authz config mismatch: %+v", cfg.Authz)
+	}
 }
 
 func TestValidateRejectsBadBackendURL(t *testing.T) {
@@ -116,6 +125,15 @@ func TestValidateRejectsBadAuthPublicBaseURL(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBadAuthzPublicBaseURLWhenShadowEnabled(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authz.ShadowEnabled = true
+	cfg.Authz.PublicBaseURL = "https://pod.example/#bad"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
 func TestEnvOverrides(t *testing.T) {
 	t.Setenv("SOLID_SIDECAR_ADDRESS", ":9555")
 	t.Setenv("SOLID_SIDECAR_BACKEND_URL", "http://localhost:3010")
@@ -123,6 +141,8 @@ func TestEnvOverrides(t *testing.T) {
 	t.Setenv("SOLID_SIDECAR_ALLOWED_ORIGINS", "https://app.example")
 	t.Setenv("SOLID_SIDECAR_AUTH_PREFLIGHT_ENABLED", "false")
 	t.Setenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL", "https://pod.example")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED", "true")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL", "https://pod.example")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -141,6 +161,9 @@ func TestEnvOverrides(t *testing.T) {
 	}
 	if cfg.Auth.PublicBaseURL != "https://pod.example" {
 		t.Fatalf("auth public base URL override mismatch: %q", cfg.Auth.PublicBaseURL)
+	}
+	if !cfg.Authz.ShadowEnabled || cfg.Authz.PublicBaseURL != "https://pod.example" {
+		t.Fatalf("authz env override mismatch: %+v", cfg.Authz)
 	}
 	if len(cfg.Security.AllowedOrigins) != 1 || cfg.Security.AllowedOrigins[0] != "https://app.example" {
 		t.Fatalf("allowed origins override mismatch: %#v", cfg.Security.AllowedOrigins)
