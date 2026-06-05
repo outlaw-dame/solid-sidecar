@@ -15,6 +15,7 @@ Implemented:
 - Phase 4.3 shared Go/Rust authorization-contract fixtures.
 - Phase 4.4 Go/Rust contract validation hardening.
 - Phase 4.5 CI coverage for the Rust policy kernel and shared contract fixtures.
+- Phase 4.6 unified verification entrypoint for local and CI checks.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -36,6 +37,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `configs/`: example sidecar configs.
 - `deploy/`: Docker and Compose development deployment.
 - `docs/`: architecture and implementation notes.
+- `scripts/`: local/CI verification scripts.
 - `tests/`: reserved for cross-process integration/security tests.
 
 ## Run locally against an existing CSS instance
@@ -113,19 +115,17 @@ solid-sidecar -config configs/sidecar.example.yaml -listen :8443 -backend-url ht
 
 ## Test
 
-```sh
-gofmt -w .
-go test ./...
-go vet ./...
-go test -race ./...
-go build ./cmd/solid-sidecar
-```
-
-Rust policy-kernel checks:
+Run all local checks with the same entrypoint used by CI:
 
 ```sh
-cd rust
-cargo fmt --all --check
-cargo test --workspace --all-targets
-cargo clippy --workspace --lib -- -D warnings
+bash scripts/verify.sh all
 ```
+
+Run only one side of the stack:
+
+```sh
+bash scripts/verify.sh go
+bash scripts/verify.sh rust
+```
+
+The Go path checks formatting, vet, tests, race tests, and the sidecar build. The Rust path checks formatting, workspace tests, and library clippy with warnings denied.
