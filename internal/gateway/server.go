@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/outlaw-dame/solid-sidecar/internal/authn"
+	"github.com/outlaw-dame/solid-sidecar/internal/authz"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
 	"github.com/outlaw-dame/solid-sidecar/internal/health"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
@@ -43,14 +44,21 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	authCache := authn.NewReplayCache()
 
+	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)
+	if cfg.Authz.ShadowEnabled {
+		inner = authz.Middleware(authz.MiddlewareOptions{
+			BuildOptions: authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
+			Evaluator:    authz.NewShadowEvaluator(),
+			Logger:       logger,
+		}, inner)
+	}
+
 	handler := observability.RequestID(
 		observability.AccessLog(logger,
 			safety.SecurityHeaders(
 				safety.RejectUnsafeRequests(logger,
 					safety.NewOriginPolicy(cfg.Security.AllowedOrigins).Middleware(
-						ratelimit.Middleware(logger, limiter,
-							authn.Middleware(cfg.Auth, logger, authCache, mux),
-						),
+						ratelimit.Middleware(logger, limiter, inner),
 					),
 				),
 			),
