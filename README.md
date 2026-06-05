@@ -12,6 +12,7 @@ Implemented:
 - Phase 4 Rust policy-kernel scaffold in shadow mode.
 - Phase 4.1 Go authorization-contract plumbing in shadow mode.
 - Phase 4.2 optional Go authz shadow observation wiring, disabled by default.
+- Phase 4.3 shared Go/Rust authorization-contract fixtures.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -28,7 +29,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
 - `internal/authz/`: authorization-contract request builder, shadow evaluator, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
-- `contracts/`: JSON schemas for sidecar/kernel interfaces.
+- `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
 - `configs/`: example sidecar configs.
 - `deploy/`: Docker and Compose development deployment.
@@ -97,6 +98,10 @@ authz:
 ```
 
 When enabled, the sidecar builds `authz.v1` request contracts and logs shadow decisions, but still passes requests through to CSS.
+
+## Contract fixtures
+
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned.
 
 Flags:
 
