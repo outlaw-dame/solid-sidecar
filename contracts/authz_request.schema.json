@@ -20,7 +20,8 @@
     "request_id": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 128
+      "maxLength": 128,
+      "pattern": "^[!-~]+$"
     },
     "method": {
       "type": "string",
@@ -29,7 +30,8 @@
     "resource_uri": {
       "type": "string",
       "format": "uri",
-      "maxLength": 4096
+      "maxLength": 4096,
+      "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
     },
     "agent_webid": {
       "type": "string",
@@ -83,7 +85,8 @@
           "uri": {
             "type": "string",
             "format": "uri",
-            "maxLength": 4096
+            "maxLength": 4096,
+            "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
           },
           "sha256": {
             "type": "string",
