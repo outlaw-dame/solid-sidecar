@@ -1,0 +1,41 @@
+{
+  "schema_version": "authz.fixture-manifest.v1",
+  "cases": [
+    {
+      "name": "valid shadow abstain",
+      "request": "authz_request.valid.json",
+      "decision": "authz_decision.shadow.json",
+      "valid_request": true
+    },
+    {
+      "name": "unsupported schema",
+      "request": "authz_request.unsupported_schema.json",
+      "decision": "authz_decision.unsupported_schema.json",
+      "valid_request": false
+    },
+    {
+      "name": "malformed request id",
+      "request": "authz_request.invalid_request_id.json",
+      "decision": "authz_decision.invalid_request_id.json",
+      "valid_request": false
+    },
+    {
+      "name": "unsupported method",
+      "request": "authz_request.unsupported_method.json",
+      "decision": "authz_decision.unsupported_method.json",
+      "valid_request": false
+    },
+    {
+      "name": "missing modes",
+      "request": "authz_request.missing_modes.json",
+      "decision": "authz_decision.missing_modes.json",
+      "valid_request": false
+    },
+    {
+      "name": "unsafe uri",
+      "request": "authz_request.unsafe_uri.json",
+      "decision": "authz_decision.unsafe_uri.json",
+      "valid_request": false
+    }
+  ]
+}
