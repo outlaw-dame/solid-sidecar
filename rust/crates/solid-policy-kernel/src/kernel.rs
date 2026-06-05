@@ -32,6 +32,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
             ReasonCode::UnsupportedSchemaVersion,
             Some(400),
             0,
+            config,
         );
     }
 
@@ -45,6 +46,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
             ReasonCode::InvalidRequest,
             Some(400),
             0,
+            config,
         );
     }
 
@@ -56,6 +58,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
             ReasonCode::MissingRequestedModes,
             Some(400),
             0,
+            config,
         );
     }
 
@@ -67,6 +70,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
             ReasonCode::UnsafeResourceUri,
             Some(400),
             0,
+            config,
         );
     }
 
@@ -78,6 +82,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
             ReasonCode::KernelAbstainShadowMode,
             None,
             0,
+            config,
         );
     }
 
@@ -88,6 +93,7 @@ pub fn evaluate(request: &AuthzRequest, config: &KernelConfig) -> AuthzDecision 
         ReasonCode::PolicyNotLoaded,
         None,
         0,
+        config,
     )
 }
 
@@ -98,10 +104,11 @@ fn decision(
     reason_code: ReasonCode,
     status_hint: Option<u16>,
     cache_ttl_seconds: u16,
+    config: &KernelConfig,
 ) -> AuthzDecision {
     AuthzDecision {
         schema_version: SCHEMA_VERSION.to_owned(),
-        request_id: request.request_id.clone(),
+        request_id: decision_request_id(request, &audit, config),
         decision,
         reason_code,
         status_hint,
@@ -110,6 +117,18 @@ fn decision(
         resource_version: request.resource_version.clone(),
         audit,
     }
+}
+
+fn decision_request_id(
+    request: &AuthzRequest,
+    audit: &AuditFields,
+    config: &KernelConfig,
+) -> String {
+    if is_valid_request_id(&request.request_id, config.max_request_id_len) {
+        return request.request_id.clone();
+    }
+    let prefix_len = audit.request_hash.len().min(32);
+    format!("invalid-request-{}", &audit.request_hash[..prefix_len])
 }
 
 fn is_valid_request_id(request_id: &str, max_len: usize) -> bool {
@@ -229,7 +248,8 @@ fn sha256_hex(input: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_safe_resource_uri, is_valid_request_id};
+    use super::{decision_request_id, is_safe_resource_uri, is_valid_request_id, AuditFields, AuthzRequest, KernelConfig, SCHEMA_VERSION};
+    use std::collections::BTreeMap;
 
     #[test]
     fn request_ids_must_be_visible_ascii() {
@@ -237,6 +257,35 @@ mod tests {
         assert!(!is_valid_request_id("", 128));
         assert!(!is_valid_request_id("bad request", 128));
         assert!(!is_valid_request_id("bad\nrequest", 128));
+    }
+
+    #[test]
+    fn invalid_request_ids_use_hash_surrogate_for_decisions() {
+        let request = AuthzRequest {
+            schema_version: SCHEMA_VERSION.to_owned(),
+            request_id: "bad request".to_owned(),
+            method: "GET".to_owned(),
+            resource_uri: "https://pod.example/alice/card".to_owned(),
+            agent_webid: None,
+            client_id: None,
+            issuer: None,
+            origin: None,
+            requested_modes: vec![],
+            resource_version: None,
+            policy_version: None,
+            resource_metadata: BTreeMap::new(),
+            policy_documents: vec![],
+            now_unix: 0,
+        };
+        let audit = AuditFields {
+            request_hash: "0123456789abcdef0123456789abcdefffffffffffffffffffffffffffffffff".to_owned(),
+            policy_hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_owned(),
+        };
+
+        assert_eq!(
+            decision_request_id(&request, &audit, &KernelConfig::default()),
+            "invalid-request-0123456789abcdef0123456789abcdef"
+        );
     }
 
     #[test]
