@@ -61,5 +61,11 @@ func logShadowDecision(logger *slog.Logger, r *http.Request, decision Decision) 
 		"request_id", decision.RequestID,
 		"decision", decision.Decision,
 		"reason_code", decision.ReasonCode,
+		"status_hint", decision.StatusHint,
+		"cache_ttl_seconds", decision.CacheTTLSeconds,
+		"policy_version", decision.PolicyVersion,
+		"resource_version", decision.ResourceVersion,
+		"request_hash", decision.Audit.RequestHash,
+		"policy_hash", decision.Audit.PolicyHash,
 	)
 }
