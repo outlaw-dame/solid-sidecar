@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,37 @@ func TestShadowEvaluatorMatchesSharedFixtures(t *testing.T) {
 
 			assertDecisionEqual(t, actual, expected)
 		})
+	}
+}
+
+func TestFixtureManifestCoversAuthzFixtureFiles(t *testing.T) {
+	manifest := readFixtureManifest(t)
+	listedRequests := make(map[string]struct{}, len(manifest.Cases))
+	listedDecisions := make(map[string]struct{}, len(manifest.Cases))
+	for _, test := range manifest.Cases {
+		listedRequests[test.RequestFile] = struct{}{}
+		listedDecisions[test.DecisionFile] = struct{}{}
+	}
+
+	entries, err := os.ReadDir(fixtureDir())
+	if err != nil {
+		t.Fatalf("read fixture directory: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		switch {
+		case strings.HasPrefix(name, "authz_request.") && strings.HasSuffix(name, ".json"):
+			if _, ok := listedRequests[name]; !ok {
+				t.Fatalf("request fixture %q is not referenced by authz_manifest.json", name)
+			}
+		case strings.HasPrefix(name, "authz_decision.") && strings.HasSuffix(name, ".json"):
+			if _, ok := listedDecisions[name]; !ok {
+				t.Fatalf("decision fixture %q is not referenced by authz_manifest.json", name)
+			}
+		}
 	}
 }
 
@@ -65,6 +97,8 @@ func readFixtureManifest(t *testing.T) fixtureManifest {
 		t.Fatal("fixture manifest must contain at least one case")
 	}
 	seenNames := make(map[string]struct{}, len(manifest.Cases))
+	seenRequests := make(map[string]struct{}, len(manifest.Cases))
+	seenDecisions := make(map[string]struct{}, len(manifest.Cases))
 	for _, test := range manifest.Cases {
 		if test.Name == "" || test.RequestFile == "" || test.DecisionFile == "" {
 			t.Fatalf("fixture manifest case must include name, request, and decision: %+v", test)
@@ -72,15 +106,22 @@ func readFixtureManifest(t *testing.T) fixtureManifest {
 		if _, ok := seenNames[test.Name]; ok {
 			t.Fatalf("duplicate fixture manifest case name: %q", test.Name)
 		}
+		if _, ok := seenRequests[test.RequestFile]; ok {
+			t.Fatalf("duplicate fixture manifest request file: %q", test.RequestFile)
+		}
+		if _, ok := seenDecisions[test.DecisionFile]; ok {
+			t.Fatalf("duplicate fixture manifest decision file: %q", test.DecisionFile)
+		}
 		seenNames[test.Name] = struct{}{}
+		seenRequests[test.RequestFile] = struct{}{}
+		seenDecisions[test.DecisionFile] = struct{}{}
 	}
 	return manifest
 }
 
 func readFixture[T any](t *testing.T, name string) T {
 	t.Helper()
-	path := filepath.Join("..", "..", "contracts", "fixtures", name)
-	bytes, err := os.ReadFile(path)
+	bytes, err := os.ReadFile(filepath.Join(fixtureDir(), name))
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
@@ -89,4 +130,8 @@ func readFixture[T any](t *testing.T, name string) T {
 		t.Fatalf("decode fixture %s: %v", name, err)
 	}
 	return out
+}
+
+func fixtureDir() string {
+	return filepath.Join("..", "..", "contracts", "fixtures")
 }
