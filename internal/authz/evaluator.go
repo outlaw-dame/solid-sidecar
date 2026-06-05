@@ -41,7 +41,7 @@ func (ShadowEvaluator) Evaluate(ctx context.Context, request Request) (Decision,
 func shadowDecision(request Request, audit AuditFields, decision DecisionValue, reason ReasonCode, statusHint int) Decision {
 	return Decision{
 		SchemaVersion:    SchemaVersion,
-		RequestID:        request.RequestID,
+		RequestID:        decisionRequestID(request, audit),
 		Decision:         decision,
 		ReasonCode:       reason,
 		StatusHint:       statusHint,
@@ -50,6 +50,17 @@ func shadowDecision(request Request, audit AuditFields, decision DecisionValue, 
 		ResourceVersion:  request.ResourceVersion,
 		Audit:            audit,
 	}
+}
+
+func decisionRequestID(request Request, audit AuditFields) string {
+	if validToken(request.RequestID, 128) {
+		return request.RequestID
+	}
+	prefix := audit.RequestHash
+	if len(prefix) > 32 {
+		prefix = prefix[:32]
+	}
+	return "invalid-request-" + prefix
 }
 
 func supportedMethod(method string) bool {
