@@ -32,6 +32,7 @@ type Config struct {
 	RateLimit RateLimitConfig
 	Security  SecurityConfig
 	Auth      AuthConfig
+	Authz     AuthzConfig
 	Log       LogConfig
 }
 
@@ -74,6 +75,11 @@ type AuthConfig struct {
 	PublicBaseURL                   string
 }
 
+type AuthzConfig struct {
+	ShadowEnabled bool
+	PublicBaseURL string
+}
+
 type LogConfig struct {
 	Level string
 }
@@ -109,7 +115,8 @@ func Defaults() Config {
 			MaxClockSkew:                    5 * time.Minute,
 			ReplayWindow:                    10 * time.Minute,
 		},
-		Log: LogConfig{Level: "info"},
+		Authz: AuthzConfig{ShadowEnabled: false},
+		Log:   LogConfig{Level: "info"},
 	}
 }
 
@@ -265,6 +272,10 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.Auth.ReplayWindow)
 	case "auth.public_base_url":
 		cfg.Auth.PublicBaseURL = value
+	case "authz.shadow_enabled":
+		return parseBool(value, &cfg.Authz.ShadowEnabled, "authz.shadow_enabled")
+	case "authz.public_base_url":
+		cfg.Authz.PublicBaseURL = value
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	default:
@@ -347,6 +358,14 @@ func applyEnv(cfg *Config) {
 	if value := os.Getenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL"); value != "" {
 		cfg.Auth.PublicBaseURL = value
 	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authz.ShadowEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL"); value != "" {
+		cfg.Authz.PublicBaseURL = value
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
@@ -404,14 +423,13 @@ func Validate(cfg Config) error {
 		if cfg.Auth.ReplayWindow <= 0 {
 			return errors.New("auth.replay_window must be positive when auth preflight is enabled")
 		}
-		if cfg.Auth.PublicBaseURL != "" {
-			parsed, err := url.Parse(cfg.Auth.PublicBaseURL)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				return fmt.Errorf("auth.public_base_url is invalid: %q", cfg.Auth.PublicBaseURL)
-			}
-			if parsed.RawQuery != "" || parsed.Fragment != "" {
-				return errors.New("auth.public_base_url must not include query or fragment")
-			}
+		if err := validateOptionalBaseURL("auth.public_base_url", cfg.Auth.PublicBaseURL); err != nil {
+			return err
+		}
+	}
+	if cfg.Authz.ShadowEnabled {
+		if err := validateOptionalBaseURL("authz.public_base_url", cfg.Authz.PublicBaseURL); err != nil {
+			return err
 		}
 	}
 	switch cfg.Log.Level {
@@ -420,6 +438,20 @@ func Validate(cfg Config) error {
 	default:
 		return errors.New("log.level must be one of debug, info, warn, error")
 	}
+}
+
+func validateOptionalBaseURL(name, value string) error {
+	if value == "" {
+		return nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s is invalid: %q", name, value)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%s must not include query or fragment", name)
+	}
+	return nil
 }
 
 func splitCSV(value string) []string {
