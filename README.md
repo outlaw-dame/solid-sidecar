@@ -1,6 +1,6 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. Rust and Go authorization-contract scaffolds now exist in shadow mode for future deterministic policy work, but they are not wired into request handling and do not replace CSS authorization.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. Rust and Go authorization-contract scaffolds now exist in shadow mode for future deterministic policy work. Optional Go authz shadow observation can be enabled, but it remains non-enforcing and does not replace CSS authorization.
 
 ## Current phase
 
@@ -11,6 +11,7 @@ Implemented:
 - Phase 3 auth preflight for DPoP-shaped Solid requests.
 - Phase 4 Rust policy-kernel scaffold in shadow mode.
 - Phase 4.1 Go authorization-contract plumbing in shadow mode.
+- Phase 4.2 optional Go authz shadow observation wiring, disabled by default.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -83,7 +84,19 @@ Default config lives at `configs/sidecar.example.yaml`. Environment overrides:
 - `SOLID_SIDECAR_AUTH_MAX_CLOCK_SKEW`
 - `SOLID_SIDECAR_AUTH_REPLAY_WINDOW`
 - `SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL`
+- `SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED`
+- `SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL`
 - `SOLID_SIDECAR_LOG_LEVEL`
+
+Authz shadow observation can be enabled with:
+
+```yaml
+authz:
+  shadow_enabled: true
+  public_base_url: "https://pod.example"
+```
+
+When enabled, the sidecar builds `authz.v1` request contracts and logs shadow decisions, but still passes requests through to CSS.
 
 Flags:
 
