@@ -108,6 +108,9 @@ func TestShadowEvaluatorReturnsStructuredDenyForInvalidRequests(t *testing.T) {
 			if decision.StatusHint != httpBadRequestStatus {
 				t.Fatalf("status hint = %d, want %d", decision.StatusHint, httpBadRequestStatus)
 			}
+			if !validToken(decision.RequestID, 128) {
+				t.Fatalf("decision request id must be valid, got %q", decision.RequestID)
+			}
 			if decision.Audit != AuditForRequest(request) {
 				t.Fatalf("unexpected audit fields: %+v", decision.Audit)
 			}
@@ -115,6 +118,21 @@ func TestShadowEvaluatorReturnsStructuredDenyForInvalidRequests(t *testing.T) {
 				t.Fatal("structured deny decisions must not be implicit CSS continuation decisions")
 			}
 		})
+	}
+}
+
+func TestDecisionRequestIDSafelyCorrelatesMalformedRequestID(t *testing.T) {
+	request := readFixture[Request](t, "authz_request.valid.json")
+	request.RequestID = "bad request"
+	audit := AuditForRequest(request)
+
+	got := decisionRequestID(request, audit)
+	want := "invalid-request-" + audit.RequestHash[:32]
+	if got != want {
+		t.Fatalf("decision request id = %q, want %q", got, want)
+	}
+	if !validToken(got, 128) {
+		t.Fatalf("sanitized decision request id must be valid, got %q", got)
 	}
 }
 
