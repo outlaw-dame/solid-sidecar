@@ -18,6 +18,7 @@ Implemented:
 - Phase 4.6 unified verification entrypoint for local and CI checks.
 - Phase 4.7 Go/Rust authorization audit-hash parity tests.
 - Phase 4.8 privacy-safe authz shadow decision observability.
+- Phase 4.9 structured authz shadow deny decisions for invalid contracts.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -32,7 +33,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, deterministic audit hashing, privacy-safe shadow observability, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -107,7 +108,7 @@ When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-s
 
 ## Contract fixtures
 
-Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that the same request fixture produces the same shadow decision and deterministic audit hashes. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that the same request fixture produces the same shadow decision and deterministic audit hashes. The Go shadow evaluator now mirrors Rust-kernel invalid-contract outcomes with structured deny decisions for unsupported schema versions, malformed requests, missing modes, and unsafe resource URIs while the HTTP middleware remains non-enforcing. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
 
 Flags:
 
