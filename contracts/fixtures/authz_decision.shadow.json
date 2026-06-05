@@ -1,0 +1,13 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "req-fixture-1",
+  "decision": "abstain",
+  "reason_code": "kernel_abstain_shadow_mode",
+  "cache_ttl_seconds": 0,
+  "policy_version": "policy-v1",
+  "resource_version": "resource-v1",
+  "audit": {
+    "request_hash": "154ef608aa80aa5516b8a49b9f87fdb43505921461cf7c99e2ee8a797dcf607a",
+    "policy_hash": "b511ef57d220623cd226a410d646fde78f2aa97ddc5f339947b20dbd9dc7e762"
+  }
+}
