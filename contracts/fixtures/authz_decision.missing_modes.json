@@ -1,0 +1,14 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "req-fixture-1",
+  "decision": "deny",
+  "reason_code": "missing_requested_modes",
+  "status_hint": 400,
+  "cache_ttl_seconds": 0,
+  "policy_version": "policy-v1",
+  "resource_version": "resource-v1",
+  "audit": {
+    "request_hash": "f5e50fd47b1fe297aa52c0ca5fc2652e65d9a3fd4699e9e13e8b515527fcbbcd",
+    "policy_hash": "b511ef57d220623cd226a410d646fde78f2aa97ddc5f339947b20dbd9dc7e762"
+  }
+}
