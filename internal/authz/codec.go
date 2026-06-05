@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 func EncodeRequest(request Request) ([]byte, error) {
@@ -24,8 +25,8 @@ func DecodeRequest(input []byte) (Request, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return Request{}, fmt.Errorf("decode authz request: %w", err)
 	}
-	if decoder.More() {
-		return Request{}, fmt.Errorf("decode authz request: trailing data")
+	if err := ensureEOF(decoder, "authz request"); err != nil {
+		return Request{}, err
 	}
 	if err := ValidateRequest(request); err != nil {
 		return Request{}, err
@@ -51,11 +52,22 @@ func DecodeDecision(input []byte) (Decision, error) {
 	if err := decoder.Decode(&decision); err != nil {
 		return Decision{}, fmt.Errorf("decode authz decision: %w", err)
 	}
-	if decoder.More() {
-		return Decision{}, fmt.Errorf("decode authz decision: trailing data")
+	if err := ensureEOF(decoder, "authz decision"); err != nil {
+		return Decision{}, err
 	}
 	if err := ValidateDecision(decision); err != nil {
 		return Decision{}, err
 	}
 	return decision, nil
+}
+
+func ensureEOF(decoder *json.Decoder, label string) error {
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("decode %s: trailing data", label)
+		}
+		return fmt.Errorf("decode %s: trailing data: %w", label, err)
+	}
+	return nil
 }
