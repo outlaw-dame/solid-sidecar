@@ -1,0 +1,29 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "req-fixture-1",
+  "method": "GET",
+  "resource_uri": "ftp://pod.example/alice/card",
+  "agent_webid": "https://alice.example/profile#me",
+  "client_id": "https://app.example/id",
+  "issuer": "https://issuer.example",
+  "origin": "https://app.example",
+  "requested_modes": ["read"],
+  "resource_version": "resource-v1",
+  "policy_version": "policy-v1",
+  "resource_metadata": {
+    "container": "false"
+  },
+  "policy_documents": [
+    {
+      "uri": "https://pod.example/.acl",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "content_type": "text/turtle"
+    },
+    {
+      "uri": "https://pod.example/settings/policies",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "content_type": "text/turtle"
+    }
+  ],
+  "now_unix": 1700000000
+}
