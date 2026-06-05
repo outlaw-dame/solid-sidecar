@@ -5,24 +5,18 @@ import (
 	"testing"
 )
 
-func TestValidateRequestAcceptsSharedFixture(t *testing.T) {
-	request := readFixture[Request](t, "authz_request.valid.json")
-	if err := ValidateRequest(request); err != nil {
-		t.Fatalf("ValidateRequest returned error: %v", err)
-	}
-}
-
-func TestValidateRequestRejectsSharedInvalidFixtures(t *testing.T) {
-	for _, fixture := range []string{
-		"authz_request.unsupported_schema.json",
-		"authz_request.invalid_request_id.json",
-		"authz_request.unsupported_method.json",
-		"authz_request.missing_modes.json",
-		"authz_request.unsafe_uri.json",
-	} {
-		t.Run(fixture, func(t *testing.T) {
-			request := readFixture[Request](t, fixture)
-			if err := ValidateRequest(request); !errors.Is(err, ErrInvalidRequest) {
+func TestValidateRequestMatchesSharedFixtureManifest(t *testing.T) {
+	for _, fixture := range readFixtureManifest(t).Cases {
+		t.Run(fixture.Name, func(t *testing.T) {
+			request := readFixture[Request](t, fixture.RequestFile)
+			err := ValidateRequest(request)
+			if fixture.ValidRequest {
+				if err != nil {
+					t.Fatalf("ValidateRequest returned error: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalidRequest) {
 				t.Fatalf("expected ErrInvalidRequest, got %v", err)
 			}
 		})
@@ -60,17 +54,10 @@ func TestValidateRequestRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestValidateDecisionAcceptsSharedFixtures(t *testing.T) {
-	for _, fixture := range []string{
-		"authz_decision.shadow.json",
-		"authz_decision.unsupported_schema.json",
-		"authz_decision.invalid_request_id.json",
-		"authz_decision.unsupported_method.json",
-		"authz_decision.missing_modes.json",
-		"authz_decision.unsafe_uri.json",
-	} {
-		t.Run(fixture, func(t *testing.T) {
-			decision := readFixture[Decision](t, fixture)
+func TestValidateDecisionAcceptsSharedFixtureManifest(t *testing.T) {
+	for _, fixture := range readFixtureManifest(t).Cases {
+		t.Run(fixture.Name, func(t *testing.T) {
+			decision := readFixture[Decision](t, fixture.DecisionFile)
 			if err := ValidateDecision(decision); err != nil {
 				t.Fatalf("ValidateDecision returned error: %v", err)
 			}
