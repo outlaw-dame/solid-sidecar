@@ -94,8 +94,13 @@ func validResourceURI(value string) bool {
 	if value == "" || len(value) > 4096 {
 		return false
 	}
-	if strings.ContainsAny(value, "\x00\r\n\\#") {
+	if strings.ContainsAny(value, "\\#") {
 		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
 	}
 	parsed, err := url.Parse(value)
 	if err != nil {
