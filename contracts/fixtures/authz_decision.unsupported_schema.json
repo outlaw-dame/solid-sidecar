@@ -1,0 +1,14 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "req-fixture-1",
+  "decision": "deny",
+  "reason_code": "unsupported_schema_version",
+  "status_hint": 400,
+  "cache_ttl_seconds": 0,
+  "policy_version": "policy-v1",
+  "resource_version": "resource-v1",
+  "audit": {
+    "request_hash": "184a73b39930713996f5f5afd6d4fa93f8b2e1ed984f6c453ef4dfe7564f82c2",
+    "policy_hash": "b511ef57d220623cd226a410d646fde78f2aa97ddc5f339947b20dbd9dc7e762"
+  }
+}
