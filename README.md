@@ -14,6 +14,7 @@ Implemented:
 - Phase 4.2 optional Go authz shadow observation wiring, disabled by default.
 - Phase 4.3 shared Go/Rust authorization-contract fixtures.
 - Phase 4.4 Go/Rust contract validation hardening.
+- Phase 4.5 CI coverage for the Rust policy kernel and shared contract fixtures.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -120,11 +121,11 @@ go test -race ./...
 go build ./cmd/solid-sidecar
 ```
 
-Rust policy-kernel checks, once Rust tooling is available:
+Rust policy-kernel checks:
 
 ```sh
 cd rust
-cargo fmt --check
-cargo test
-cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+cargo test --workspace --all-targets
+cargo clippy --workspace --lib -- -D warnings
 ```
