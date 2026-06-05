@@ -11,7 +11,7 @@ These fixtures lock the `authz.v1` JSON boundary shared by the Go sidecar and th
 - `authz_request.missing_modes.json` and `authz_decision.missing_modes.json` lock missing-mode denial behavior.
 - `authz_request.unsafe_uri.json` and `authz_decision.unsafe_uri.json` lock unsafe-resource-URI denial behavior.
 
-Both Go and Rust tests read `authz_manifest.json`. Changes to request or decision fixture files must also update the manifest and should be reviewed carefully.
+Both Go and Rust tests read `authz_manifest.json`. Changes to request or decision fixture files must also update the manifest and should be reviewed carefully. Go tests also audit the fixture directory so orphan `authz_request.*.json` and `authz_decision.*.json` files fail fast.
 
 Current guarantees:
 
