@@ -17,6 +17,7 @@ Implemented:
 - Phase 4.5 CI coverage for the Rust policy kernel and shared contract fixtures.
 - Phase 4.6 unified verification entrypoint for local and CI checks.
 - Phase 4.7 Go/Rust authorization audit-hash parity tests.
+- Phase 4.8 privacy-safe authz shadow decision observability.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -31,7 +32,7 @@ Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/S
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, deterministic audit hashing, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, deterministic audit hashing, privacy-safe shadow observability, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -102,7 +103,7 @@ authz:
   public_base_url: "https://pod.example"
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs shadow decisions, but still passes requests through to CSS.
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS.
 
 ## Contract fixtures
 
