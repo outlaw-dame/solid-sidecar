@@ -37,6 +37,30 @@ jobs:
       - name: Build
         run: go build ./cmd/solid-sidecar
 
+  rust:
+    name: Rust policy kernel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Test
+        run: cargo test --workspace --all-targets
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
   govulncheck:
     name: Vulnerability check
     runs-on: ubuntu-latest
