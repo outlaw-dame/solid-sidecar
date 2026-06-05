@@ -13,6 +13,35 @@ fn rust_kernel_matches_shared_shadow_fixture() -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+#[test]
+fn rust_kernel_matches_shared_invalid_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    let fixtures = [
+        (
+            "authz_request.unsupported_schema.json",
+            "authz_decision.unsupported_schema.json",
+        ),
+        (
+            "authz_request.missing_modes.json",
+            "authz_decision.missing_modes.json",
+        ),
+        (
+            "authz_request.unsafe_uri.json",
+            "authz_decision.unsafe_uri.json",
+        ),
+    ];
+
+    for (request_fixture, decision_fixture) in fixtures {
+        let request: AuthzRequest = read_fixture(request_fixture)?;
+        let expected: AuthzDecision = read_fixture(decision_fixture)?;
+
+        let actual = evaluate(&request, &KernelConfig::default());
+
+        assert_eq!(actual, expected, "fixture pair {request_fixture} / {decision_fixture}");
+    }
+
+    Ok(())
+}
+
 fn read_fixture<T>(name: &str) -> Result<T, Box<dyn std::error::Error>>
 where
     T: serde::de::DeserializeOwned,
