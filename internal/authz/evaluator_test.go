@@ -29,6 +29,9 @@ func TestShadowEvaluatorAbstains(t *testing.T) {
 	if decision.ReasonCode != ReasonKernelAbstainShadowMode {
 		t.Fatalf("unexpected reason: %q", decision.ReasonCode)
 	}
+	if len(decision.Audit.RequestHash) != 64 || len(decision.Audit.PolicyHash) != 64 {
+		t.Fatalf("expected audit hashes, got %+v", decision.Audit)
+	}
 	if !ShouldContinueToCSS(decision) {
 		t.Fatal("abstain decisions must continue to CSS")
 	}
