@@ -1,0 +1,14 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "invalid-request-c24b557aca9d94a6529b1d184e56f946",
+  "decision": "deny",
+  "reason_code": "invalid_request",
+  "status_hint": 400,
+  "cache_ttl_seconds": 0,
+  "policy_version": "policy-v1",
+  "resource_version": "resource-v1",
+  "audit": {
+    "request_hash": "c24b557aca9d94a6529b1d184e56f946f8c333d048428d34acc0481fbedca729",
+    "policy_hash": "b511ef57d220623cd226a410d646fde78f2aa97ddc5f339947b20dbd9dc7e762"
+  }
+}
