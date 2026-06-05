@@ -21,6 +21,10 @@ fn rust_kernel_matches_shared_invalid_fixtures() -> Result<(), Box<dyn std::erro
             "authz_decision.unsupported_schema.json",
         ),
         (
+            "authz_request.invalid_request_id.json",
+            "authz_decision.invalid_request_id.json",
+        ),
+        (
             "authz_request.unsupported_method.json",
             "authz_decision.unsupported_method.json",
         ),
