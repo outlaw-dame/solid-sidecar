@@ -22,27 +22,12 @@ jobs:
         with:
           go-version: '1.22.x'
 
-      - name: Format check
-        run: test -z "$(gofmt -l .)"
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
-      - name: Race test
-        run: go test -race ./...
-
-      - name: Build
-        run: go build ./cmd/solid-sidecar
+      - name: Verify Go
+        run: bash scripts/verify.sh go
 
   rust:
     name: Rust policy kernel
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rust
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,14 +37,8 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Format check
-        run: cargo fmt --all --check
-
-      - name: Test
-        run: cargo test --workspace --all-targets
-
-      - name: Clippy library code
-        run: cargo clippy --workspace --lib -- -D warnings
+      - name: Verify Rust
+        run: bash scripts/verify.sh rust
 
   govulncheck:
     name: Vulnerability check
