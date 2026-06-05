@@ -1,4 +1,4 @@
-# Example Phase 3 Solid sidecar configuration.
+# Example Phase 4.2 Solid sidecar configuration.
 # The sidecar listens publicly and reverse-proxies to Community Solid Server.
 server:
   address: ":8443"
@@ -39,6 +39,15 @@ auth:
   replay_window: "10m"
   # Set this in production so DPoP htu is compared against the public sidecar URL
   # instead of the internal listener URL.
+  public_base_url: ""
+
+authz:
+  # Phase 4.2 shadow observation is disabled by default. When enabled, the Go
+  # sidecar builds authz.v1 request contracts and logs abstain decisions, but it
+  # still passes all requests through to CSS.
+  shadow_enabled: false
+  # Optional public base URL for authz.v1 resource_uri construction. Leave empty
+  # to derive the URI from the incoming request host/scheme.
   public_base_url: ""
 
 log:
