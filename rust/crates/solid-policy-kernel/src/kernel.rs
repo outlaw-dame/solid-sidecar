@@ -248,7 +248,10 @@ fn sha256_hex(input: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decision_request_id, is_safe_resource_uri, is_valid_request_id, AuditFields, AuthzRequest, KernelConfig, SCHEMA_VERSION};
+    use super::{
+        decision_request_id, is_safe_resource_uri, is_valid_request_id, AuditFields, AuthzRequest,
+        KernelConfig, SCHEMA_VERSION,
+    };
     use std::collections::BTreeMap;
 
     #[test]
