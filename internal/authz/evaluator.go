@@ -30,6 +30,9 @@ func (ShadowEvaluator) Evaluate(ctx context.Context, request Request) (Decision,
 		Decision:        DecisionAbstain,
 		ReasonCode:      ReasonKernelAbstainShadowMode,
 		CacheTTLSeconds: 0,
+		PolicyVersion:   request.PolicyVersion,
+		ResourceVersion: request.ResourceVersion,
+		Audit:           AuditForRequest(request),
 	}, nil
 }
 
