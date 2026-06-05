@@ -8,55 +8,23 @@ import (
 	"testing"
 )
 
-func TestShadowEvaluatorMatchesSharedFixture(t *testing.T) {
-	request := readFixture[Request](t, "authz_request.valid.json")
-	expected := readFixture[Decision](t, "authz_decision.shadow.json")
-
-	actual, err := NewShadowEvaluator().Evaluate(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Evaluate returned error: %v", err)
-	}
-
-	assertDecisionEqual(t, actual, expected)
+type fixtureManifest struct {
+	SchemaVersion string        `json:"schema_version"`
+	Cases         []fixtureCase `json:"cases"`
 }
 
-func TestShadowEvaluatorMatchesSharedInvalidFixtures(t *testing.T) {
-	tests := []struct {
-		name         string
-		requestFile  string
-		decisionFile string
-	}{
-		{
-			name:         "unsupported schema",
-			requestFile:  "authz_request.unsupported_schema.json",
-			decisionFile: "authz_decision.unsupported_schema.json",
-		},
-		{
-			name:         "malformed request id",
-			requestFile:  "authz_request.invalid_request_id.json",
-			decisionFile: "authz_decision.invalid_request_id.json",
-		},
-		{
-			name:         "unsupported method",
-			requestFile:  "authz_request.unsupported_method.json",
-			decisionFile: "authz_decision.unsupported_method.json",
-		},
-		{
-			name:         "missing modes",
-			requestFile:  "authz_request.missing_modes.json",
-			decisionFile: "authz_decision.missing_modes.json",
-		},
-		{
-			name:         "unsafe uri",
-			requestFile:  "authz_request.unsafe_uri.json",
-			decisionFile: "authz_decision.unsafe_uri.json",
-		},
-	}
+type fixtureCase struct {
+	Name         string `json:"name"`
+	RequestFile  string `json:"request"`
+	DecisionFile string `json:"decision"`
+	ValidRequest bool   `json:"valid_request"`
+}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			request := readFixture[Request](t, test.requestFile)
-			expected := readFixture[Decision](t, test.decisionFile)
+func TestShadowEvaluatorMatchesSharedFixtures(t *testing.T) {
+	for _, test := range readFixtureManifest(t).Cases {
+		t.Run(test.Name, func(t *testing.T) {
+			request := readFixture[Request](t, test.RequestFile)
+			expected := readFixture[Decision](t, test.DecisionFile)
 
 			actual, err := NewShadowEvaluator().Evaluate(context.Background(), request)
 			if err != nil {
@@ -85,6 +53,28 @@ func assertDecisionEqual(t *testing.T, actual, expected Decision) {
 		expectedBytes, _ := json.MarshalIndent(expected, "", "  ")
 		t.Fatalf("decision mismatch\nactual:   %s\nexpected: %s", actualBytes, expectedBytes)
 	}
+}
+
+func readFixtureManifest(t *testing.T) fixtureManifest {
+	t.Helper()
+	manifest := readFixture[fixtureManifest](t, "authz_manifest.json")
+	if manifest.SchemaVersion != "authz.fixture-manifest.v1" {
+		t.Fatalf("unexpected fixture manifest schema: %q", manifest.SchemaVersion)
+	}
+	if len(manifest.Cases) == 0 {
+		t.Fatal("fixture manifest must contain at least one case")
+	}
+	seenNames := make(map[string]struct{}, len(manifest.Cases))
+	for _, test := range manifest.Cases {
+		if test.Name == "" || test.RequestFile == "" || test.DecisionFile == "" {
+			t.Fatalf("fixture manifest case must include name, request, and decision: %+v", test)
+		}
+		if _, ok := seenNames[test.Name]; ok {
+			t.Fatalf("duplicate fixture manifest case name: %q", test.Name)
+		}
+		seenNames[test.Name] = struct{}{}
+	}
+	return manifest
 }
 
 func readFixture[T any](t *testing.T, name string) T {
