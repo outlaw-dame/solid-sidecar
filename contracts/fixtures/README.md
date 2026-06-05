@@ -2,6 +2,7 @@
 
 These fixtures lock the `authz.v1` JSON boundary shared by the Go sidecar and the Rust policy kernel.
 
+- `authz_manifest.json` is the shared fixture manifest consumed by Go and Rust tests.
 - `authz_request.valid.json` is a valid authorization request contract.
 - `authz_decision.shadow.json` is the expected shadow-mode decision for that request.
 - `authz_request.unsupported_schema.json` and `authz_decision.unsupported_schema.json` lock unsupported-schema denial behavior.
@@ -10,7 +11,7 @@ These fixtures lock the `authz.v1` JSON boundary shared by the Go sidecar and th
 - `authz_request.missing_modes.json` and `authz_decision.missing_modes.json` lock missing-mode denial behavior.
 - `authz_request.unsafe_uri.json` and `authz_decision.unsafe_uri.json` lock unsafe-resource-URI denial behavior.
 
-Both Go and Rust tests should read these same files. Changes to any fixture must be treated as contract changes and reviewed carefully.
+Both Go and Rust tests read `authz_manifest.json`. Changes to request or decision fixture files must also update the manifest and should be reviewed carefully.
 
 Current guarantees:
 
@@ -19,6 +20,6 @@ Current guarantees:
 3. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid `authz.v1` contract while retaining privacy-safe correlation.
 4. `abstain` remains non-enforcing and must continue to CSS.
 5. `request_hash` and `policy_hash` are deterministic audit correlation fields.
-6. Fixture changes should be accompanied by matching Go and Rust tests.
+6. Fixture changes should be accompanied by manifest updates and matching Go/Rust fixture expectations.
 
-These fixtures are not production policy examples. They do not implement WAC, ACP, SAI, RDF parsing, or issuer/WebID policy decisions.
+These fixtures are not production policy examples.
