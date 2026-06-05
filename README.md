@@ -21,6 +21,7 @@ Implemented:
 - Phase 4.9 structured authz shadow deny decisions for invalid contracts.
 - Phase 4.10 shared invalid-contract fixtures for Go/Rust deny parity.
 - Phase 4.11 expanded contract-valid invalid fixtures for unsupported methods.
+- Phase 4.12 sanitized malformed request-ID decision correlation.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -110,7 +111,7 @@ When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-s
 
 ## Contract fixtures
 
-Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that the same request fixture produces the same shadow decision and deterministic audit hashes. Invalid fixtures now lock structured deny behavior for unsupported schema versions, unsupported methods, missing modes, and unsafe resource URIs. Malformed request-ID behavior is intentionally not fixture-locked yet because the current evaluators echo the malformed ID into the decision, which would make the expected decision unsuitable as a valid contract fixture. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read these files to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that the same request fixture produces the same shadow decision and deterministic audit hashes. Invalid fixtures now lock structured deny behavior for unsupported schema versions, malformed request IDs, unsupported methods, missing modes, and unsafe resource URIs. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid contract while retaining privacy-safe correlation. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
 
 Flags:
 
