@@ -12,6 +12,23 @@ func TestValidateRequestAcceptsSharedFixture(t *testing.T) {
 	}
 }
 
+func TestValidateRequestRejectsSharedInvalidFixtures(t *testing.T) {
+	for _, fixture := range []string{
+		"authz_request.unsupported_schema.json",
+		"authz_request.invalid_request_id.json",
+		"authz_request.unsupported_method.json",
+		"authz_request.missing_modes.json",
+		"authz_request.unsafe_uri.json",
+	} {
+		t.Run(fixture, func(t *testing.T) {
+			request := readFixture[Request](t, fixture)
+			if err := ValidateRequest(request); !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("expected ErrInvalidRequest, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateRequestRejectsInvalidValues(t *testing.T) {
 	base := readFixture[Request](t, "authz_request.valid.json")
 	tests := []struct {
@@ -19,9 +36,10 @@ func TestValidateRequestRejectsInvalidValues(t *testing.T) {
 		mutate func(*Request)
 	}{
 		{name: "schema", mutate: func(r *Request) { r.SchemaVersion = "authz.v2" }},
-		{name: "request id", mutate: func(r *Request) { r.RequestID = "bad\nrequest" }},
+		{name: "request id", mutate: func(r *Request) { r.RequestID = "bad request" }},
 		{name: "method", mutate: func(r *Request) { r.Method = "TRACE" }},
 		{name: "resource uri", mutate: func(r *Request) { r.ResourceURI = "file:///tmp/card" }},
+		{name: "resource fragment", mutate: func(r *Request) { r.ResourceURI = "https://pod.example/a#frag" }},
 		{name: "mode", mutate: func(r *Request) { r.RequestedModes = []AccessMode{"invalid"} }},
 		{name: "duplicate mode", mutate: func(r *Request) { r.RequestedModes = []AccessMode{AccessModeRead, AccessModeRead} }},
 		{name: "negative time", mutate: func(r *Request) { r.NowUnix = -1 }},
@@ -42,10 +60,21 @@ func TestValidateRequestRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestValidateDecisionAcceptsSharedFixture(t *testing.T) {
-	decision := readFixture[Decision](t, "authz_decision.shadow.json")
-	if err := ValidateDecision(decision); err != nil {
-		t.Fatalf("ValidateDecision returned error: %v", err)
+func TestValidateDecisionAcceptsSharedFixtures(t *testing.T) {
+	for _, fixture := range []string{
+		"authz_decision.shadow.json",
+		"authz_decision.unsupported_schema.json",
+		"authz_decision.invalid_request_id.json",
+		"authz_decision.unsupported_method.json",
+		"authz_decision.missing_modes.json",
+		"authz_decision.unsafe_uri.json",
+	} {
+		t.Run(fixture, func(t *testing.T) {
+			decision := readFixture[Decision](t, fixture)
+			if err := ValidateDecision(decision); err != nil {
+				t.Fatalf("ValidateDecision returned error: %v", err)
+			}
+		})
 	}
 }
 
