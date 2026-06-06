@@ -1,10 +1,10 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, and reverse proxying to CSS. Phase 4 is complete: the repository now has a non-enforcing Go/Rust `authz.v1` contract boundary for future deterministic policy work. CSS remains the Solid protocol and authorization authority.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, and reverse proxying to CSS. Phase 4 is complete: the repository has a non-enforcing Go/Rust `authz.v1` contract boundary for future deterministic policy work. Phase 5 has begun runtime integration groundwork while CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
 
-Phase 4 is complete. The next implementation boundary is Phase 5: explicit runtime integration design for the Rust policy-kernel seam, still without production enforcement until WAC/ACP/SAI semantics, identity rules, cache semantics, and rollout gates are specified and tested.
+Phase 5 is active. Current Phase 5 work adds a safe, opt-in external CLI evaluator path for shadow authz observation. It remains non-enforcing and must not block CSS.
 
 Implemented:
 
@@ -41,23 +41,27 @@ Implemented:
 - Phase 4.27 authz shadow warning query-string redaction regression coverage.
 - Phase 4.28 documented authz shadow logging contract.
 - Phase 4.29 Phase 4 completion and Phase 5 handoff documentation.
+- Phase 5.1 external CLI authz evaluator scaffold with timeout and output bounds.
+- Phase 5.2 external evaluator config validation and tests.
+- Phase 5.3 gateway evaluator selection for local vs external CLI shadow mode.
+- Phase 5.4 Phase 5 runtime integration documentation and example configuration.
 
-Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
+Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
 
-See `docs/phase-4-completion.md` for the Phase 4 completion checklist, guarantees, non-goals, and Phase 5 handoff boundary.
+See `docs/phase-4-completion.md` for the Phase 4 completion checklist, guarantees, non-goals, and Phase 5 handoff boundary. See `docs/phase-5-runtime-integration.md` for the active Phase 5 runtime integration contract.
 
 ## Project structure
 
 - `cmd/solid-sidecar/`: Go service entrypoint.
 - `internal/config/`: config defaults, file loading, env overrides, validation.
-- `internal/gateway/`: HTTP server, routing, graceful shutdown shell.
+- `internal/gateway/`: HTTP server, routing, graceful shutdown shell, and authz evaluator selection.
 - `internal/proxy/`: CSS reverse proxy and body limits.
 - `internal/health/`: liveness and CSS readiness probe.
 - `internal/observability/`: structured logging and request IDs.
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, shadow evaluator, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -118,6 +122,11 @@ Default config lives at `configs/sidecar.example.yaml`. Environment overrides:
 - `SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL`
 - `SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED`
 - `SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL`
+- `SOLID_SIDECAR_AUTHZ_EVALUATOR`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_COMMAND`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_ARGS`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_TIMEOUT`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_MAX_OUTPUT_BYTES`
 - `SOLID_SIDECAR_LOG_LEVEL`
 
 Authz shadow observation can be enabled with:
@@ -126,9 +135,22 @@ Authz shadow observation can be enabled with:
 authz:
   shadow_enabled: true
   public_base_url: "https://pod.example"
+  evaluator: "local"
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted.
+To opt into the Phase 5 external evaluator seam:
+
+```yaml
+authz:
+  shadow_enabled: true
+  evaluator: "external_cli"
+  external_command: "/usr/local/bin/solid-policy-kernel-eval"
+  external_args: ""
+  external_timeout: "2s"
+  external_max_output_bytes: 65536
+```
+
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted. External evaluator calls have a bounded runtime and bounded output, and returned decisions must decode as valid `authz.v1`.
 
 ## Contract fixtures
 
