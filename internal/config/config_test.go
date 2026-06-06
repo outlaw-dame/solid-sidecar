@@ -27,6 +27,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Authz.ShadowEnabled {
 		t.Fatal("authz shadow mode must be disabled by default")
 	}
+	if cfg.Authz.Evaluator != DefaultAuthzEvaluatorLocal {
+		t.Fatalf("authz evaluator = %q, want %q", cfg.Authz.Evaluator, DefaultAuthzEvaluatorLocal)
+	}
+	if cfg.Authz.ExternalTimeout != DefaultAuthzExternalTimeout || cfg.Authz.ExternalMaxOutputBytes != DefaultAuthzExternalMaxOutputBytes {
+		t.Fatalf("authz external defaults mismatch: %+v", cfg.Authz)
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -62,6 +68,11 @@ auth:
 authz:
   shadow_enabled: true
   public_base_url: "https://pod.example"
+  evaluator: "external_cli"
+  external_command: "/usr/local/bin/solid-policy-kernel-eval"
+  external_args: "--quiet, --json"
+  external_timeout: "750ms"
+  external_max_output_bytes: 32768
 log:
   level: "debug"
 `)
@@ -99,6 +110,15 @@ log:
 	if !cfg.Authz.ShadowEnabled || cfg.Authz.PublicBaseURL != "https://pod.example" {
 		t.Fatalf("authz config mismatch: %+v", cfg.Authz)
 	}
+	if cfg.Authz.Evaluator != DefaultAuthzEvaluatorExternalCLI || cfg.Authz.ExternalCommand != "/usr/local/bin/solid-policy-kernel-eval" {
+		t.Fatalf("external authz config mismatch: %+v", cfg.Authz)
+	}
+	if len(cfg.Authz.ExternalArgs) != 2 || cfg.Authz.ExternalArgs[0] != "--quiet" || cfg.Authz.ExternalArgs[1] != "--json" {
+		t.Fatalf("external args mismatch: %#v", cfg.Authz.ExternalArgs)
+	}
+	if cfg.Authz.ExternalTimeout != 750*time.Millisecond || cfg.Authz.ExternalMaxOutputBytes != 32768 {
+		t.Fatalf("external bounds mismatch: %+v", cfg.Authz)
+	}
 }
 
 func TestValidateRejectsBadBackendURL(t *testing.T) {
@@ -134,6 +154,36 @@ func TestValidateRejectsBadAuthzPublicBaseURLWhenShadowEnabled(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidAuthzEvaluator(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authz.Evaluator = "remote-http"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidateRejectsMissingExternalCommandWhenEnabled(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authz.ShadowEnabled = true
+	cfg.Authz.Evaluator = DefaultAuthzEvaluatorExternalCLI
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidateRejectsUnsafeExternalEvaluatorBounds(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authz.ExternalTimeout = 11 * time.Second
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+	cfg = Defaults()
+	cfg.Authz.ExternalMaxOutputBytes = 2 << 20
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
 func TestEnvOverrides(t *testing.T) {
 	t.Setenv("SOLID_SIDECAR_ADDRESS", ":9555")
 	t.Setenv("SOLID_SIDECAR_BACKEND_URL", "http://localhost:3010")
@@ -143,6 +193,11 @@ func TestEnvOverrides(t *testing.T) {
 	t.Setenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL", "https://pod.example")
 	t.Setenv("SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED", "true")
 	t.Setenv("SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL", "https://pod.example")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_EVALUATOR", "external_cli")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_COMMAND", "/usr/local/bin/solid-policy-kernel-eval")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_ARGS", "--quiet,--json")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_TIMEOUT", "500ms")
+	t.Setenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_MAX_OUTPUT_BYTES", "32768")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -164,6 +219,15 @@ func TestEnvOverrides(t *testing.T) {
 	}
 	if !cfg.Authz.ShadowEnabled || cfg.Authz.PublicBaseURL != "https://pod.example" {
 		t.Fatalf("authz env override mismatch: %+v", cfg.Authz)
+	}
+	if cfg.Authz.Evaluator != DefaultAuthzEvaluatorExternalCLI || cfg.Authz.ExternalCommand != "/usr/local/bin/solid-policy-kernel-eval" {
+		t.Fatalf("authz external env override mismatch: %+v", cfg.Authz)
+	}
+	if len(cfg.Authz.ExternalArgs) != 2 || cfg.Authz.ExternalArgs[0] != "--quiet" || cfg.Authz.ExternalArgs[1] != "--json" {
+		t.Fatalf("authz external args env override mismatch: %#v", cfg.Authz.ExternalArgs)
+	}
+	if cfg.Authz.ExternalTimeout != 500*time.Millisecond || cfg.Authz.ExternalMaxOutputBytes != 32768 {
+		t.Fatalf("authz external bound env override mismatch: %+v", cfg.Authz)
 	}
 	if len(cfg.Security.AllowedOrigins) != 1 || cfg.Security.AllowedOrigins[0] != "https://app.example" {
 		t.Fatalf("allowed origins override mismatch: %#v", cfg.Security.AllowedOrigins)
