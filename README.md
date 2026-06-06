@@ -1,6 +1,6 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, and reverse proxying to CSS. Phase 4 and Phase 5 are complete. Phase 6 is complete: the repository now has privacy-safe aggregate shadow observability while CSS remains the Solid protocol and authorization authority.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, and reverse proxying to CSS. Phase 4 and Phase 5 are complete. Phase 6 is complete with additional runtime-resilience hardening: the repository now has privacy-safe aggregate shadow observability while CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
 
@@ -54,6 +54,7 @@ Implemented:
 - Phase 6.2 middleware metrics recording for decisions, warnings, fallback decisions, and fallback failures.
 - Phase 6.3 gateway metrics snapshot wiring for shadow mode.
 - Phase 6.4 Phase 6 completion documentation.
+- Phase 6.5 configurable external evaluator backoff bounds and backoff-active warning classification.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
 
@@ -136,6 +137,8 @@ Default config lives at `configs/sidecar.example.yaml`. Environment overrides:
 - `SOLID_SIDECAR_AUTHZ_EXTERNAL_ARGS`
 - `SOLID_SIDECAR_AUTHZ_EXTERNAL_TIMEOUT`
 - `SOLID_SIDECAR_AUTHZ_EXTERNAL_MAX_OUTPUT_BYTES`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_BACKOFF_BASE_DELAY`
+- `SOLID_SIDECAR_AUTHZ_EXTERNAL_BACKOFF_MAX_DELAY`
 - `SOLID_SIDECAR_LOG_LEVEL`
 
 Authz shadow observation can be enabled with:
@@ -157,9 +160,11 @@ authz:
   external_args: ""
   external_timeout: "2s"
   external_max_output_bytes: 65536
+  external_backoff_base_delay: "500ms"
+  external_backoff_max_delay: "30s"
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted. External evaluator calls have a bounded runtime and bounded output, and returned decisions must decode as valid `authz.v1`. If the external evaluator fails or returns invalid output, the sidecar applies bounded backoff before the next external attempt and falls back to local shadow evaluation for observability while still passing the request through to CSS.
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, `backoff_active`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted. External evaluator calls have a bounded runtime and bounded output, and returned decisions must decode as valid `authz.v1`. If the external evaluator fails or returns invalid output, the sidecar applies configurable bounded backoff before the next external attempt and falls back to local shadow evaluation for observability while still passing the request through to CSS.
 
 Authz shadow metrics are aggregate counters only. They include event type, decision, reason code, and stable error reason labels. They do not include request IDs, WebIDs, client IDs, resource URIs, query strings, raw evaluator errors, policy documents, or request hashes.
 
