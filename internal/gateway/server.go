@@ -51,9 +51,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			return nil, err
 		}
 		inner = authz.Middleware(authz.MiddlewareOptions{
-			BuildOptions: authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
-			Evaluator:    evaluator,
-			Logger:       logger,
+			BuildOptions:      authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
+			Evaluator:         evaluator,
+			FallbackEvaluator: newAuthzFallbackEvaluator(cfg.Authz),
+			Logger:            logger,
 		}, inner)
 	}
 
@@ -98,6 +99,13 @@ func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
 	default:
 		return nil, fmt.Errorf("unsupported authz evaluator %q", cfg.Evaluator)
 	}
+}
+
+func newAuthzFallbackEvaluator(cfg config.AuthzConfig) authz.Evaluator {
+	if cfg.Evaluator == config.DefaultAuthzEvaluatorExternalCLI {
+		return authz.NewShadowEvaluator()
+	}
+	return nil
 }
 
 func (s *Server) ListenAndServe() error {
