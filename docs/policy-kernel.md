@@ -1,6 +1,6 @@
 # Solid Policy Kernel
 
-The Rust policy kernel is an internal deterministic boundary for future Solid authorization work. It is intentionally introduced in shadow mode so the sidecar can evolve toward policy evaluation without replacing Community Solid Server as the current Solid protocol and authorization authority.
+The Rust policy kernel is an internal deterministic boundary for future Solid authorization work. Phase 4 is complete: the kernel and Go sidecar now share a tested `authz.v1` contract boundary in shadow mode. The boundary is intentionally non-enforcing and does not replace Community Solid Server as the current Solid protocol and authorization authority.
 
 ## Current status
 
@@ -16,7 +16,7 @@ Implemented:
 - shadow-mode behavior that returns `abstain` for valid requests;
 - structured `deny` decisions for invalid kernel inputs;
 - a `solid-policy-kernel-eval` CLI that reads an authz request JSON document from stdin or a file and writes the deterministic decision JSON to stdout;
-- shared Go/Rust fixture tests covering valid shadow decisions, invalid-contract decisions, deterministic hashes, manifest coverage, and manifest drift protection.
+- shared Go/Rust fixture tests covering valid shadow decisions, invalid-contract decisions, deterministic hashes, manifest coverage, manifest drift protection, strict fixture filenames, and log/privacy expectations on the Go side.
 
 Not implemented yet:
 
@@ -72,6 +72,18 @@ These hashes are for audit correlation and drift detection. They are not authori
 The first contract version is `authz.v1`. Future changes must either be backwards-compatible or introduce a new schema version. The kernel rejects unsupported schema versions with `unsupported_schema_version`.
 
 The fixture manifest version is `authz.fixture-manifest.v1`. Go and Rust tests both read the same manifest and reject duplicate entries, orphan fixture files, invalid fixture names, and unexpected manifest fields.
+
+## Shadow logging boundary
+
+Go authz shadow middleware validates evaluator decisions before emitting normal shadow-decision logs. Invalid evaluator output is logged as a privacy-safe warning and still passes through to CSS.
+
+Shadow log guarantees:
+
+- warning reasons use stable labels instead of raw error text;
+- warning and decision log messages and field names are centralized constants;
+- warning logs include request ID correlation;
+- warning logs use path-only request information and do not emit query strings;
+- normal shadow-decision logs are emitted only after decision validation succeeds.
 
 ## Safety boundaries
 
