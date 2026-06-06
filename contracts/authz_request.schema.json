@@ -70,9 +70,16 @@
     },
     "resource_metadata": {
       "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+      },
       "additionalProperties": {
         "type": "string",
-        "maxLength": 4096
+        "maxLength": 1024,
+        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
       }
     },
     "policy_documents": {
@@ -94,7 +101,9 @@
           },
           "content_type": {
             "type": "string",
-            "maxLength": 256
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
           }
         }
       }
