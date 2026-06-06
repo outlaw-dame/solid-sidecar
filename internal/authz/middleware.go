@@ -34,6 +34,11 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if err := ValidateDecision(decision); err != nil {
+			logShadowError(options.Logger, r, "authz evaluation returned invalid decision", err)
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		logShadowDecision(options.Logger, r, decision)
 		next.ServeHTTP(w, r)
