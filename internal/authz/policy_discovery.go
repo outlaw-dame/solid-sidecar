@@ -209,6 +209,16 @@ func normalizeAllowedLinkRels(input []string) map[string]struct{} {
 	return allowed
 }
 
+func sortedAllowedLinkRels(input []string) []string {
+	allowed := normalizeAllowedLinkRels(input)
+	out := make([]string, 0, len(allowed))
+	for rel := range allowed {
+		out = append(out, rel)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func linkRelAllowed(relValue string, allowed map[string]struct{}) bool {
 	if len(allowed) == 0 {
 		return false
@@ -246,13 +256,5 @@ func PolicyDiscoveryVersion(options PolicyDiscoveryOptions) string {
 	if version == "" {
 		return ""
 	}
-	keys := make([]string, 0, len(options.AllowedLinkRels))
-	for _, rel := range options.AllowedLinkRels {
-		rel = strings.ToLower(strings.TrimSpace(rel))
-		if rel != "" {
-			keys = append(keys, rel)
-		}
-	}
-	sort.Strings(keys)
-	return version + ":" + sha256Hex(strings.Join(keys, "\x1f"))
+	return version + ":" + sha256Hex(strings.Join(sortedAllowedLinkRels(options.AllowedLinkRels), "\x1f"))
 }
