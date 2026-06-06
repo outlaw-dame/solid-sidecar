@@ -103,6 +103,12 @@ func readFixtureManifest(t *testing.T) fixtureManifest {
 		if test.Name == "" || test.RequestFile == "" || test.DecisionFile == "" {
 			t.Fatalf("fixture manifest case must include name, request, and decision: %+v", test)
 		}
+		if !validFixtureName(test.RequestFile, "authz_request.") {
+			t.Fatalf("invalid request fixture filename %q", test.RequestFile)
+		}
+		if !validFixtureName(test.DecisionFile, "authz_decision.") {
+			t.Fatalf("invalid decision fixture filename %q", test.DecisionFile)
+		}
 		if _, ok := seenNames[test.Name]; ok {
 			t.Fatalf("duplicate fixture manifest case name: %q", test.Name)
 		}
@@ -117,6 +123,13 @@ func readFixtureManifest(t *testing.T) fixtureManifest {
 		seenDecisions[test.DecisionFile] = struct{}{}
 	}
 	return manifest
+}
+
+func validFixtureName(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".json") {
+		return false
+	}
+	return !strings.ContainsAny(name, `/\\`)
 }
 
 func readFixture[T any](t *testing.T, name string) T {
