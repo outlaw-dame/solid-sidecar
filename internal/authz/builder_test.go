@@ -186,7 +186,7 @@ func assertModes(t *testing.T, got, want []AccessMode) {
 	}
 	for i := range got {
 		if got[i] != want[i] {
-			t.Fatalf("mode[%d] = %q, want %q", i, got[i])
+			t.Fatalf("mode[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
 }
