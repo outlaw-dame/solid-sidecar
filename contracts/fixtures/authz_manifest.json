@@ -8,6 +8,12 @@
       "valid_request": true
     },
     {
+      "name": "valid shadow abstain with policy inputs",
+      "request": "authz_request.with_policy_inputs.json",
+      "decision": "authz_decision.with_policy_inputs.json",
+      "valid_request": true
+    },
+    {
       "name": "unsupported schema",
       "request": "authz_request.unsupported_schema.json",
       "decision": "authz_decision.unsupported_schema.json",
