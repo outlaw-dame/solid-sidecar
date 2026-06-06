@@ -1,8 +1,10 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, and reverse proxying to CSS. Rust and Go authorization-contract scaffolds now exist in shadow mode for future deterministic policy work. Optional Go authz shadow observation can be enabled, but it remains non-enforcing and does not replace CSS authorization.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, and reverse proxying to CSS. Phase 4 is complete: the repository now has a non-enforcing Go/Rust `authz.v1` contract boundary for future deterministic policy work. CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
+
+Phase 4 is complete. The next implementation boundary is Phase 5: explicit runtime integration design for the Rust policy-kernel seam, still without production enforcement until WAC/ACP/SAI semantics, identity rules, cache semantics, and rollout gates are specified and tested.
 
 Implemented:
 
@@ -38,8 +40,11 @@ Implemented:
 - Phase 4.26 centralized authz shadow log messages and field names.
 - Phase 4.27 authz shadow warning query-string redaction regression coverage.
 - Phase 4.28 documented authz shadow logging contract.
+- Phase 4.29 Phase 4 completion and Phase 5 handoff documentation.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
+
+See `docs/phase-4-completion.md` for the Phase 4 completion checklist, guarantees, non-goals, and Phase 5 handoff boundary.
 
 ## Project structure
 
