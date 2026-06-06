@@ -81,6 +81,30 @@ fn rust_manifest_covers_authz_fixture_files() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+#[test]
+fn rust_valid_fixture_name_matches_manifest_schema_pattern() {
+    let cases = [
+        ("authz_request.valid.json", "authz_request.", true),
+        ("authz_decision.Valid_CASE-1.json", "authz_decision.", true),
+        ("authz_request..json", "authz_request.", false),
+        ("authz_decision.valid.json", "authz_request.", false),
+        ("authz_request.valid.txt", "authz_request.", false),
+        ("authz_request.valid.case.json", "authz_request.", false),
+        ("authz_request../valid.json", "authz_request.", false),
+        (r"authz_request..\valid.json", "authz_request.", false),
+        ("authz_request.valid case.json", "authz_request.", false),
+        ("authz_request.validé.json", "authz_request.", false),
+    ];
+
+    for (name, prefix, expected) in cases {
+        assert_eq!(
+            valid_fixture_name(name, prefix),
+            expected,
+            "valid_fixture_name({name:?}, {prefix:?})"
+        );
+    }
+}
+
 fn validate_manifest(manifest: &FixtureManifest) -> Result<(), String> {
     if manifest.schema_version != "authz.fixture-manifest.v1" {
         return Err(format!(
