@@ -42,6 +42,45 @@ fn rust_kernel_matches_shared_fixtures() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+#[test]
+fn rust_manifest_covers_authz_fixture_files() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest: FixtureManifest = read_fixture("authz_manifest.json")?;
+    validate_manifest(&manifest)?;
+
+    let listed_requests = manifest
+        .cases
+        .iter()
+        .map(|fixture| fixture.request.as_str())
+        .collect::<HashSet<_>>();
+    let listed_decisions = manifest
+        .cases
+        .iter()
+        .map(|fixture| fixture.decision.as_str())
+        .collect::<HashSet<_>>();
+
+    for entry in fs::read_dir(fixture_dir())? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("authz_request.") && name.ends_with(".json") {
+            assert!(
+                listed_requests.contains(name.as_ref()),
+                "request fixture {name:?} is not referenced by authz_manifest.json"
+            );
+        } else if name.starts_with("authz_decision.") && name.ends_with(".json") {
+            assert!(
+                listed_decisions.contains(name.as_ref()),
+                "decision fixture {name:?} is not referenced by authz_manifest.json"
+            );
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_manifest(manifest: &FixtureManifest) -> Result<(), String> {
     if manifest.schema_version != "authz.fixture-manifest.v1" {
         return Err(format!(
@@ -108,9 +147,12 @@ where
 }
 
 fn fixture_path(name: &str) -> PathBuf {
+    fixture_dir().join(name)
+}
+
+fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .join("contracts")
         .join("fixtures")
-        .join(name)
 }
