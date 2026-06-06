@@ -11,8 +11,12 @@ import (
 )
 
 type BuildOptions struct {
-	PublicBaseURL string
-	Now           func() time.Time
+	PublicBaseURL    string
+	Now              func() time.Time
+	PolicyDocuments  []PolicyDocument
+	PolicyVersion    string
+	ResourceMetadata map[string]string
+	ResourceVersion  string
 }
 
 func BuildRequest(r *http.Request, options BuildOptions) (Request, error) {
@@ -38,19 +42,36 @@ func BuildRequest(r *http.Request, options BuildOptions) (Request, error) {
 		return Request{}, err
 	}
 
+	policyDocuments, err := NormalizePolicyDocuments(options.PolicyDocuments)
+	if err != nil {
+		return Request{}, err
+	}
+	resourceMetadata, err := NormalizeResourceMetadata(options.ResourceMetadata)
+	if err != nil {
+		return Request{}, err
+	}
+	policyVersion := strings.TrimSpace(options.PolicyVersion)
+	if policyVersion == "" {
+		policyVersion = PolicyVersionForDocuments(policyDocuments)
+	}
+
 	now := time.Now().UTC()
 	if options.Now != nil {
 		now = options.Now().UTC()
 	}
 
 	return Request{
-		SchemaVersion:  SchemaVersion,
-		RequestID:      requestID,
-		Method:         r.Method,
-		ResourceURI:    resourceURI,
-		Origin:         strings.TrimSpace(r.Header.Get("Origin")),
-		RequestedModes: modes,
-		NowUnix:        now.Unix(),
+		SchemaVersion:    SchemaVersion,
+		RequestID:        requestID,
+		Method:           r.Method,
+		ResourceURI:      resourceURI,
+		Origin:           strings.TrimSpace(r.Header.Get("Origin")),
+		RequestedModes:   modes,
+		ResourceVersion:  strings.TrimSpace(options.ResourceVersion),
+		PolicyVersion:    policyVersion,
+		ResourceMetadata: resourceMetadata,
+		PolicyDocuments:  policyDocuments,
+		NowUnix:          now.Unix(),
 	}, nil
 }
 
