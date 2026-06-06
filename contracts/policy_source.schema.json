@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/policy_source.schema.json",
+  "title": "Solid Sidecar Policy Source Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sources"],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy_source"
+      }
+    },
+    "source_set_version": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "policy_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "kind", "priority"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 4096,
+          "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["explicit", "link", "derived"]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
+      }
+    }
+  }
+}
