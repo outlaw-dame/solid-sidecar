@@ -1,10 +1,10 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, and Phase 7 are complete. CSS remains the Solid protocol and authorization authority.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, deterministic policy-source metadata helpers, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, and Phase 7 are complete. Phase 8 has started with deterministic source metadata preparation. CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
 
-Phase 7 is complete. The next safe boundary is Phase 8: deterministic policy-source discovery and loading metadata without enforcement.
+Phase 8 is active. Current Phase 8 work prepares deterministic policy-source metadata and already-loaded content metadata without enforcement.
 
 Implemented:
 
@@ -62,6 +62,9 @@ Implemented:
 - Phase 7.4 shared policy-input fixtures in the authz manifest.
 - Phase 7.5 standalone policy input metadata schema and tightened embedded request schema.
 - Phase 7.6 Phase 7 metadata preparation documentation.
+- Phase 8.1 deterministic policy source metadata normalization.
+- Phase 8.2 loaded-source metadata conversion into policy document descriptors.
+- Phase 8.3 policy source metadata schema and deterministic source-set versioning.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
 
@@ -78,7 +81,7 @@ See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-co
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, policy-source metadata normalization, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -149,6 +152,8 @@ When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-s
 Authz shadow metrics are aggregate counters only. They include event type, decision, reason code, and stable error reason labels. They do not include request IDs, WebIDs, client IDs, resource URIs, query strings, raw evaluator errors, policy documents, or request hashes.
 
 Policy input metadata can be supplied to `BuildRequest` through `BuildOptions`. The builder normalizes policy document descriptors and resource metadata, derives a stable policy version when policy documents are present, and carries the result through the existing `authz.v1` request contract. This remains metadata preparation only and does not change shadow-mode decision behavior.
+
+Phase 8 source metadata helpers normalize source descriptors, derive stable source-set versions, and convert already-available bounded source content into policy document descriptors. This is metadata preparation only and does not fetch policy content or change shadow-mode decision behavior.
 
 ## Contract fixtures
 
