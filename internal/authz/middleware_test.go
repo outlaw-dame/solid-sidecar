@@ -24,7 +24,9 @@ func (e *fakeEvaluator) Evaluate(_ context.Context, request Request) (Decision, 
 	if e.err != nil {
 		return Decision{}, e.err
 	}
-	e.decision.RequestID = request.RequestID
+	if e.decision.RequestID == "" {
+		e.decision.RequestID = request.RequestID
+	}
 	return e.decision, nil
 }
 
@@ -104,6 +106,51 @@ func TestMiddlewarePassesThroughOnShadowDeny(t *testing.T) {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
 		}
+	}
+}
+
+func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	evaluator := &fakeEvaluator{decision: Decision{
+		SchemaVersion:  SchemaVersion,
+		RequestID:      "bad request",
+		Decision:       DecisionDeny,
+		ReasonCode:     ReasonInvalidRequest,
+		StatusHint:     httpBadRequestStatus,
+		CacheTTLSeconds: 0,
+		Audit: AuditFields{
+			RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			PolicyHash:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
+	}}
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
+
+	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if !evaluator.seen {
+		t.Fatal("expected evaluator to be called")
+	}
+	if !nextCalled {
+		t.Fatal("invalid evaluator decisions must still pass through to CSS")
+	}
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `"msg":"authz evaluation returned invalid decision"`) {
+		t.Fatalf("expected invalid decision warning; got %s", logOutput)
+	}
+	if strings.Contains(logOutput, `"msg":"authz shadow decision"`) {
+		t.Fatalf("invalid evaluator decision must not be logged as normal shadow decision: %s", logOutput)
 	}
 }
 
