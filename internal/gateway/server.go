@@ -86,7 +86,7 @@ func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
 	case config.DefaultAuthzEvaluatorLocal:
 		return authz.NewShadowEvaluator(), nil
 	case config.DefaultAuthzEvaluatorExternalCLI:
-		evaluator, err := authz.NewExternalCLIEvaluator(authz.ExternalCLIEvaluatorOptions{
+		externalEvaluator, err := authz.NewExternalCLIEvaluator(authz.ExternalCLIEvaluatorOptions{
 			Command:        cfg.ExternalCommand,
 			Args:           cfg.ExternalArgs,
 			Timeout:        cfg.ExternalTimeout,
@@ -94,6 +94,10 @@ func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create external authz evaluator: %w", err)
+		}
+		evaluator, err := authz.NewBackoffEvaluator(authz.BackoffEvaluatorOptions{Evaluator: externalEvaluator})
+		if err != nil {
+			return nil, fmt.Errorf("create backoff authz evaluator: %w", err)
 		}
 		return evaluator, nil
 	default:
