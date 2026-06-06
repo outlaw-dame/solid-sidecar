@@ -131,10 +131,14 @@ fn validate_manifest(manifest: &FixtureManifest) -> Result<(), String> {
 }
 
 fn valid_fixture_name(name: &str, prefix: &str) -> bool {
-    name.starts_with(prefix)
-        && name.ends_with(".json")
-        && !name.contains('/')
-        && !name.contains('\\')
+    if !name.starts_with(prefix) || !name.ends_with(".json") {
+        return false;
+    }
+    let stem = &name[prefix.len()..name.len() - ".json".len()];
+    !stem.is_empty()
+        && stem
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 fn read_fixture<T>(name: &str) -> Result<T, Box<dyn std::error::Error>>
