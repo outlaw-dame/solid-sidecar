@@ -12,21 +12,24 @@ import (
 )
 
 const (
-	defaultAddress                      = ":8443"
-	defaultBackendURL                   = "http://127.0.0.1:3000"
-	defaultBackendHealth                = "/"
-	defaultMaxBodyBytes                 = int64(32 << 20) // 32 MiB
-	defaultProxyTimeout                 = 30 * time.Second
-	defaultServerTimeout                = 15 * time.Second
-	defaultReadHeaderLimit              = 5 * time.Second
-	defaultShutdownTimeout              = 10 * time.Second
-	defaultMaxHeaderBytes               = 1 << 20 // 1 MiB, matching net/http's default.
-	DefaultAuthzEvaluatorLocal          = "local"
-	DefaultAuthzEvaluatorExternalCLI    = "external_cli"
-	DefaultAuthzExternalTimeout         = 2 * time.Second
-	DefaultAuthzExternalMaxOutputBytes  = int64(64 << 10) // 64 KiB
-	maxAuthzExternalTimeout             = 10 * time.Second
-	maxAuthzExternalMaxOutputBytes      = int64(1 << 20) // 1 MiB
+	defaultAddress                         = ":8443"
+	defaultBackendURL                      = "http://127.0.0.1:3000"
+	defaultBackendHealth                   = "/"
+	defaultMaxBodyBytes                    = int64(32 << 20) // 32 MiB
+	defaultProxyTimeout                    = 30 * time.Second
+	defaultServerTimeout                   = 15 * time.Second
+	defaultReadHeaderLimit                 = 5 * time.Second
+	defaultShutdownTimeout                 = 10 * time.Second
+	defaultMaxHeaderBytes                  = 1 << 20 // 1 MiB, matching net/http's default.
+	DefaultAuthzEvaluatorLocal             = "local"
+	DefaultAuthzEvaluatorExternalCLI       = "external_cli"
+	DefaultAuthzExternalTimeout            = 2 * time.Second
+	DefaultAuthzExternalMaxOutputBytes     = int64(64 << 10) // 64 KiB
+	DefaultAuthzExternalBackoffBaseDelay   = 500 * time.Millisecond
+	DefaultAuthzExternalBackoffMaxDelay    = 30 * time.Second
+	maxAuthzExternalTimeout                = 10 * time.Second
+	maxAuthzExternalMaxOutputBytes         = int64(1 << 20) // 1 MiB
+	maxAuthzExternalBackoffMaxDelay        = 5 * time.Minute
 )
 
 // Config is the complete sidecar configuration for the current Go gateway.
@@ -82,13 +85,15 @@ type AuthConfig struct {
 }
 
 type AuthzConfig struct {
-	ShadowEnabled          bool
-	PublicBaseURL          string
-	Evaluator              string
-	ExternalCommand        string
-	ExternalArgs           []string
-	ExternalTimeout        time.Duration
-	ExternalMaxOutputBytes int64
+	ShadowEnabled            bool
+	PublicBaseURL            string
+	Evaluator                string
+	ExternalCommand          string
+	ExternalArgs             []string
+	ExternalTimeout          time.Duration
+	ExternalMaxOutputBytes   int64
+	ExternalBackoffBaseDelay time.Duration
+	ExternalBackoffMaxDelay  time.Duration
 }
 
 type LogConfig struct {
@@ -127,18 +132,17 @@ func Defaults() Config {
 			ReplayWindow:                    10 * time.Minute,
 		},
 		Authz: AuthzConfig{
-			ShadowEnabled:          false,
-			Evaluator:              DefaultAuthzEvaluatorLocal,
-			ExternalTimeout:        DefaultAuthzExternalTimeout,
-			ExternalMaxOutputBytes: DefaultAuthzExternalMaxOutputBytes,
+			ShadowEnabled:            false,
+			Evaluator:                DefaultAuthzEvaluatorLocal,
+			ExternalTimeout:          DefaultAuthzExternalTimeout,
+			ExternalMaxOutputBytes:   DefaultAuthzExternalMaxOutputBytes,
+			ExternalBackoffBaseDelay: DefaultAuthzExternalBackoffBaseDelay,
+			ExternalBackoffMaxDelay:  DefaultAuthzExternalBackoffMaxDelay,
 		},
 		Log: LogConfig{Level: "info"},
 	}
 }
 
-// Load reads a small YAML-like configuration file, applies environment overrides,
-// and validates the final result. The parser deliberately supports only the
-// simple nested key/value shape used by configs/sidecar.example.yaml.
 func Load(path string) (Config, error) {
 	cfg := Defaults()
 	if path != "" {
@@ -261,11 +265,7 @@ func setValue(cfg *Config, section, key, value string) error {
 		}
 		cfg.Limits.MaxBodyBytes = parsed
 	case "rate_limit.enabled":
-		parsed, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("rate_limit.enabled must be boolean: %w", err)
-		}
-		cfg.RateLimit.Enabled = parsed
+		return parseBool(value, &cfg.RateLimit.Enabled, "rate_limit.enabled")
 	case "rate_limit.requests_per_window":
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
@@ -306,6 +306,10 @@ func setValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("authz.external_max_output_bytes must be an integer: %w", err)
 		}
 		cfg.Authz.ExternalMaxOutputBytes = parsed
+	case "authz.external_backoff_base_delay":
+		return parseDuration(value, &cfg.Authz.ExternalBackoffBaseDelay)
+	case "authz.external_backoff_max_delay":
+		return parseDuration(value, &cfg.Authz.ExternalBackoffMaxDelay)
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	default:
@@ -415,13 +419,21 @@ func applyEnv(cfg *Config) {
 			cfg.Authz.ExternalMaxOutputBytes = parsed
 		}
 	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_BACKOFF_BASE_DELAY"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Authz.ExternalBackoffBaseDelay = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_BACKOFF_MAX_DELAY"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Authz.ExternalBackoffMaxDelay = parsed
+		}
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
 }
 
-// Validate verifies that the sidecar can start from cfg without dangerous or
-// ambiguous network behavior.
 func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.Server.Address) == "" {
 		return errors.New("server.address is required")
@@ -519,6 +531,15 @@ func validateAuthzConfig(cfg AuthzConfig) error {
 	}
 	if cfg.ExternalMaxOutputBytes <= 0 || cfg.ExternalMaxOutputBytes > maxAuthzExternalMaxOutputBytes {
 		return fmt.Errorf("authz.external_max_output_bytes must be positive and <= %d", maxAuthzExternalMaxOutputBytes)
+	}
+	if cfg.ExternalBackoffBaseDelay <= 0 || cfg.ExternalBackoffMaxDelay <= 0 {
+		return errors.New("authz external backoff delays must be positive")
+	}
+	if cfg.ExternalBackoffBaseDelay > cfg.ExternalBackoffMaxDelay {
+		return errors.New("authz.external_backoff_base_delay must be <= authz.external_backoff_max_delay")
+	}
+	if cfg.ExternalBackoffMaxDelay > maxAuthzExternalBackoffMaxDelay {
+		return fmt.Errorf("authz.external_backoff_max_delay must be <= %s", maxAuthzExternalBackoffMaxDelay)
 	}
 	return nil
 }
