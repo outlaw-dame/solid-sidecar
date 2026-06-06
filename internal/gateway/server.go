@@ -46,9 +46,13 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)
 	if cfg.Authz.ShadowEnabled {
+		evaluator, err := newAuthzEvaluator(cfg.Authz)
+		if err != nil {
+			return nil, err
+		}
 		inner = authz.Middleware(authz.MiddlewareOptions{
 			BuildOptions: authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
-			Evaluator:    authz.NewShadowEvaluator(),
+			Evaluator:    evaluator,
 			Logger:       logger,
 		}, inner)
 	}
@@ -74,6 +78,26 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 	return &Server{cfg: cfg, logger: logger, http: httpServer}, nil
+}
+
+func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
+	switch cfg.Evaluator {
+	case config.DefaultAuthzEvaluatorLocal:
+		return authz.NewShadowEvaluator(), nil
+	case config.DefaultAuthzEvaluatorExternalCLI:
+		evaluator, err := authz.NewExternalCLIEvaluator(authz.ExternalCLIEvaluatorOptions{
+			Command:        cfg.ExternalCommand,
+			Args:           cfg.ExternalArgs,
+			Timeout:        cfg.ExternalTimeout,
+			MaxOutputBytes: cfg.ExternalMaxOutputBytes,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create external authz evaluator: %w", err)
+		}
+		return evaluator, nil
+	default:
+		return nil, fmt.Errorf("unsupported authz evaluator %q", cfg.Evaluator)
+	}
 }
 
 func (s *Server) ListenAndServe() error {
