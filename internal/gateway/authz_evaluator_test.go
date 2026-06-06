@@ -16,6 +16,9 @@ func TestNewAuthzEvaluatorDefaultsToLocalShadowEvaluator(t *testing.T) {
 	if evaluator == nil {
 		t.Fatal("expected evaluator")
 	}
+	if fallback := newAuthzFallbackEvaluator(cfg); fallback != nil {
+		t.Fatal("local evaluator should not configure fallback")
+	}
 }
 
 func TestNewAuthzEvaluatorAcceptsExternalCLIConfig(t *testing.T) {
@@ -31,6 +34,9 @@ func TestNewAuthzEvaluatorAcceptsExternalCLIConfig(t *testing.T) {
 	}
 	if evaluator == nil {
 		t.Fatal("expected evaluator")
+	}
+	if fallback := newAuthzFallbackEvaluator(cfg); fallback == nil {
+		t.Fatal("external evaluator should configure local fallback")
 	}
 }
 
