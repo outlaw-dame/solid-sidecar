@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/policy_input.schema.json",
+  "title": "Solid Sidecar Policy Input Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "resource_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "policy_version": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "resource_metadata": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1024,
+        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+      }
+    },
+    "policy_documents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy_document"
+      }
+    }
+  },
+  "$defs": {
+    "policy_document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256", "content_type"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 4096,
+          "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
+      }
+    }
+  }
+}
