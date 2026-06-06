@@ -8,9 +8,28 @@ import (
 )
 
 const (
+	ShadowLogMessageDecision            = "authz shadow decision"
+	ShadowLogMessageRequestBuildFailed  = "authz request build failed"
+	ShadowLogMessageEvaluationFailed    = "authz evaluation failed"
+	ShadowLogMessageInvalidDecision     = "authz evaluation returned invalid decision"
 	ShadowErrorReasonRequestBuildFailed = "request_build_failed"
 	ShadowErrorReasonEvaluationFailed   = "evaluation_failed"
 	ShadowErrorReasonInvalidDecision    = "invalid_decision"
+)
+
+const (
+	ShadowLogFieldMethod          = "method"
+	ShadowLogFieldPath            = "path"
+	ShadowLogFieldRequestID       = "request_id"
+	ShadowLogFieldErrorReason     = "error_reason"
+	ShadowLogFieldDecision        = "decision"
+	ShadowLogFieldReasonCode      = "reason_code"
+	ShadowLogFieldStatusHint      = "status_hint"
+	ShadowLogFieldCacheTTLSeconds = "cache_ttl_seconds"
+	ShadowLogFieldPolicyVersion   = "policy_version"
+	ShadowLogFieldResourceVersion = "resource_version"
+	ShadowLogFieldRequestHash     = "request_hash"
+	ShadowLogFieldPolicyHash      = "policy_hash"
 )
 
 type MiddlewareOptions struct {
@@ -31,19 +50,19 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		request, err := BuildRequest(r, options.BuildOptions)
 		if err != nil {
-			logShadowError(options.Logger, r, "authz request build failed", ShadowErrorReasonRequestBuildFailed)
+			logShadowError(options.Logger, r, ShadowLogMessageRequestBuildFailed, ShadowErrorReasonRequestBuildFailed)
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		decision, err := evaluator.Evaluate(r.Context(), request)
 		if err != nil {
-			logShadowError(options.Logger, r, "authz evaluation failed", ShadowErrorReasonEvaluationFailed)
+			logShadowError(options.Logger, r, ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed)
 			next.ServeHTTP(w, r)
 			return
 		}
 		if err := ValidateDecision(decision); err != nil {
-			logShadowError(options.Logger, r, "authz evaluation returned invalid decision", ShadowErrorReasonInvalidDecision)
+			logShadowError(options.Logger, r, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision)
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -58,10 +77,10 @@ func logShadowError(logger *slog.Logger, r *http.Request, message string, reason
 		return
 	}
 	logger.Warn(message,
-		"method", r.Method,
-		"path", r.URL.EscapedPath(),
-		"request_id", observability.RequestIDFromContext(r.Context()),
-		"error_reason", reason,
+		ShadowLogFieldMethod, r.Method,
+		ShadowLogFieldPath, r.URL.EscapedPath(),
+		ShadowLogFieldRequestID, observability.RequestIDFromContext(r.Context()),
+		ShadowLogFieldErrorReason, reason,
 	)
 }
 
@@ -69,17 +88,17 @@ func logShadowDecision(logger *slog.Logger, r *http.Request, decision Decision) 
 	if logger == nil {
 		return
 	}
-	logger.Debug("authz shadow decision",
-		"method", r.Method,
-		"path", r.URL.EscapedPath(),
-		"request_id", decision.RequestID,
-		"decision", decision.Decision,
-		"reason_code", decision.ReasonCode,
-		"status_hint", decision.StatusHint,
-		"cache_ttl_seconds", decision.CacheTTLSeconds,
-		"policy_version", decision.PolicyVersion,
-		"resource_version", decision.ResourceVersion,
-		"request_hash", decision.Audit.RequestHash,
-		"policy_hash", decision.Audit.PolicyHash,
+	logger.Debug(ShadowLogMessageDecision,
+		ShadowLogFieldMethod, r.Method,
+		ShadowLogFieldPath, r.URL.EscapedPath(),
+		ShadowLogFieldRequestID, decision.RequestID,
+		ShadowLogFieldDecision, decision.Decision,
+		ShadowLogFieldReasonCode, decision.ReasonCode,
+		ShadowLogFieldStatusHint, decision.StatusHint,
+		ShadowLogFieldCacheTTLSeconds, decision.CacheTTLSeconds,
+		ShadowLogFieldPolicyVersion, decision.PolicyVersion,
+		ShadowLogFieldResourceVersion, decision.ResourceVersion,
+		ShadowLogFieldRequestHash, decision.Audit.RequestHash,
+		ShadowLogFieldPolicyHash, decision.Audit.PolicyHash,
 	)
 }
