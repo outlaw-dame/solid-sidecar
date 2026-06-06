@@ -12,15 +12,21 @@ import (
 )
 
 const (
-	defaultAddress         = ":8443"
-	defaultBackendURL      = "http://127.0.0.1:3000"
-	defaultBackendHealth   = "/"
-	defaultMaxBodyBytes    = int64(32 << 20) // 32 MiB
-	defaultProxyTimeout    = 30 * time.Second
-	defaultServerTimeout   = 15 * time.Second
-	defaultReadHeaderLimit = 5 * time.Second
-	defaultShutdownTimeout = 10 * time.Second
-	defaultMaxHeaderBytes  = 1 << 20 // 1 MiB, matching net/http's default.
+	defaultAddress                      = ":8443"
+	defaultBackendURL                   = "http://127.0.0.1:3000"
+	defaultBackendHealth                = "/"
+	defaultMaxBodyBytes                 = int64(32 << 20) // 32 MiB
+	defaultProxyTimeout                 = 30 * time.Second
+	defaultServerTimeout                = 15 * time.Second
+	defaultReadHeaderLimit              = 5 * time.Second
+	defaultShutdownTimeout              = 10 * time.Second
+	defaultMaxHeaderBytes               = 1 << 20 // 1 MiB, matching net/http's default.
+	DefaultAuthzEvaluatorLocal          = "local"
+	DefaultAuthzEvaluatorExternalCLI    = "external_cli"
+	DefaultAuthzExternalTimeout         = 2 * time.Second
+	DefaultAuthzExternalMaxOutputBytes  = int64(64 << 10) // 64 KiB
+	maxAuthzExternalTimeout             = 10 * time.Second
+	maxAuthzExternalMaxOutputBytes      = int64(1 << 20) // 1 MiB
 )
 
 // Config is the complete sidecar configuration for the current Go gateway.
@@ -76,8 +82,13 @@ type AuthConfig struct {
 }
 
 type AuthzConfig struct {
-	ShadowEnabled bool
-	PublicBaseURL string
+	ShadowEnabled          bool
+	PublicBaseURL          string
+	Evaluator              string
+	ExternalCommand        string
+	ExternalArgs           []string
+	ExternalTimeout        time.Duration
+	ExternalMaxOutputBytes int64
 }
 
 type LogConfig struct {
@@ -115,8 +126,13 @@ func Defaults() Config {
 			MaxClockSkew:                    5 * time.Minute,
 			ReplayWindow:                    10 * time.Minute,
 		},
-		Authz: AuthzConfig{ShadowEnabled: false},
-		Log:   LogConfig{Level: "info"},
+		Authz: AuthzConfig{
+			ShadowEnabled:          false,
+			Evaluator:              DefaultAuthzEvaluatorLocal,
+			ExternalTimeout:        DefaultAuthzExternalTimeout,
+			ExternalMaxOutputBytes: DefaultAuthzExternalMaxOutputBytes,
+		},
+		Log: LogConfig{Level: "info"},
 	}
 }
 
@@ -276,6 +292,20 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseBool(value, &cfg.Authz.ShadowEnabled, "authz.shadow_enabled")
 	case "authz.public_base_url":
 		cfg.Authz.PublicBaseURL = value
+	case "authz.evaluator":
+		cfg.Authz.Evaluator = strings.ToLower(strings.TrimSpace(value))
+	case "authz.external_command":
+		cfg.Authz.ExternalCommand = value
+	case "authz.external_args":
+		cfg.Authz.ExternalArgs = splitCSV(value)
+	case "authz.external_timeout":
+		return parseDuration(value, &cfg.Authz.ExternalTimeout)
+	case "authz.external_max_output_bytes":
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("authz.external_max_output_bytes must be an integer: %w", err)
+		}
+		cfg.Authz.ExternalMaxOutputBytes = parsed
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	default:
@@ -366,6 +396,25 @@ func applyEnv(cfg *Config) {
 	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_PUBLIC_BASE_URL"); value != "" {
 		cfg.Authz.PublicBaseURL = value
 	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EVALUATOR"); value != "" {
+		cfg.Authz.Evaluator = strings.ToLower(strings.TrimSpace(value))
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_COMMAND"); value != "" {
+		cfg.Authz.ExternalCommand = value
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_ARGS"); value != "" {
+		cfg.Authz.ExternalArgs = splitCSV(value)
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_TIMEOUT"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Authz.ExternalTimeout = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_EXTERNAL_MAX_OUTPUT_BYTES"); value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			cfg.Authz.ExternalMaxOutputBytes = parsed
+		}
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
@@ -427,10 +476,8 @@ func Validate(cfg Config) error {
 			return err
 		}
 	}
-	if cfg.Authz.ShadowEnabled {
-		if err := validateOptionalBaseURL("authz.public_base_url", cfg.Authz.PublicBaseURL); err != nil {
-			return err
-		}
+	if err := validateAuthzConfig(cfg.Authz); err != nil {
+		return err
 	}
 	switch cfg.Log.Level {
 	case "debug", "info", "warn", "error":
@@ -438,6 +485,42 @@ func Validate(cfg Config) error {
 	default:
 		return errors.New("log.level must be one of debug, info, warn, error")
 	}
+}
+
+func validateAuthzConfig(cfg AuthzConfig) error {
+	if cfg.Evaluator == "" {
+		return errors.New("authz.evaluator is required")
+	}
+	switch cfg.Evaluator {
+	case DefaultAuthzEvaluatorLocal, DefaultAuthzEvaluatorExternalCLI:
+	default:
+		return errors.New("authz.evaluator must be one of local, external_cli")
+	}
+	if cfg.ShadowEnabled {
+		if err := validateOptionalBaseURL("authz.public_base_url", cfg.PublicBaseURL); err != nil {
+			return err
+		}
+		if cfg.Evaluator == DefaultAuthzEvaluatorExternalCLI {
+			if strings.TrimSpace(cfg.ExternalCommand) == "" {
+				return errors.New("authz.external_command is required when authz.evaluator is external_cli")
+			}
+			if containsControlCharacter(cfg.ExternalCommand) {
+				return errors.New("authz.external_command must not contain control characters")
+			}
+		}
+	}
+	for _, arg := range cfg.ExternalArgs {
+		if containsControlCharacter(arg) {
+			return errors.New("authz.external_args must not contain control characters")
+		}
+	}
+	if cfg.ExternalTimeout <= 0 || cfg.ExternalTimeout > maxAuthzExternalTimeout {
+		return fmt.Errorf("authz.external_timeout must be positive and <= %s", maxAuthzExternalTimeout)
+	}
+	if cfg.ExternalMaxOutputBytes <= 0 || cfg.ExternalMaxOutputBytes > maxAuthzExternalMaxOutputBytes {
+		return fmt.Errorf("authz.external_max_output_bytes must be positive and <= %d", maxAuthzExternalMaxOutputBytes)
+	}
+	return nil
 }
 
 func validateOptionalBaseURL(name, value string) error {
@@ -452,6 +535,15 @@ func validateOptionalBaseURL(name, value string) error {
 		return fmt.Errorf("%s must not include query or fragment", name)
 	}
 	return nil
+}
+
+func containsControlCharacter(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func splitCSV(value string) []string {
