@@ -44,15 +44,14 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		limiter = ratelimit.New(cfg.RateLimit.RequestsPerWindow, cfg.RateLimit.Window)
 	}
 	authCache := authn.NewReplayCache()
+	authzMetrics := authz.NewShadowMetrics()
 
 	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)
-	var authzMetrics *authz.ShadowMetrics
 	if cfg.Authz.ShadowEnabled {
 		evaluator, err := newAuthzEvaluator(cfg.Authz)
 		if err != nil {
 			return nil, err
 		}
-		authzMetrics = authz.NewShadowMetrics()
 		inner = authz.Middleware(authz.MiddlewareOptions{
 			BuildOptions:      authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
 			Evaluator:         evaluator,
@@ -99,7 +98,11 @@ func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create external authz evaluator: %w", err)
 		}
-		evaluator, err := authz.NewBackoffEvaluator(authz.BackoffEvaluatorOptions{Evaluator: externalEvaluator})
+		evaluator, err := authz.NewBackoffEvaluator(authz.BackoffEvaluatorOptions{
+			Evaluator: externalEvaluator,
+			BaseDelay: cfg.ExternalBackoffBaseDelay,
+			MaxDelay:  cfg.ExternalBackoffMaxDelay,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("create backoff authz evaluator: %w", err)
 		}
@@ -127,7 +130,7 @@ func (s *Server) ListenAndServe() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, s.cfg.Server.ShutdownTimeout)
 	defer cancel()
-	s.logger.Info("solid sidecar shutting down")
+	s.logger.Info("solid sidecar shutting down")	
 	return s.http.Shutdown(shutdownCtx)
 }
 
