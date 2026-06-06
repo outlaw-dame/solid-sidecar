@@ -4,16 +4,19 @@ The Rust policy kernel is an internal deterministic boundary for future Solid au
 
 ## Current status
 
-Implemented in this phase:
+Implemented:
 
-- JSON contract schemas for authorization requests and decisions;
+- JSON contract schemas for authorization requests, decisions, and the shared fixture manifest;
 - a Rust workspace under `rust/`;
 - a `solid-policy-kernel` crate;
 - typed request, decision, reason-code, audit, and policy-document structures;
 - deterministic request and policy hashing for audit correlation;
 - conservative input validation for schema version, request ID, method, requested access modes, and resource URI shape;
+- malformed request-ID sanitization for decision correlation;
 - shadow-mode behavior that returns `abstain` for valid requests;
-- tests covering abstain behavior, invalid input rejection, deterministic hashing, and JSON contract naming.
+- structured `deny` decisions for invalid kernel inputs;
+- a `solid-policy-kernel-eval` CLI that reads an authz request JSON document from stdin or a file and writes the deterministic decision JSON to stdout;
+- shared Go/Rust fixture tests covering valid shadow decisions, invalid-contract decisions, deterministic hashes, manifest coverage, and manifest drift protection.
 
 Not implemented yet:
 
@@ -22,7 +25,7 @@ Not implemented yet:
 - SAI policy evaluation;
 - RDF parsing or canonicalization;
 - issuer/WebID authorization decisions;
-- Go sidecar runtime integration;
+- Go sidecar runtime integration with the CLI or library;
 - production enforcement.
 
 ## Decision model
@@ -33,7 +36,27 @@ The kernel emits one of three decisions:
 - `deny`: used only for invalid or unsafe kernel inputs in the current phase;
 - `abstain`: used for valid requests while the kernel is in shadow mode.
 
-The Go sidecar must treat `abstain` as “do not decide here; continue to CSS.” This is the critical safety rule for this phase.
+The Go sidecar must treat `abstain` as “do not decide here; continue to CSS.” Current Go middleware also remains non-enforcing for shadow `deny` decisions; they are logged for observability and drift detection but do not block CSS.
+
+## CLI evaluator
+
+The CLI is a future integration seam for the Go sidecar. It is currently intended for deterministic contract testing and local inspection only.
+
+From the repository root:
+
+```sh
+cd rust
+cargo run -p solid-policy-kernel --bin solid-policy-kernel-eval -- ../contracts/fixtures/authz_request.valid.json
+```
+
+The same request can be sent on stdin:
+
+```sh
+cd rust
+cargo run -p solid-policy-kernel --bin solid-policy-kernel-eval < ../contracts/fixtures/authz_request.valid.json
+```
+
+The CLI writes only the decision JSON to stdout. Decode/read errors are written to stderr and exit non-zero.
 
 ## Audit model
 
@@ -48,10 +71,12 @@ These hashes are for audit correlation and drift detection. They are not authori
 
 The first contract version is `authz.v1`. Future changes must either be backwards-compatible or introduce a new schema version. The kernel rejects unsupported schema versions with `unsupported_schema_version`.
 
+The fixture manifest version is `authz.fixture-manifest.v1`. Go and Rust tests both read the same manifest and reject duplicate entries, orphan fixture files, invalid fixture names, and unexpected manifest fields.
+
 ## Safety boundaries
 
 1. CSS remains the source of truth for Solid authorization.
-2. The Rust kernel is not wired into request handling yet.
+2. The Rust kernel is not wired into live request handling yet.
 3. No `allow` decision should be trusted until WAC/ACP/SAI support has been implemented and tested with golden fixtures.
 4. Deny decisions in this phase only mean the kernel rejected its own input contract as invalid or unsafe.
 5. Production enforcement requires explicit Go integration, metrics, replay-safe request identity, decision caching rules, and migration gates.
@@ -61,10 +86,14 @@ The first contract version is `authz.v1`. Future changes must either be backward
 From the repository root:
 
 ```sh
-cd rust
-cargo test
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --check
+bash scripts/verify.sh rust
 ```
 
-The main Go CI currently does not depend on the Rust workspace. Rust CI should be added only after the current Go CI is stable.
+From the Rust workspace:
+
+```sh
+cd rust
+cargo fmt --all --check
+cargo test --workspace --all-targets
+cargo clippy --workspace --lib -- -D warnings
+```
