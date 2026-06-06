@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -8,15 +9,17 @@ import (
 )
 
 const (
-	ShadowLogMessageDecision            = "authz shadow decision"
-	ShadowLogMessageRequestBuildFailed  = "authz request build failed"
-	ShadowLogMessageEvaluationFailed    = "authz evaluation failed"
-	ShadowLogMessageInvalidDecision     = "authz evaluation returned invalid decision"
-	ShadowLogMessageFallbackFailed      = "authz fallback evaluation failed"
-	ShadowErrorReasonRequestBuildFailed = "request_build_failed"
-	ShadowErrorReasonEvaluationFailed   = "evaluation_failed"
-	ShadowErrorReasonInvalidDecision    = "invalid_decision"
-	ShadowErrorReasonFallbackFailed     = "fallback_failed"
+	ShadowLogMessageDecision                = "authz shadow decision"
+	ShadowLogMessageRequestBuildFailed      = "authz request build failed"
+	ShadowLogMessageEvaluationFailed        = "authz evaluation failed"
+	ShadowLogMessageEvaluationBackoffActive = "authz evaluation skipped during backoff"
+	ShadowLogMessageInvalidDecision         = "authz evaluation returned invalid decision"
+	ShadowLogMessageFallbackFailed          = "authz fallback evaluation failed"
+	ShadowErrorReasonRequestBuildFailed     = "request_build_failed"
+	ShadowErrorReasonEvaluationFailed       = "evaluation_failed"
+	ShadowErrorReasonBackoffActive          = "backoff_active"
+	ShadowErrorReasonInvalidDecision        = "invalid_decision"
+	ShadowErrorReasonFallbackFailed         = "fallback_failed"
 )
 
 const (
@@ -62,8 +65,9 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 
 		decision, err := evaluator.Evaluate(r.Context(), request)
 		if err != nil {
-			logShadowError(options.Logger, r, ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed)
-			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonEvaluationFailed)
+			message, reason := evaluationWarning(err)
+			logShadowError(options.Logger, r, message, reason)
+			recordShadowWarningMetric(options.Metrics, reason)
 			if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
 				next.ServeHTTP(w, r)
 				return
@@ -86,6 +90,13 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		recordShadowDecisionMetric(options.Metrics, ShadowMetricDecision, decision)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func evaluationWarning(err error) (string, string) {
+	if errors.Is(err, ErrEvaluatorBackoffActive) {
+		return ShadowLogMessageEvaluationBackoffActive, ShadowErrorReasonBackoffActive
+	}
+	return ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed
 }
 
 func evaluateFallback(logger *slog.Logger, metrics ShadowMetricsRecorder, r *http.Request, request Request, evaluator Evaluator) bool {
