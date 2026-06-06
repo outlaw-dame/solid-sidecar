@@ -52,11 +52,11 @@ func TestPolicySourcesFromLinkHeadersFiltersAllowedRelations(t *testing.T) {
 
 func TestPolicySourcesFromLinkHeadersRejectsUnsafeInputs(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		headers    []string
-		resource   string
-		relations  []string
-		wantErr    error
+		name      string
+		headers   []string
+		resource  string
+		relations []string
+		wantErr   error
 	}{
 		{name: "invalid resource", headers: []string{`<x>; rel="acl"`}, resource: "not a uri", relations: []string{"acl"}, wantErr: ErrInvalidPolicyDiscovery},
 		{name: "malformed link", headers: []string{`not-link; rel="acl"`}, resource: "https://pod.example/card", relations: []string{"acl"}, wantErr: ErrInvalidPolicyDiscovery},
@@ -87,7 +87,7 @@ func TestPolicyDiscoveryVersionIsDeterministic(t *testing.T) {
 	}
 	right := PolicyDiscoveryOptions{
 		ResourceURI:       "https://pod.example/alice/card",
-		AllowedLinkRels:   []string{"policy", "acl"},
+		AllowedLinkRels:   []string{"policy", "acl", "acl"},
 		DefaultContentType: "text/turtle",
 		LinkHeaders:       []string{`<https://pod.example/policies/a.acl>; type="text/turtle"; rel="acl"`},
 	}
