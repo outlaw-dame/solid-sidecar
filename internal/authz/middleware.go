@@ -7,6 +7,12 @@ import (
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
 
+const (
+	ShadowErrorReasonRequestBuildFailed = "request_build_failed"
+	ShadowErrorReasonEvaluationFailed   = "evaluation_failed"
+	ShadowErrorReasonInvalidDecision    = "invalid_decision"
+)
+
 type MiddlewareOptions struct {
 	BuildOptions BuildOptions
 	Evaluator    Evaluator
@@ -25,19 +31,19 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		request, err := BuildRequest(r, options.BuildOptions)
 		if err != nil {
-			logShadowError(options.Logger, r, "authz request build failed", "request_build_failed")
+			logShadowError(options.Logger, r, "authz request build failed", ShadowErrorReasonRequestBuildFailed)
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		decision, err := evaluator.Evaluate(r.Context(), request)
 		if err != nil {
-			logShadowError(options.Logger, r, "authz evaluation failed", "evaluation_failed")
+			logShadowError(options.Logger, r, "authz evaluation failed", ShadowErrorReasonEvaluationFailed)
 			next.ServeHTTP(w, r)
 			return
 		}
 		if err := ValidateDecision(decision); err != nil {
-			logShadowError(options.Logger, r, "authz evaluation returned invalid decision", "invalid_decision")
+			logShadowError(options.Logger, r, "authz evaluation returned invalid decision", ShadowErrorReasonInvalidDecision)
 			next.ServeHTTP(w, r)
 			return
 		}
