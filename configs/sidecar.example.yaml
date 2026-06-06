@@ -48,17 +48,21 @@ authz:
   # Optional public base URL for authz.v1 resource_uri construction. Leave empty
   # to derive the URI from the incoming request host/scheme.
   public_base_url: ""
-  # local uses the Go shadow evaluator. external_cli sends authz.v1 JSON to a
-  # local executable over stdin and expects an authz.v1 decision JSON on stdout.
+  # local uses the Go shadow evaluator. external_cli uses the configured local
+  # policy-kernel evaluator boundary.
   evaluator: "local"
-  # Required only when evaluator is external_cli. This is executed directly with
-  # argv, not through a shell. Keep it local and pinned to a trusted binary path.
+  # Required only when evaluator is external_cli. Keep it local and pinned to a
+  # trusted binary path.
   external_command: ""
   # Optional comma-separated argv entries for the external command.
   external_args: ""
   # Per-request external evaluator timeout and stdout bound.
   external_timeout: "2s"
   external_max_output_bytes: 65536
+  # Bounded backoff after external evaluator failures. The sidecar still falls
+  # back to local shadow evaluation and passes the request through to CSS.
+  external_backoff_base_delay: "500ms"
+  external_backoff_max_delay: "30s"
 
 log:
   level: "info"
