@@ -150,8 +150,13 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
 	}
 	logOutput := logs.String()
-	if !strings.Contains(logOutput, `"msg":"authz evaluation returned invalid decision"`) {
-		t.Fatalf("expected invalid decision warning; got %s", logOutput)
+	for _, expected := range []string{
+		`"msg":"authz evaluation returned invalid decision"`,
+		`"request_id":"req-1"`,
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
+		}
 	}
 	if strings.Contains(logOutput, `"msg":"authz shadow decision"`) {
 		t.Fatalf("invalid evaluator decision must not be logged as normal shadow decision: %s", logOutput)
