@@ -1,0 +1,26 @@
+{
+  "schema_version": "authz.v1",
+  "request_id": "req-policy-inputs",
+  "method": "GET",
+  "resource_uri": "https://pod.example/alice/card",
+  "requested_modes": ["read"],
+  "resource_version": "resource-v1",
+  "policy_version": "sha256:73d357d8cdef9369d4dab4a012803b3b29f360c883c0a1fd9dc9b58143894823",
+  "resource_metadata": {
+    "content_length": "123",
+    "etag": "abc"
+  },
+  "policy_documents": [
+    {
+      "uri": "https://pod.example/policies/a.acl",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "content_type": "text/turtle"
+    },
+    {
+      "uri": "https://pod.example/policies/z.acl",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "content_type": "text/turtle;charset=utf-8"
+    }
+  ],
+  "now_unix": 1700000000
+}
