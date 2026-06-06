@@ -39,6 +39,7 @@ type MiddlewareOptions struct {
 	Evaluator         Evaluator
 	FallbackEvaluator Evaluator
 	Logger            *slog.Logger
+	Metrics           ShadowMetricsRecorder
 }
 
 func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
@@ -54,6 +55,7 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		request, err := BuildRequest(r, options.BuildOptions)
 		if err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageRequestBuildFailed, ShadowErrorReasonRequestBuildFailed)
+			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonRequestBuildFailed)
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -61,7 +63,8 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		decision, err := evaluator.Evaluate(r.Context(), request)
 		if err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed)
-			if !evaluateFallback(options.Logger, r, request, options.FallbackEvaluator) {
+			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonEvaluationFailed)
+			if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -70,7 +73,8 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		}
 		if err := ValidateDecision(decision); err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision)
-			if !evaluateFallback(options.Logger, r, request, options.FallbackEvaluator) {
+			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonInvalidDecision)
+			if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -79,24 +83,28 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		}
 
 		logShadowDecision(options.Logger, r, decision)
+		recordShadowDecisionMetric(options.Metrics, ShadowMetricDecision, decision)
 		next.ServeHTTP(w, r)
 	})
 }
 
-func evaluateFallback(logger *slog.Logger, r *http.Request, request Request, evaluator Evaluator) bool {
+func evaluateFallback(logger *slog.Logger, metrics ShadowMetricsRecorder, r *http.Request, request Request, evaluator Evaluator) bool {
 	if evaluator == nil {
 		return false
 	}
 	decision, err := evaluator.Evaluate(r.Context(), request)
 	if err != nil {
 		logShadowError(logger, r, ShadowLogMessageFallbackFailed, ShadowErrorReasonFallbackFailed)
+		recordShadowMetric(metrics, ShadowMetricEvent{Event: ShadowMetricFallbackFailure, ErrorReason: ShadowErrorReasonFallbackFailed})
 		return false
 	}
 	if err := ValidateDecision(decision); err != nil {
 		logShadowError(logger, r, ShadowLogMessageFallbackFailed, ShadowErrorReasonFallbackFailed)
+		recordShadowMetric(metrics, ShadowMetricEvent{Event: ShadowMetricFallbackFailure, ErrorReason: ShadowErrorReasonFallbackFailed})
 		return false
 	}
 	logShadowDecision(logger, r, decision)
+	recordShadowDecisionMetric(metrics, ShadowMetricFallbackDecision, decision)
 	return true
 }
 
@@ -129,4 +137,16 @@ func logShadowDecision(logger *slog.Logger, r *http.Request, decision Decision) 
 		ShadowLogFieldRequestHash, decision.Audit.RequestHash,
 		ShadowLogFieldPolicyHash, decision.Audit.PolicyHash,
 	)
+}
+
+func recordShadowWarningMetric(metrics ShadowMetricsRecorder, reason string) {
+	recordShadowMetric(metrics, ShadowMetricEvent{Event: ShadowMetricWarning, ErrorReason: reason})
+}
+
+func recordShadowDecisionMetric(metrics ShadowMetricsRecorder, event string, decision Decision) {
+	recordShadowMetric(metrics, ShadowMetricEvent{
+		Event:      event,
+		Decision:   decision.Decision,
+		ReasonCode: decision.ReasonCode,
+	})
 }
