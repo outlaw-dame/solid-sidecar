@@ -26,6 +26,7 @@ Implemented:
 - Phase 4.14 hardened authz JSON-schema boundaries and fixture validation coverage.
 - Phase 4.15 shared authz fixture manifest for Go/Rust parity tests.
 - Phase 4.16 authz fixture manifest coverage audit.
+- Phase 4.17 authz fixture manifest schema and filename validation.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -115,7 +116,7 @@ When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-s
 
 ## Contract fixtures
 
-Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read `authz_manifest.json` to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that every manifest case produces the expected shadow decision. Invalid fixtures lock structured deny behavior for unsupported schema versions, malformed request IDs, unsupported methods, missing modes, and unsafe resource URIs. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid contract while retaining privacy-safe correlation. Go tests also audit the fixture directory so duplicate manifest file references and orphan `authz_request.*.json` or `authz_decision.*.json` files fail fast. Request and decision schemas now explicitly require visible-ASCII request IDs; request schemas also constrain resource/policy URIs to HTTP(S) without fragments, backslashes, or control characters. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing; shadow deny decisions are observable but do not block CSS. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read `authz_manifest.json` to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that every manifest case produces the expected shadow decision. `contracts/authz_fixture_manifest.schema.json` defines the manifest contract and fixture filename patterns. Invalid fixtures lock structured deny behavior for unsupported schema versions, malformed request IDs, unsupported methods, missing modes, and unsafe resource URIs. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid contract while retaining privacy-safe correlation. Go tests also audit the fixture directory so duplicate manifest file references, invalid fixture names, and orphan `authz_request.*.json` or `authz_decision.*.json` files fail fast. Request and decision schemas explicitly require visible-ASCII request IDs; request schemas also constrain resource/policy URIs to HTTP(S) without fragments, backslashes, or control characters. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing; shadow deny decisions are observable but do not block CSS. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
 
 Flags:
 
