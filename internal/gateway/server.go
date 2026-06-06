@@ -18,9 +18,10 @@ import (
 )
 
 type Server struct {
-	cfg    config.Config
-	logger *slog.Logger
-	http   *http.Server
+	cfg          config.Config
+	logger       *slog.Logger
+	http         *http.Server
+	authzMetrics *authz.ShadowMetrics
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -45,16 +46,19 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	authCache := authn.NewReplayCache()
 
 	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)
+	var authzMetrics *authz.ShadowMetrics
 	if cfg.Authz.ShadowEnabled {
 		evaluator, err := newAuthzEvaluator(cfg.Authz)
 		if err != nil {
 			return nil, err
 		}
+		authzMetrics = authz.NewShadowMetrics()
 		inner = authz.Middleware(authz.MiddlewareOptions{
 			BuildOptions:      authz.BuildOptions{PublicBaseURL: cfg.Authz.PublicBaseURL},
 			Evaluator:         evaluator,
 			FallbackEvaluator: newAuthzFallbackEvaluator(cfg.Authz),
 			Logger:            logger,
+			Metrics:           authzMetrics,
 		}, inner)
 	}
 
@@ -78,7 +82,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		IdleTimeout:       cfg.Server.IdleTimeout,
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
-	return &Server{cfg: cfg, logger: logger, http: httpServer}, nil
+	return &Server{cfg: cfg, logger: logger, http: httpServer, authzMetrics: authzMetrics}, nil
 }
 
 func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
@@ -123,7 +127,7 @@ func (s *Server) ListenAndServe() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, s.cfg.Server.ShutdownTimeout)
 	defer cancel()
-	s.logger.Info("solid sidecar shutting down")
+	s.logger.Info("solid sidecar shutting down")	
 	return s.http.Shutdown(shutdownCtx)
 }
 
@@ -131,4 +135,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // the entire http.Server public.
 func (s *Server) ShutdownDelayForTests() time.Duration {
 	return s.cfg.Server.ShutdownTimeout
+}
+
+func (s *Server) AuthzMetricsSnapshotForTests() authz.ShadowMetricsSnapshot {
+	return s.authzMetrics.Snapshot()
 }
