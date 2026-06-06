@@ -42,6 +42,60 @@ func TestBuildRequestUsesContextRequestIDAndPublicBaseURL(t *testing.T) {
 	assertModes(t, built.RequestedModes, []AccessMode{AccessModeRead})
 }
 
+func TestBuildRequestIncludesNormalizedPolicyInputs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+
+	built, err := BuildRequest(req, BuildOptions{
+		Now: fixedNow,
+		PolicyDocuments: []PolicyDocument{
+			{URI: "https://pod.example/policies/z.acl", SHA256: policyHashB, ContentType: "TEXT/TURTLE; Charset=utf-8"},
+			{URI: "https://pod.example/policies/a.acl", SHA256: policyHashA, ContentType: "text/turtle"},
+		},
+		ResourceMetadata: map[string]string{" etag ": " abc "},
+		ResourceVersion:  " rv1 ",
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest returned error: %v", err)
+	}
+	if built.ResourceVersion != "rv1" {
+		t.Fatalf("resource version = %q", built.ResourceVersion)
+	}
+	if built.ResourceMetadata["etag"] != "abc" {
+		t.Fatalf("resource metadata = %#v", built.ResourceMetadata)
+	}
+	if len(built.PolicyDocuments) != 2 || built.PolicyDocuments[0].URI != "https://pod.example/policies/a.acl" {
+		t.Fatalf("policy documents not normalized/sorted: %#v", built.PolicyDocuments)
+	}
+	if built.PolicyVersion == "" {
+		t.Fatal("expected derived policy version")
+	}
+	if err := ValidateRequest(built); err != nil {
+		t.Fatalf("built request did not validate: %v", err)
+	}
+}
+
+func TestBuildRequestRejectsInvalidPolicyInputs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+
+	if _, err := BuildRequest(req, BuildOptions{
+		Now: fixedNow,
+		PolicyDocuments: []PolicyDocument{
+			{URI: "https://pod.example/policies/a.acl", SHA256: "not-a-hash", ContentType: "text/turtle"},
+		},
+	}); err == nil {
+		t.Fatal("expected invalid policy document to fail")
+	}
+
+	if _, err := BuildRequest(req, BuildOptions{
+		Now:              fixedNow,
+		ResourceMetadata: map[string]string{"bad\nkey": "value"},
+	}); err == nil {
+		t.Fatal("expected invalid resource metadata to fail")
+	}
+}
+
 func TestBuildRequestFallsBackToHeaderRequestID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "http://pod.example/inbox", nil)
 	req.Header.Set("X-Request-ID", "from-header")
@@ -132,7 +186,7 @@ func assertModes(t *testing.T, got, want []AccessMode) {
 	}
 	for i := range got {
 		if got[i] != want[i] {
-			t.Fatalf("mode[%d] = %q, want %q", i, got[i], want[i])
+			t.Fatalf("mode[%d] = %q, want %q", i, got[i])
 		}
 	}
 }
