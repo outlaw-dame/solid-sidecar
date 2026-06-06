@@ -78,6 +78,34 @@ func TestAuditForRequestMatchesSharedFixture(t *testing.T) {
 	}
 }
 
+func TestValidFixtureNameMatchesManifestSchemaPattern(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		prefix   string
+		expected bool
+	}{
+		{name: "request lowercase", fixture: "authz_request.valid.json", prefix: "authz_request.", expected: true},
+		{name: "decision uppercase", fixture: "authz_decision.Valid_CASE-1.json", prefix: "authz_decision.", expected: true},
+		{name: "empty stem", fixture: "authz_request..json", prefix: "authz_request.", expected: false},
+		{name: "wrong prefix", fixture: "authz_decision.valid.json", prefix: "authz_request.", expected: false},
+		{name: "wrong suffix", fixture: "authz_request.valid.txt", prefix: "authz_request.", expected: false},
+		{name: "dot in stem", fixture: "authz_request.valid.case.json", prefix: "authz_request.", expected: false},
+		{name: "slash", fixture: "authz_request../valid.json", prefix: "authz_request.", expected: false},
+		{name: "backslash", fixture: `authz_request..\valid.json`, prefix: "authz_request.", expected: false},
+		{name: "space", fixture: "authz_request.valid case.json", prefix: "authz_request.", expected: false},
+		{name: "unicode", fixture: "authz_request.validé.json", prefix: "authz_request.", expected: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validFixtureName(test.fixture, test.prefix); got != test.expected {
+				t.Fatalf("validFixtureName(%q, %q) = %v, want %v", test.fixture, test.prefix, got, test.expected)
+			}
+		})
+	}
+}
+
 func assertDecisionEqual(t *testing.T, actual, expected Decision) {
 	t.Helper()
 	if actual != expected {
