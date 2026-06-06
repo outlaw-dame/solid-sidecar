@@ -35,6 +35,10 @@ func TestMiddlewarePassesThroughOnAbstain(t *testing.T) {
 		SchemaVersion: SchemaVersion,
 		Decision:      DecisionAbstain,
 		ReasonCode:    ReasonKernelAbstainShadowMode,
+		Audit: AuditFields{
+			RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			PolicyHash:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
 	}}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,12 +117,12 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	evaluator := &fakeEvaluator{decision: Decision{
-		SchemaVersion:  SchemaVersion,
-		RequestID:      "bad request",
-		Decision:       DecisionDeny,
-		ReasonCode:     ReasonInvalidRequest,
-		StatusHint:     httpBadRequestStatus,
-		CacheTTLSeconds: 0,
+		SchemaVersion:    SchemaVersion,
+		RequestID:        "bad request",
+		Decision:         DecisionDeny,
+		ReasonCode:       ReasonInvalidRequest,
+		StatusHint:       httpBadRequestStatus,
+		CacheTTLSeconds:  0,
 		Audit: AuditFields{
 			RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			PolicyHash:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
