@@ -127,7 +127,7 @@ func (s *Server) ListenAndServe() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, s.cfg.Server.ShutdownTimeout)
 	defer cancel()
-	s.logger.Info("solid sidecar shutting down")	
+	s.logger.Info("solid sidecar shutting down")
 	return s.http.Shutdown(shutdownCtx)
 }
 
