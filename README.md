@@ -46,6 +46,9 @@ Implemented:
 - Phase 5.3 gateway evaluator selection for local vs external CLI shadow mode.
 - Phase 5.4 Phase 5 runtime integration documentation and example configuration.
 - Phase 5.5 local shadow fallback for external evaluator failures.
+- Phase 5.6 bounded backoff wrapper for repeated evaluator failures.
+- Phase 5.7 gateway wraps external evaluator mode with backoff.
+- Phase 5.8 documentation for external evaluator backoff behavior.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
 
@@ -62,7 +65,7 @@ See `docs/phase-4-completion.md` for the Phase 4 completion checklist, guarantee
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -151,7 +154,7 @@ authz:
   external_max_output_bytes: 65536
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted. External evaluator calls have a bounded runtime and bounded output, and returned decisions must decode as valid `authz.v1`. If the external evaluator fails or returns invalid output, the sidecar falls back to local shadow evaluation for observability while still passing the request through to CSS.
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and one of the stable `error_reason` labels `request_build_failed`, `evaluation_failed`, or `invalid_decision`, never raw error text, and still passes through to CSS. Authz shadow log messages and field names are centralized constants; warning and decision logs use `EscapedPath()` only, so query strings such as tokens or secrets are not emitted. External evaluator calls have a bounded runtime and bounded output, and returned decisions must decode as valid `authz.v1`. If the external evaluator fails or returns invalid output, the sidecar applies bounded backoff before the next external attempt and falls back to local shadow evaluation for observability while still passing the request through to CSS.
 
 ## Contract fixtures
 
