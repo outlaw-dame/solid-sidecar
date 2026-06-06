@@ -33,6 +33,7 @@ Implemented:
 - Phase 4.21 Go/Rust authz fixture filename regression tests.
 - Phase 4.22 authz middleware evaluator-decision validation before shadow logging.
 - Phase 4.23 authz shadow warning logs include request ID correlation.
+- Phase 4.24 privacy-safe authz shadow warning reason labels.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -118,7 +119,7 @@ authz:
   public_base_url: "https://pod.example"
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and still passes through to CSS.
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning with request ID correlation and a stable `error_reason` label, not raw error text, and still passes through to CSS.
 
 ## Contract fixtures
 
