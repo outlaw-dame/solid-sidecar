@@ -101,11 +101,11 @@ func TestMiddlewarePassesThroughOnShadowDeny(t *testing.T) {
 	}
 	logOutput := logs.String()
 	for _, expected := range []string{
-		`"msg":"authz shadow decision"`,
-		`"request_id":"req-1"`,
-		`"decision":"deny"`,
-		`"reason_code":"invalid_request"`,
-		`"status_hint":400`,
+		`"msg":"` + ShadowLogMessageDecision + `"`,
+		`"` + ShadowLogFieldRequestID + `":"req-1"`,
+		`"` + ShadowLogFieldDecision + `":"deny"`,
+		`"` + ShadowLogFieldReasonCode + `":"invalid_request"`,
+		`"` + ShadowLogFieldStatusHint + `":400`,
 	} {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
@@ -135,7 +135,7 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 	})
 	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
 
-	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card?token=secret-token", nil)
 	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
@@ -150,8 +150,8 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
 	}
 	logOutput := logs.String()
-	assertShadowWarningLog(t, logOutput, "authz evaluation returned invalid decision", ShadowErrorReasonInvalidDecision, "req-1")
-	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "bad request")
+	assertShadowWarningLog(t, logOutput, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision, "req-1", "/card")
+	assertNotContainsAny(t, logOutput, `"msg":"`+ShadowLogMessageDecision+`"`, `"error":`, "bad request", "token=secret-token", "secret-token")
 }
 
 func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
@@ -165,7 +165,7 @@ func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
 	})
 	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
 
-	req := httptest.NewRequest(http.MethodTrace, "http://pod.example/card", nil)
+	req := httptest.NewRequest(http.MethodTrace, "http://pod.example/card?token=secret-token", nil)
 	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
@@ -180,8 +180,8 @@ func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
 	}
 	logOutput := logs.String()
-	assertShadowWarningLog(t, logOutput, "authz request build failed", ShadowErrorReasonRequestBuildFailed, "req-1")
-	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "unsupported authz method")
+	assertShadowWarningLog(t, logOutput, ShadowLogMessageRequestBuildFailed, ShadowErrorReasonRequestBuildFailed, "req-1", "/card")
+	assertNotContainsAny(t, logOutput, `"msg":"`+ShadowLogMessageDecision+`"`, `"error":`, "unsupported authz method", "token=secret-token", "secret-token")
 }
 
 func TestMiddlewarePassesThroughOnEvaluatorError(t *testing.T) {
@@ -195,7 +195,7 @@ func TestMiddlewarePassesThroughOnEvaluatorError(t *testing.T) {
 	})
 	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
 
-	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card?token=secret-token", nil)
 	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
@@ -210,8 +210,8 @@ func TestMiddlewarePassesThroughOnEvaluatorError(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusCreated)
 	}
 	logOutput := logs.String()
-	assertShadowWarningLog(t, logOutput, "authz evaluation failed", ShadowErrorReasonEvaluationFailed, "req-1")
-	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "boom")
+	assertShadowWarningLog(t, logOutput, ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed, "req-1", "/card")
+	assertNotContainsAny(t, logOutput, `"msg":"`+ShadowLogMessageDecision+`"`, `"error":`, "boom", "token=secret-token", "secret-token")
 }
 
 func TestMiddlewareLogsShadowDecisionAuditMetadata(t *testing.T) {
@@ -245,36 +245,29 @@ func TestMiddlewareLogsShadowDecisionAuditMetadata(t *testing.T) {
 
 	logOutput := logs.String()
 	for _, expected := range []string{
-		`"msg":"authz shadow decision"`,
-		`"request_id":"req-1"`,
-		`"decision":"abstain"`,
-		`"reason_code":"kernel_abstain_shadow_mode"`,
-		`"policy_version":"policy-v1"`,
-		`"resource_version":"resource-v1"`,
-		`"request_hash":"` + decision.Audit.RequestHash + `"`,
-		`"policy_hash":"` + decision.Audit.PolicyHash + `"`,
+		`"msg":"` + ShadowLogMessageDecision + `"`,
+		`"` + ShadowLogFieldRequestID + `":"req-1"`,
+		`"` + ShadowLogFieldDecision + `":"abstain"`,
+		`"` + ShadowLogFieldReasonCode + `":"kernel_abstain_shadow_mode"`,
+		`"` + ShadowLogFieldPolicyVersion + `":"policy-v1"`,
+		`"` + ShadowLogFieldResourceVersion + `":"resource-v1"`,
+		`"` + ShadowLogFieldRequestHash + `":"` + decision.Audit.RequestHash + `"`,
+		`"` + ShadowLogFieldPolicyHash + `":"` + decision.Audit.PolicyHash + `"`,
 	} {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
 		}
 	}
-	for _, forbidden := range []string{
-		"secret=value",
-		"https://alice.example/profile#me",
-		"https://app.example/id",
-	} {
-		if strings.Contains(logOutput, forbidden) {
-			t.Fatalf("log output leaked %q: %s", forbidden, logOutput)
-		}
-	}
+	assertNotContainsAny(t, logOutput, "secret=value", "https://alice.example/profile#me", "https://app.example/id")
 }
 
-func assertShadowWarningLog(t *testing.T, logOutput, message, reason, requestID string) {
+func assertShadowWarningLog(t *testing.T, logOutput, message, reason, requestID, path string) {
 	t.Helper()
 	for _, expected := range []string{
 		`"msg":"` + message + `"`,
-		`"request_id":"` + requestID + `"`,
-		`"error_reason":"` + reason + `"`,
+		`"` + ShadowLogFieldRequestID + `":"` + requestID + `"`,
+		`"` + ShadowLogFieldErrorReason + `":"` + reason + `"`,
+		`"` + ShadowLogFieldPath + `":"` + path + `"`,
 	} {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
