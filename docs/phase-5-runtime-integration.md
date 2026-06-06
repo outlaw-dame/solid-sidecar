@@ -15,8 +15,9 @@ Current goals:
 5. Validate every returned decision before normal shadow logging.
 6. Fail open to CSS on evaluator errors because shadow authz is observational only.
 7. Use the local Go shadow evaluator as an observability fallback when `external_cli` fails.
-8. Apply bounded exponential backoff after external evaluator failures so repeated failures do not cause repeated external attempts on every request.
-9. Keep warning logs privacy-safe through stable reason labels rather than raw diagnostic output.
+8. Apply configurable, bounded exponential backoff after external evaluator failures so repeated failures do not cause repeated external attempts on every request.
+9. Classify backoff skips separately with the stable `backoff_active` warning reason.
+10. Keep warning logs privacy-safe through stable reason labels rather than raw diagnostic output.
 
 ## Configuration
 
@@ -31,6 +32,8 @@ authz:
   external_args: ""
   external_timeout: "2s"
   external_max_output_bytes: 65536
+  external_backoff_base_delay: "500ms"
+  external_backoff_max_delay: "30s"
 ```
 
 Supported evaluators:
@@ -39,6 +42,13 @@ Supported evaluators:
 - `external_cli`: use the configured local policy-kernel evaluator boundary.
 
 `external_cli` requires `shadow_enabled: true` and `external_command` to be configured. Arguments are configured separately through `external_args`. When `external_cli` fails or returns invalid output, the sidecar logs a privacy-safe warning, applies bounded backoff before the next external attempt, and attempts local shadow evaluation so contract observability is preserved without blocking CSS.
+
+Backoff bounds:
+
+- default base delay: `500ms`;
+- default max delay: `30s`;
+- configured base delay must be positive and no greater than the configured max delay;
+- configured max delay must be positive and no greater than `5m`.
 
 ## Security and privacy boundaries
 
@@ -51,7 +61,7 @@ The external evaluator boundary is intentionally narrow:
 - output size is bounded by `authz.external_max_output_bytes`;
 - repeated failures are rate-limited by a bounded backoff wrapper;
 - decision JSON is decoded with unknown-field and trailing-data rejection;
-- invalid, oversized, timed-out, or failed evaluator calls remain non-enforcing and pass through to CSS;
+- invalid, oversized, timed-out, failed, or backoff-skipped evaluator calls remain non-enforcing and pass through to CSS;
 - local fallback decisions are also validated before normal shadow logging.
 
 ## Non-goals
@@ -70,7 +80,9 @@ Focused Go checks should cover:
 
 - external evaluator config validation;
 - bounded output behavior;
+- configurable backoff bounds;
 - backoff behavior after evaluator failures;
+- backoff-active warning classification;
 - gateway evaluator selection;
 - local fallback selection for external evaluator mode;
 - existing middleware non-enforcement and privacy-safe logging behavior.
