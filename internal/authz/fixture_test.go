@@ -129,7 +129,17 @@ func validFixtureName(name, prefix string) bool {
 	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".json") {
 		return false
 	}
-	return !strings.ContainsAny(name, `/\\`)
+	stem := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".json")
+	if stem == "" {
+		return false
+	}
+	for _, r := range stem {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func readFixture[T any](t *testing.T, name string) T {
