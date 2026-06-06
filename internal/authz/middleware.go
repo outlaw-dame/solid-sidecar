@@ -3,6 +3,8 @@ package authz
 import (
 	"log/slog"
 	"net/http"
+
+	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
 
 type MiddlewareOptions struct {
@@ -52,6 +54,7 @@ func logShadowError(logger *slog.Logger, r *http.Request, message string, err er
 	logger.Warn(message,
 		"method", r.Method,
 		"path", r.URL.EscapedPath(),
+		"request_id", observability.RequestIDFromContext(r.Context()),
 		"error", err.Error(),
 	)
 }
