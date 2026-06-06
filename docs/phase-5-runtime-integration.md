@@ -4,17 +4,18 @@ Phase 5 begins the runtime integration path for the Rust policy-kernel seam. Thi
 
 ## Goals
 
-Phase 5 adds a controlled local evaluator option so the Go sidecar can send `authz.v1` request JSON to a trusted local policy-kernel command and decode an `authz.v1` decision JSON response.
+Phase 5 adds a controlled evaluator option so the Go sidecar can exchange `authz.v1` request and decision JSON with a trusted local policy-kernel component.
 
 Current goals:
 
 1. Keep local Go shadow evaluation as the default.
 2. Add an explicit `external_cli` evaluator mode for local policy-kernel integration.
-3. Pass command arguments as argv values, not as an interpolated command string.
+3. Keep evaluator arguments separate from the evaluator path.
 4. Apply strict per-request timeout and output-size bounds.
 5. Validate every returned decision before normal shadow logging.
 6. Fail open to CSS on evaluator errors because shadow authz is observational only.
-7. Keep warning logs privacy-safe through stable reason labels rather than raw tool output.
+7. Use the local Go shadow evaluator as an observability fallback when `external_cli` fails.
+8. Keep warning logs privacy-safe through stable reason labels rather than raw diagnostic output.
 
 ## Configuration
 
@@ -34,9 +35,9 @@ authz:
 Supported evaluators:
 
 - `local`: use the Go shadow evaluator. This is the default.
-- `external_cli`: send the request contract to a trusted local command and decode the decision response.
+- `external_cli`: use the configured local policy-kernel evaluator boundary.
 
-`external_cli` requires `shadow_enabled: true` and `external_command` to be configured. Arguments are configured separately through `external_args`.
+`external_cli` requires `shadow_enabled: true` and `external_command` to be configured. Arguments are configured separately through `external_args`. When `external_cli` fails or returns invalid output, the sidecar logs a privacy-safe warning and then attempts local shadow evaluation so contract observability is preserved without blocking CSS.
 
 ## Security and privacy boundaries
 
@@ -48,7 +49,8 @@ The external evaluator boundary is intentionally narrow:
 - runtime is bounded by `authz.external_timeout`;
 - output size is bounded by `authz.external_max_output_bytes`;
 - decision JSON is decoded with unknown-field and trailing-data rejection;
-- invalid, oversized, timed-out, or failed evaluator calls remain non-enforcing and pass through to CSS.
+- invalid, oversized, timed-out, or failed evaluator calls remain non-enforcing and pass through to CSS;
+- local fallback decisions are also validated before normal shadow logging.
 
 ## Non-goals
 
@@ -67,6 +69,7 @@ Focused Go checks should cover:
 - external evaluator config validation;
 - bounded output behavior;
 - gateway evaluator selection;
+- local fallback selection for external evaluator mode;
 - existing middleware non-enforcement and privacy-safe logging behavior.
 
 ## Handoff criteria for later enforcement work
