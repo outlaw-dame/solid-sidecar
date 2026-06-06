@@ -12,9 +12,11 @@ const (
 	ShadowLogMessageRequestBuildFailed  = "authz request build failed"
 	ShadowLogMessageEvaluationFailed    = "authz evaluation failed"
 	ShadowLogMessageInvalidDecision     = "authz evaluation returned invalid decision"
+	ShadowLogMessageFallbackFailed      = "authz fallback evaluation failed"
 	ShadowErrorReasonRequestBuildFailed = "request_build_failed"
 	ShadowErrorReasonEvaluationFailed   = "evaluation_failed"
 	ShadowErrorReasonInvalidDecision    = "invalid_decision"
+	ShadowErrorReasonFallbackFailed     = "fallback_failed"
 )
 
 const (
@@ -33,9 +35,10 @@ const (
 )
 
 type MiddlewareOptions struct {
-	BuildOptions BuildOptions
-	Evaluator    Evaluator
-	Logger       *slog.Logger
+	BuildOptions      BuildOptions
+	Evaluator         Evaluator
+	FallbackEvaluator Evaluator
+	Logger            *slog.Logger
 }
 
 func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
@@ -58,11 +61,19 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		decision, err := evaluator.Evaluate(r.Context(), request)
 		if err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageEvaluationFailed, ShadowErrorReasonEvaluationFailed)
+			if !evaluateFallback(options.Logger, r, request, options.FallbackEvaluator) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
 		if err := ValidateDecision(decision); err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision)
+			if !evaluateFallback(options.Logger, r, request, options.FallbackEvaluator) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -70,6 +81,23 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 		logShadowDecision(options.Logger, r, decision)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func evaluateFallback(logger *slog.Logger, r *http.Request, request Request, evaluator Evaluator) bool {
+	if evaluator == nil {
+		return false
+	}
+	decision, err := evaluator.Evaluate(r.Context(), request)
+	if err != nil {
+		logShadowError(logger, r, ShadowLogMessageFallbackFailed, ShadowErrorReasonFallbackFailed)
+		return false
+	}
+	if err := ValidateDecision(decision); err != nil {
+		logShadowError(logger, r, ShadowLogMessageFallbackFailed, ShadowErrorReasonFallbackFailed)
+		return false
+	}
+	logShadowDecision(logger, r, decision)
+	return true
 }
 
 func logShadowError(logger *slog.Logger, r *http.Request, message string, reason string) {
