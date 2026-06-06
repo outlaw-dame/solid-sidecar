@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/outlaw-dame/solid-sidecar/internal/authz"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
 )
 
@@ -16,6 +17,9 @@ func TestNewAuthzEvaluatorDefaultsToLocalShadowEvaluator(t *testing.T) {
 	if evaluator == nil {
 		t.Fatal("expected evaluator")
 	}
+	if _, ok := evaluator.(authz.ShadowEvaluator); !ok {
+		t.Fatalf("evaluator type = %T, want authz.ShadowEvaluator", evaluator)
+	}
 	if fallback := newAuthzFallbackEvaluator(cfg); fallback != nil {
 		t.Fatal("local evaluator should not configure fallback")
 	}
@@ -24,8 +28,8 @@ func TestNewAuthzEvaluatorDefaultsToLocalShadowEvaluator(t *testing.T) {
 func TestNewAuthzEvaluatorAcceptsExternalCLIConfig(t *testing.T) {
 	cfg := config.Defaults().Authz
 	cfg.Evaluator = config.DefaultAuthzEvaluatorExternalCLI
-	cfg.ExternalCommand = "/usr/local/bin/solid-policy-kernel-eval"
-	cfg.ExternalArgs = []string{"--json"}
+	cfg.ExternalCommand = "solid-policy-kernel-eval"
+	cfg.ExternalArgs = []string{"json"}
 	cfg.ExternalTimeout = 500 * time.Millisecond
 	cfg.ExternalMaxOutputBytes = 32768
 	evaluator, err := newAuthzEvaluator(cfg)
@@ -34,6 +38,9 @@ func TestNewAuthzEvaluatorAcceptsExternalCLIConfig(t *testing.T) {
 	}
 	if evaluator == nil {
 		t.Fatal("expected evaluator")
+	}
+	if _, ok := evaluator.(*authz.BackoffEvaluator); !ok {
+		t.Fatalf("evaluator type = %T, want *authz.BackoffEvaluator", evaluator)
 	}
 	if fallback := newAuthzFallbackEvaluator(cfg); fallback == nil {
 		t.Fatal("external evaluator should configure local fallback")
