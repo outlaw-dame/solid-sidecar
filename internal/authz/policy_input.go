@@ -69,17 +69,20 @@ func normalizeContentType(value string) (string, error) {
 	if len(params) == 0 {
 		return mediaType, nil
 	}
+	canonicalParams := make(map[string]string, len(params))
 	keys := make([]string, 0, len(params))
-	for key := range params {
-		keys = append(keys, strings.ToLower(strings.TrimSpace(key)))
+	for key, value := range params {
+		canonicalKey := strings.ToLower(strings.TrimSpace(key))
+		if canonicalKey == "" || strings.ContainsAny(canonicalKey, "\u0000\r\n") || containsControlRune(value) {
+			return "", fmt.Errorf("%w: invalid policy document content type parameter", ErrInvalidPolicyInput)
+		}
+		canonicalParams[canonicalKey] = value
+		keys = append(keys, canonicalKey)
 	}
 	sort.Strings(keys)
 	parts := []string{mediaType}
 	for _, key := range keys {
-		if key == "" || strings.ContainsAny(key, "\u0000\r\n") {
-			return "", fmt.Errorf("%w: invalid policy document content type parameter", ErrInvalidPolicyInput)
-		}
-		parts = append(parts, key+"="+params[key])
+		parts = append(parts, key+"="+canonicalParams[key])
 	}
 	return strings.Join(parts, ";"), nil
 }
