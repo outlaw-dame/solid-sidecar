@@ -117,12 +117,12 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	evaluator := &fakeEvaluator{decision: Decision{
-		SchemaVersion:    SchemaVersion,
-		RequestID:        "bad request",
-		Decision:         DecisionDeny,
-		ReasonCode:       ReasonInvalidRequest,
-		StatusHint:       httpBadRequestStatus,
-		CacheTTLSeconds:  0,
+		SchemaVersion:   SchemaVersion,
+		RequestID:       "bad request",
+		Decision:        DecisionDeny,
+		ReasonCode:      ReasonInvalidRequest,
+		StatusHint:      httpBadRequestStatus,
+		CacheTTLSeconds: 0,
 		Audit: AuditFields{
 			RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			PolicyHash:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -150,36 +150,23 @@ func TestMiddlewarePassesThroughOnInvalidEvaluatorDecision(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
 	}
 	logOutput := logs.String()
-	for _, expected := range []string{
-		`"msg":"authz evaluation returned invalid decision"`,
-		`"request_id":"req-1"`,
-		`"error_reason":"invalid_decision"`,
-	} {
-		if !strings.Contains(logOutput, expected) {
-			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
-		}
-	}
-	for _, forbidden := range []string{
-		`"msg":"authz shadow decision"`,
-		`"error":`,
-		"bad request",
-	} {
-		if strings.Contains(logOutput, forbidden) {
-			t.Fatalf("invalid evaluator decision log leaked %q: %s", forbidden, logOutput)
-		}
-	}
+	assertShadowWarningLog(t, logOutput, "authz evaluation returned invalid decision", ShadowErrorReasonInvalidDecision, "req-1")
+	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "bad request")
 }
 
 func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	evaluator := &fakeEvaluator{}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusAccepted)
 	})
-	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}}, next)
+	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
 
-	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req := httptest.NewRequest(http.MethodTrace, "http://pod.example/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 
@@ -192,16 +179,21 @@ func TestMiddlewarePassesThroughOnBuildError(t *testing.T) {
 	if res.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusAccepted)
 	}
+	logOutput := logs.String()
+	assertShadowWarningLog(t, logOutput, "authz request build failed", ShadowErrorReasonRequestBuildFailed, "req-1")
+	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "unsupported authz method")
 }
 
 func TestMiddlewarePassesThroughOnEvaluatorError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	evaluator := &fakeEvaluator{err: errors.New("boom")}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusCreated)
 	})
-	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}}, next)
+	handler := Middleware(MiddlewareOptions{Evaluator: evaluator, BuildOptions: BuildOptions{Now: fixedNow}, Logger: logger}, next)
 
 	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
 	req = req.WithContext(observability.WithRequestID(req.Context(), "req-1"))
@@ -217,6 +209,9 @@ func TestMiddlewarePassesThroughOnEvaluatorError(t *testing.T) {
 	if res.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusCreated)
 	}
+	logOutput := logs.String()
+	assertShadowWarningLog(t, logOutput, "authz evaluation failed", ShadowErrorReasonEvaluationFailed, "req-1")
+	assertNotContainsAny(t, logOutput, `"msg":"authz shadow decision"`, `"error":`, "boom")
 }
 
 func TestMiddlewareLogsShadowDecisionAuditMetadata(t *testing.T) {
@@ -230,14 +225,14 @@ func TestMiddlewareLogsShadowDecisionAuditMetadata(t *testing.T) {
 		t.Fatalf("BuildRequest returned error: %v", err)
 	}
 	decision := Decision{
-		SchemaVersion:    SchemaVersion,
-		Decision:         DecisionAbstain,
-		ReasonCode:       ReasonKernelAbstainShadowMode,
-		StatusHint:       0,
-		CacheTTLSeconds:  0,
-		PolicyVersion:    "policy-v1",
-		ResourceVersion:  "resource-v1",
-		Audit:            AuditForRequest(request),
+		SchemaVersion:   SchemaVersion,
+		Decision:        DecisionAbstain,
+		ReasonCode:      ReasonKernelAbstainShadowMode,
+		StatusHint:      0,
+		CacheTTLSeconds: 0,
+		PolicyVersion:   "policy-v1",
+		ResourceVersion: "resource-v1",
+		Audit:           AuditForRequest(request),
 	}
 	evaluator := &fakeEvaluator{decision: decision}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -270,6 +265,28 @@ func TestMiddlewareLogsShadowDecisionAuditMetadata(t *testing.T) {
 	} {
 		if strings.Contains(logOutput, forbidden) {
 			t.Fatalf("log output leaked %q: %s", forbidden, logOutput)
+		}
+	}
+}
+
+func assertShadowWarningLog(t *testing.T, logOutput, message, reason, requestID string) {
+	t.Helper()
+	for _, expected := range []string{
+		`"msg":"` + message + `"`,
+		`"request_id":"` + requestID + `"`,
+		`"error_reason":"` + reason + `"`,
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("expected log output to contain %s; got %s", expected, logOutput)
+		}
+	}
+}
+
+func assertNotContainsAny(t *testing.T, output string, forbidden ...string) {
+	t.Helper()
+	for _, value := range forbidden {
+		if strings.Contains(output, value) {
+			t.Fatalf("log output leaked %q: %s", value, output)
 		}
 	}
 }
