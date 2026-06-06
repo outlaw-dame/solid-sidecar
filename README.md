@@ -31,6 +31,7 @@ Implemented:
 - Phase 4.19 Rust authz fixture directory coverage audit.
 - Phase 4.20 strict authz fixture filename validation aligned with manifest schema.
 - Phase 4.21 Go/Rust authz fixture filename regression tests.
+- Phase 4.22 authz middleware evaluator-decision validation before shadow logging.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, Rust runtime integration, policy enforcement, notification fan-out.
 
@@ -116,7 +117,7 @@ authz:
   public_base_url: "https://pod.example"
 ```
 
-When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision.
+When enabled, the sidecar builds `authz.v1` request contracts and logs privacy-safe shadow decision metadata, including request ID, decision, reason, status hint, cache TTL, resource/policy versions, and deterministic audit hashes. It still passes requests through to CSS even when the shadow evaluator returns a structured deny decision. Evaluator decisions are validated before normal shadow logging; invalid evaluator output is logged as a warning and still passes through to CSS.
 
 ## Contract fixtures
 
