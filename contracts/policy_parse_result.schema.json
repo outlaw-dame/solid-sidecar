@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/policy_parse_result.schema.json",
+  "title": "Solid Sidecar Policy Parse Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "family",
+    "fixture_name",
+    "request_hash",
+    "policy_hash",
+    "expected_decision",
+    "expected_reason_code",
+    "fixture_only"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "policy.parse.result.v1"
+    },
+    "family": {
+      "type": "string",
+      "enum": ["wac", "acp", "sai"]
+    },
+    "fixture_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "request_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "policy_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "expected_decision": {
+      "type": "string",
+      "enum": ["allow", "deny", "abstain"]
+    },
+    "expected_reason_code": {
+      "type": "string",
+      "enum": ["policy_allow", "policy_deny", "kernel_abstain_shadow_mode", "policy_not_loaded"]
+    },
+    "expected_modes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["read", "append", "write", "control"]
+      }
+    },
+    "policy_documents": {
+      "type": "array",
+      "items": {
+        "$ref": "policy_input.schema.json#/$defs/policy_document"
+      }
+    },
+    "fixture_only": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}
