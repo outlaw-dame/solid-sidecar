@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_export_index.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "records", "fixture_only", "index_hash"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "policy.fixture.export_index.v1"},
+    "records": {"type": "array", "minItems": 1, "items": {"$ref": "fixture_export_record.schema.json"}},
+    "fixture_only": {"type": "boolean", "const": true},
+    "index_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
