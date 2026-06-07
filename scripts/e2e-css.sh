@@ -14,8 +14,22 @@ sidecar_url="${SOLID_SIDECAR_E2E_URL:-http://127.0.0.1:8443}"
 css_url="${SOLID_SIDECAR_E2E_CSS_URL:-http://127.0.0.1:3000}"
 wait_seconds="${SOLID_SIDECAR_E2E_WAIT_SECONDS:-90}"
 
+dump_logs() {
+  echo "--- docker compose ps ---" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" ps >&2 || true
+  echo "--- css logs ---" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" logs --no-color css >&2 || true
+  echo "--- sidecar logs ---" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" logs --no-color sidecar >&2 || true
+}
+
 cleanup() {
+  local status="$?"
+  if [[ "${status}" != "0" ]]; then
+    dump_logs
+  fi
   docker compose -p "${project_name}" -f "${compose_file}" down -v --remove-orphans >/dev/null 2>&1 || true
+  return "${status}"
 }
 
 status_code() {
@@ -75,7 +89,7 @@ main() {
   fi
 
   trap cleanup EXIT
-  cleanup
+  docker compose -p "${project_name}" -f "${compose_file}" down -v --remove-orphans >/dev/null 2>&1 || true
 
   docker compose -p "${project_name}" -f "${compose_file}" up --build -d
 
