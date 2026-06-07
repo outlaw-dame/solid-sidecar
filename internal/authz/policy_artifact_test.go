@@ -37,6 +37,17 @@ func TestPolicyFixtureArtifactsBuild(t *testing.T) {
 	if check.Status != PolicyFixtureArtifactCheckOK || check.CheckHash == "" || !check.FixtureOnly {
 		t.Fatal(check)
 	}
+	partial, err := PolicyFixtureArtifactCatalogFromRecords([]PolicyFixtureArtifactRecord{bundleRecord})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, err := PolicyFixtureArtifactCheckForBundle(bundle, manifest, partial, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != PolicyFixtureArtifactCheckFailed {
+		t.Fatal(failed)
+	}
 }
 
 func TestPolicyFixtureArtifactHashesAreDeterministic(t *testing.T) {
