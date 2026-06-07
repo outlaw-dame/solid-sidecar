@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_artifact.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "artifact_hash", "created_at_unix", "keep_reason", "fixture_only", "record_hash"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "policy.fixture.artifact.v1"},
+    "kind": {"type": "string", "enum": ["bundle", "manifest"]},
+    "artifact_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "created_at_unix": {"type": "integer", "minimum": 0},
+    "expires_at_unix": {"type": "integer", "minimum": 0},
+    "keep_reason": {"type": "string", "minLength": 1, "maxLength": 128},
+    "fixture_only": {"type": "boolean", "const": true},
+    "record_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
