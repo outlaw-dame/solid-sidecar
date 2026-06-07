@@ -19,6 +19,7 @@ type PolicyParseResult struct {
 	SchemaVersion   string                `json:"schema_version"`
 	Family          PolicySemanticsFamily `json:"family"`
 	FixtureName     string                `json:"fixture_name"`
+	ResourceURI     string                `json:"resource_uri"`
 	RequestHash     string                `json:"request_hash"`
 	PolicyHash      string                `json:"policy_hash"`
 	ExpectedDecision DecisionValue         `json:"expected_decision"`
@@ -98,6 +99,7 @@ func parseResultForFixtureCase(fixtureCase PolicySemanticsFixtureCase, audit Aud
 		SchemaVersion:   PolicyParseResultSchemaVersion,
 		Family:          fixtureCase.Family,
 		FixtureName:     fixtureCase.Name,
+		ResourceURI:     fixtureCase.Request.ResourceURI,
 		RequestHash:     audit.RequestHash,
 		PolicyHash:      audit.PolicyHash,
 		ExpectedDecision: fixtureCase.ExpectedDecision,
@@ -117,6 +119,9 @@ func ValidatePolicyParseResult(result PolicyParseResult) error {
 	}
 	if !validPolicySemanticsFixtureText(result.FixtureName, 128) {
 		return fmt.Errorf("%w: invalid parse result fixture name", ErrInvalidPolicyParser)
+	}
+	if !validResourceURI(result.ResourceURI) {
+		return fmt.Errorf("%w: invalid parse result resource uri", ErrInvalidPolicyParser)
 	}
 	if !validSHA256Hex(result.RequestHash) || !validSHA256Hex(result.PolicyHash) {
 		return fmt.Errorf("%w: invalid parse result hash", ErrInvalidPolicyParser)
