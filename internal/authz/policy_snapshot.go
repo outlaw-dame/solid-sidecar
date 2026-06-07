@@ -29,13 +29,13 @@ type PolicyFixtureSnapshot struct {
 }
 
 type PolicyFixtureSummary struct {
-	SchemaVersion  string                    `json:"schema_version"`
-	SnapshotCount  int                       `json:"snapshot_count"`
-	FamilyCounts   []PolicyFixtureFamilyCount `json:"family_counts"`
-	DecisionCounts []PolicyFixtureDecisionCount `json:"decision_counts"`
-	ModeCounts     []PolicyFixtureModeCount   `json:"mode_counts"`
-	FixtureOnly    bool                      `json:"fixture_only"`
-	SummaryHash    string                    `json:"summary_hash"`
+	SchemaVersion  string                       `json:"schema_version"`
+	SnapshotCount  int                          `json:"snapshot_count"`
+	FamilyCounts   []PolicyFixtureFamilyCount   `json:"family_counts"`
+	DecisionCounts []PolicyFixtureDecisionCount `json:"result_counts"`
+	ModeCounts     []PolicyFixtureModeCount     `json:"mode_counts"`
+	FixtureOnly    bool                         `json:"fixture_only"`
+	SummaryHash    string                       `json:"rollup_hash"`
 }
 
 type PolicyFixtureFamilyCount struct {
