@@ -191,7 +191,12 @@ func PolicyFixtureArtifactCheckForBundle(bundle PolicyFixtureBundle, manifest Po
 		return PolicyFixtureArtifactCheck{}, fmt.Errorf("%w: negative check time", ErrInvalidPolicyFixtureArtifact)
 	}
 	status := PolicyFixtureArtifactCheckOK
-	if ValidatePolicyFixtureBundle(bundle) != nil || ValidatePolicyFixtureBundleManifest(manifest) != nil || ValidatePolicyFixtureArtifactCatalog(catalog) != nil || manifest.BundleHash != bundle.BundleHash {
+	if ValidatePolicyFixtureBundle(bundle) != nil ||
+		ValidatePolicyFixtureBundleManifest(manifest) != nil ||
+		ValidatePolicyFixtureArtifactCatalog(catalog) != nil ||
+		manifest.BundleHash != bundle.BundleHash ||
+		!policyFixtureArtifactCatalogHas(catalog, PolicyFixtureArtifactBundle, bundle.BundleHash) ||
+		!policyFixtureArtifactCatalogHas(catalog, PolicyFixtureArtifactManifest, manifest.ManifestHash) {
 		status = PolicyFixtureArtifactCheckFailed
 	}
 	check := PolicyFixtureArtifactCheck{
@@ -227,6 +232,19 @@ func ValidatePolicyFixtureArtifactCheck(check PolicyFixtureArtifactCheck) error 
 		return fmt.Errorf("%w: artifact check hash mismatch", ErrInvalidPolicyFixtureArtifact)
 	}
 	return nil
+}
+
+func policyFixtureArtifactCatalogHas(catalog PolicyFixtureArtifactCatalog, kind PolicyFixtureArtifactKind, artifactHash string) bool {
+	records, err := NormalizePolicyFixtureArtifactRecords(catalog.Records)
+	if err != nil {
+		return false
+	}
+	for _, record := range records {
+		if record.Kind == kind && record.ArtifactHash == artifactHash {
+			return true
+		}
+	}
+	return false
 }
 
 func PolicyFixtureArtifactRecordHash(record PolicyFixtureArtifactRecord) string {
