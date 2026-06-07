@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/wac_fixture_facts.schema.json",
+  "title": "Solid Sidecar WAC Fixture Facts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fixture_name",
+    "request_hash",
+    "policy_hash",
+    "target_uri",
+    "modes",
+    "expected_decision",
+    "expected_reason_code",
+    "policy_documents",
+    "fixture_only"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "policy.wac.fixture_facts.v1"
+    },
+    "fixture_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "request_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "policy_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "target_uri": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096,
+      "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["read", "append", "write", "control"]
+      }
+    },
+    "expected_decision": {
+      "type": "string",
+      "enum": ["allow", "deny", "abstain"]
+    },
+    "expected_reason_code": {
+      "type": "string",
+      "enum": ["policy_allow", "policy_deny", "kernel_abstain_shadow_mode", "policy_not_loaded"]
+    },
+    "policy_documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "policy_input.schema.json#/$defs/policy_document"
+      }
+    },
+    "fixture_only": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}
