@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_rollup.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "snapshot_count", "family_counts", "result_counts", "mode_counts", "fixture_only", "rollup_hash"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "policy.fixture.summary.v1"},
+    "snapshot_count": {"type": "integer", "minimum": 0},
+    "family_counts": {"type": "array"},
+    "result_counts": {"type": "array"},
+    "mode_counts": {"type": "array"},
+    "fixture_only": {"type": "boolean", "const": true},
+    "rollup_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
