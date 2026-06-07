@@ -52,6 +52,9 @@ func TestInMemoryPolicySourceLoaderRejectsUnsafeInput(t *testing.T) {
 	if err := loader.Store(validSource, InMemoryPolicySourceEntry{}); !errors.Is(err, ErrInvalidPolicyLoad) {
 		t.Fatalf("empty content error = %v, want ErrInvalidPolicyLoad", err)
 	}
+	if err := loader.Store(validSource, InMemoryPolicySourceEntry{Content: []byte("policy"), LoadedAtUnix: -1}); !errors.Is(err, ErrInvalidPolicyLoad) {
+		t.Fatalf("negative timestamp error = %v, want ErrInvalidPolicyLoad", err)
+	}
 	if _, err := loader.LoadPolicySource(context.Background(), validSource); !errors.Is(err, ErrInvalidPolicyLoad) {
 		t.Fatalf("missing source error = %v, want ErrInvalidPolicyLoad", err)
 	}
@@ -141,5 +144,11 @@ func TestNormalizePolicyCacheRecordsDeduplicatesAndRejectsConflicts(t *testing.T
 	conflict.Document.SHA256 = policyHashB
 	if _, err := NormalizePolicyCacheRecords([]PolicySourceCacheRecord{recordA, conflict}, 21); !errors.Is(err, ErrInvalidPolicyLoad) {
 		t.Fatalf("conflict error = %v, want ErrInvalidPolicyLoad", err)
+	}
+
+	mismatch := recordA
+	mismatch.Document.URI = "https://pod.example/policies/other.acl"
+	if _, err := NormalizePolicyCacheRecords([]PolicySourceCacheRecord{mismatch}, 21); !errors.Is(err, ErrInvalidPolicyLoad) {
+		t.Fatalf("mismatch error = %v, want ErrInvalidPolicyLoad", err)
 	}
 }
