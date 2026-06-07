@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  cd "${script_dir}/.." && pwd
+}
+
+root="$(repo_root)"
+compose_file="${root}/deploy/compose/docker-compose.dev.yml"
+project_name="solid-sidecar-e2e"
+sidecar_url="${SOLID_SIDECAR_E2E_URL:-http://127.0.0.1:8443}"
+css_url="${SOLID_SIDECAR_E2E_CSS_URL:-http://127.0.0.1:3000}"
+wait_seconds="${SOLID_SIDECAR_E2E_WAIT_SECONDS:-90}"
+
+cleanup() {
+  docker compose -p "${project_name}" -f "${compose_file}" down -v --remove-orphans >/dev/null 2>&1 || true
+}
+
+status_code() {
+  local method="$1"
+  local url="$2"
+  curl -sS -o /dev/null -w '%{http_code}' -X "${method}" "${url}"
+}
+
+assert_status() {
+  local method="$1"
+  local path="$2"
+  local expected="$3"
+  local actual
+  actual="$(status_code "${method}" "${sidecar_url}${path}")"
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "expected ${method} ${path} to return ${expected}, got ${actual}" >&2
+    return 1
+  fi
+}
+
+assert_sidecar_matches_css_status() {
+  local method="$1"
+  local path="$2"
+  local direct proxied
+  direct="$(status_code "${method}" "${css_url}${path}")"
+  proxied="$(status_code "${method}" "${sidecar_url}${path}")"
+  if [[ "${direct}" != "${proxied}" ]]; then
+    echo "expected ${method} ${path} sidecar status ${proxied} to match CSS status ${direct}" >&2
+    return 1
+  fi
+}
+
+wait_for() {
+  local url="$1"
+  local deadline=$((SECONDS + wait_seconds))
+  until curl -fsS "${url}" >/dev/null; do
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for ${url}" >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+main() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker is required for CSS e2e tests" >&2
+    return 2
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "docker compose is required for CSS e2e tests" >&2
+    return 2
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required for CSS e2e tests" >&2
+    return 2
+  fi
+
+  trap cleanup EXIT
+  cleanup
+
+  docker compose -p "${project_name}" -f "${compose_file}" up --build -d
+
+  wait_for "${sidecar_url}/healthz"
+  wait_for "${sidecar_url}/readyz"
+
+  assert_status GET /healthz 200
+  assert_status GET /readyz 200
+
+  assert_sidecar_matches_css_status GET /
+  assert_sidecar_matches_css_status HEAD /
+  assert_sidecar_matches_css_status OPTIONS /
+
+  malformed_status="$(status_code GET '/%2e%2e/')"
+  if [[ "${malformed_status}" != "400" && "${malformed_status}" != "403" ]]; then
+    echo "expected encoded dot-segment path to be rejected, got ${malformed_status}" >&2
+    return 1
+  fi
+
+  echo "CSS-through-sidecar e2e checks passed"
+}
+
+main "$@"
