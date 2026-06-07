@@ -114,7 +114,7 @@ func TestValidatePolicyParseResultRejectsInvalidInput(t *testing.T) {
 	}{
 		{name: "bad schema", result: withParseSchema(valid, "bad")},
 		{name: "bad family", result: withParseFamily(valid, "bad")},
-		{name: "bad reason", result: withParseReason(valid, ReasonPolicyDeny)},
+		{name: "bad reason", result: withParseReason(valid, mismatchedReasonForDecision(valid.ExpectedDecision))},
 		{name: "bad hash", result: withParseRequestHash(valid, "bad")},
 		{name: "not fixture only", result: withParseFixtureOnly(valid, false)},
 	} {
@@ -125,6 +125,13 @@ func TestValidatePolicyParseResultRejectsInvalidInput(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mismatchedReasonForDecision(decision DecisionValue) ReasonCode {
+	if decision == DecisionDeny {
+		return ReasonPolicyAllow
+	}
+	return ReasonPolicyDeny
 }
 
 func readPolicySemanticsSuiteFixture(t *testing.T) PolicySemanticsFixtureSuite {
