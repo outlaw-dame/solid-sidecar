@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/policy_cache.schema.json",
+  "title": "Solid Sidecar Policy Source Cache Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["records"],
+  "properties": {
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/cache_record"
+      }
+    }
+  },
+  "$defs": {
+    "cache_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_key", "source", "document", "loaded_at_unix", "state", "version"],
+      "properties": {
+        "cache_key": {
+          "type": "string",
+          "pattern": "^policy-source:[a-f0-9]{64}$"
+        },
+        "source": {
+          "$ref": "policy_source.schema.json#/$defs/policy_source"
+        },
+        "document": {
+          "$ref": "policy_input.schema.json#/$defs/policy_document"
+        },
+        "loaded_at_unix": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_unix": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": "string",
+          "enum": ["fresh", "stale", "expired"]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
+      }
+    }
+  }
+}
