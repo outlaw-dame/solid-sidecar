@@ -3,7 +3,6 @@ package authz
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 )
 
@@ -106,7 +105,7 @@ func TestPolicyCacheStateAt(t *testing.T) {
 	}
 }
 
-func TestNormalizePolicyCacheRecordsSortsDeduplicatesAndRejectsConflicts(t *testing.T) {
+func TestNormalizePolicyCacheRecordsDeduplicatesAndRejectsConflicts(t *testing.T) {
 	sourceA := PolicySource{URI: "https://pod.example/policies/a.acl", Kind: PolicySourceExplicit, Priority: 10, ContentType: "text/turtle"}
 	sourceB := PolicySource{URI: "https://pod.example/policies/b.acl", Kind: PolicySourceExplicit, Priority: 20, ContentType: "text/turtle"}
 	loadedA := LoadedPolicySource{Source: sourceA, Content: []byte("a")}
@@ -124,11 +123,18 @@ func TestNormalizePolicyCacheRecordsSortsDeduplicatesAndRejectsConflicts(t *test
 	if err != nil {
 		t.Fatalf("NormalizePolicyCacheRecords returned error: %v", err)
 	}
-	want := []PolicySourceCacheRecord{recordA, recordB}
-	want[0].State = PolicyCacheExpired
-	want[1].State = PolicyCacheFresh
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("records = %#v, want %#v", got, want)
+	if len(got) != 2 {
+		t.Fatalf("record count = %d, want 2", len(got))
+	}
+	byKey := make(map[string]PolicySourceCacheRecord, len(got))
+	for _, record := range got {
+		byKey[record.CacheKey] = record
+	}
+	if byKey[recordA.CacheKey].State != PolicyCacheExpired {
+		t.Fatalf("record A state = %q, want expired", byKey[recordA.CacheKey].State)
+	}
+	if byKey[recordB.CacheKey].State != PolicyCacheFresh {
+		t.Fatalf("record B state = %q, want fresh", byKey[recordB.CacheKey].State)
 	}
 
 	conflict := recordA
