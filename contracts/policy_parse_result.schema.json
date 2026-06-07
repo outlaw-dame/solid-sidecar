@@ -8,6 +8,7 @@
     "schema_version",
     "family",
     "fixture_name",
+    "resource_uri",
     "request_hash",
     "policy_hash",
     "expected_decision",
@@ -28,6 +29,12 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "resource_uri": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096,
+      "pattern": "^https?://[^\\\\#\\u0000-\\u001F\\u007F]+$"
     },
     "request_hash": {
       "type": "string",
