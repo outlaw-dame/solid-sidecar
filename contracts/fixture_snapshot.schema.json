@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_snapshot.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "family", "fixture_name", "request_hash", "policy_hash", "target_uri", "modes", "expected_decision", "expected_reason_code", "document_count", "fixture_only", "snapshot_hash"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "policy.fixture.snapshot.v1"},
+    "family": {"type": "string", "enum": ["wac", "acp", "sai"]},
+    "fixture_name": {"type": "string", "minLength": 1, "maxLength": 128},
+    "request_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "policy_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "target_uri": {"type": "string", "format": "uri", "maxLength": 4096},
+    "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["read", "append", "write", "control"]}},
+    "expected_decision": {"type": "string", "enum": ["allow", "deny", "abstain"]},
+    "expected_reason_code": {"type": "string", "enum": ["policy_allow", "policy_deny", "kernel_abstain_shadow_mode", "policy_not_loaded"]},
+    "document_count": {"type": "integer", "minimum": 1},
+    "fixture_only": {"type": "boolean", "const": true},
+    "snapshot_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
