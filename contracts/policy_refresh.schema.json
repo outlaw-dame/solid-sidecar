@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/policy_refresh.schema.json",
+  "title": "Solid Sidecar Policy Refresh Plan Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_version", "created_at_unix", "items"],
+  "properties": {
+    "plan_version": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "created_at_unix": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/refresh_item"
+      }
+    }
+  },
+  "$defs": {
+    "refresh_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "cache_key", "action", "reason"],
+      "properties": {
+        "source": {
+          "$ref": "policy_source.schema.json#/$defs/policy_source"
+        },
+        "cache_key": {
+          "type": "string",
+          "pattern": "^policy-source:[a-f0-9]{64}$"
+        },
+        "action": {
+          "type": "string",
+          "enum": ["refresh_now", "refresh_later", "skip"]
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["missing", "expired", "stale", "fresh", "no_source"]
+        },
+        "next_check_at_unix": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "record_state": {
+          "type": "string",
+          "enum": ["fresh", "stale", "expired"]
+        },
+        "record_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        }
+      }
+    }
+  }
+}
