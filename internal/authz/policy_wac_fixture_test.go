@@ -32,8 +32,8 @@ func TestWACFixtureFactsFromParseResult(t *testing.T) {
 	if facts.SchemaVersion != WACFixtureFactsSchemaVersion || !facts.FixtureOnly {
 		t.Fatalf("unexpected facts metadata: %#v", facts)
 	}
-	if facts.TargetURI != facts.PolicyDocuments[0].URI {
-		t.Fatalf("target = %q, first policy document = %q", facts.TargetURI, facts.PolicyDocuments[0].URI)
+	if facts.TargetURI != wacResult.ResourceURI {
+		t.Fatalf("target = %q, want resource URI %q", facts.TargetURI, wacResult.ResourceURI)
 	}
 	if len(facts.Modes) != 1 || facts.Modes[0] != AccessModeRead {
 		t.Fatalf("modes = %#v, want read", facts.Modes)
@@ -68,6 +68,9 @@ func TestParseWACFixtureFacts(t *testing.T) {
 		}
 		if fixtureCase.Family == PolicySemanticsWAC && !ok {
 			t.Fatalf("expected WAC fixture match for %q", fixtureCase.Name)
+		}
+		if fixtureCase.Family == PolicySemanticsWAC && facts.TargetURI != fixtureCase.Request.ResourceURI {
+			t.Fatalf("facts target = %q, want %q", facts.TargetURI, fixtureCase.Request.ResourceURI)
 		}
 		if fixtureCase.Family != PolicySemanticsWAC && ok {
 			t.Fatalf("unexpected WAC fixture facts for %q: %#v", fixtureCase.Name, facts)
