@@ -1,18 +1,18 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, and reverse proxying to CSS.
 
-CSS remains the Solid protocol and access-control authority. Fixture and artifact phases through Phase 22 are metadata/test scaffolding only and do not change runtime evaluator behavior or enforce access decisions.
+CSS remains the Solid protocol and access-control authority. Fixture and artifact phases through Phase 25 are metadata/test scaffolding only and do not change runtime evaluator behavior or enforce access decisions.
 
 ## Current status
 
-Phase 22 is complete. The next safe boundary is Phase 23: fixture artifact export metadata.
+Phase 25 is complete. The next safe boundary is Phase 26.
 
 Recent completed phases:
 
-- Phase 20: fixture artifact records with retention metadata.
-- Phase 21: fixture artifact catalogs with deterministic hashes.
-- Phase 22: fixture artifact checks with catalog-membership verification.
+- Phase 23: fixture export records with deterministic hashes.
+- Phase 24: fixture export indexes with deterministic ordering.
+- Phase 25: fixture export checks with deterministic review metadata.
 
 Completed phase notes live under `docs/phase-*-completion.md`.
 
@@ -27,7 +27,7 @@ Completed phase notes live under `docs/phase-*-completion.md`.
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, metrics, audit hashing, and non-enforcing middleware.
+- `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
 - `docs/`: architecture and phase notes.
