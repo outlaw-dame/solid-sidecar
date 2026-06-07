@@ -1,10 +1,10 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, deterministic policy-source metadata helpers, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, Phase 7, and Phase 8 are complete. CSS remains the Solid protocol and authorization authority.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, deterministic policy-source metadata helpers, policy-source loader/cache metadata helpers, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, and Phase 9 are complete. CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
 
-Phase 8 is complete. The next safe boundary is Phase 9: source loading adapters and cache metadata without enforcement.
+Phase 9 is complete. The next safe boundary is Phase 10: cache adapter contracts and refresh planning without enforcement.
 
 Implemented:
 
@@ -68,10 +68,16 @@ Implemented:
 - Phase 8.4 deterministic source discovery from explicit, link-header, and derived hints.
 - Phase 8.5 relation-filtered link source parsing with unsafe target rejection.
 - Phase 8.6 Phase 8 completion documentation.
+- Phase 9.1 policy source loader interface and in-memory adapter.
+- Phase 9.2 copy-safe source loading with context cancellation support.
+- Phase 9.3 deterministic policy source cache keys and cache versions.
+- Phase 9.4 cache metadata records with fresh/stale/expired state.
+- Phase 9.5 cache metadata schema and regression tests.
+- Phase 9.6 Phase 9 completion documentation.
 
 Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
 
-See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-completion.md`, `docs/phase-7.md`, and `docs/phase-8-completion.md` for completed-phase guarantees, non-goals, and handoff boundaries.
+See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-completion.md`, `docs/phase-7.md`, `docs/phase-8-completion.md`, and `docs/phase-9-completion.md` for completed-phase guarantees, non-goals, and handoff boundaries.
 
 ## Project structure
 
@@ -84,7 +90,7 @@ See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-co
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, policy-source metadata normalization, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, policy-source metadata normalization, source loading/cache metadata helpers, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -156,7 +162,7 @@ Authz shadow metrics are aggregate counters only. They include event type, decis
 
 Policy input metadata can be supplied to `BuildRequest` through `BuildOptions`. The builder normalizes policy document descriptors and resource metadata, derives a stable policy version when policy documents are present, and carries the result through the existing `authz.v1` request contract. This remains metadata preparation only and does not change shadow-mode decision behavior.
 
-Phase 8 source metadata helpers normalize source descriptors, derive stable source-set versions, discover source hints from explicit inputs/link headers/derived URI tails, and convert already-available bounded source content into policy document descriptors. This is metadata preparation only and does not change shadow-mode decision behavior.
+Phase 8 and 9 source metadata helpers normalize source descriptors, discover source hints, convert already-available bounded source content into policy document descriptors, and derive cache metadata records with stable keys, versions, and fresh/stale/expired state. This remains metadata preparation only and does not change shadow-mode decision behavior.
 
 ## Contract fixtures
 
