@@ -9,6 +9,8 @@ import (
 	"sync"
 )
 
+const maxPolicyCacheVersionLength = 256
+
 var ErrInvalidPolicyLoad = errors.New("invalid authz policy load input")
 
 type PolicyCacheState string
@@ -134,7 +136,7 @@ func normalizeInMemoryPolicySourceEntry(source PolicySource, entry InMemoryPolic
 		return InMemoryPolicySourceEntry{}, fmt.Errorf("%w: invalid policy source content type", ErrInvalidPolicyLoad)
 	}
 	version := strings.TrimSpace(entry.Version)
-	if version != "" && containsControlRune(version) {
+	if !validPolicyCacheVersion(version, true) {
 		return InMemoryPolicySourceEntry{}, fmt.Errorf("%w: invalid policy source cache version", ErrInvalidPolicyLoad)
 	}
 	return InMemoryPolicySourceEntry{
@@ -178,6 +180,9 @@ func PolicyCacheRecordForLoadedSource(loaded LoadedPolicySource, loadedAtUnix in
 	version = strings.TrimSpace(version)
 	if version == "" {
 		version = PolicySourceCacheVersion(source, documents[0], loadedAtUnix, expiresAtUnix)
+	}
+	if !validPolicyCacheVersion(version, false) {
+		return PolicySourceCacheRecord{}, fmt.Errorf("%w: invalid policy source cache version", ErrInvalidPolicyLoad)
 	}
 	return PolicySourceCacheRecord{
 		CacheKey:      PolicySourceCacheKey(source),
@@ -283,7 +288,7 @@ func normalizePolicyCacheRecord(record PolicySourceCacheRecord, nowUnix int64) (
 	if version == "" {
 		version = PolicySourceCacheVersion(source, documents[0], record.LoadedAtUnix, record.ExpiresAtUnix)
 	}
-	if version == "" || containsControlRune(version) {
+	if !validPolicyCacheVersion(version, false) {
 		return PolicySourceCacheRecord{}, fmt.Errorf("%w: invalid policy cache version", ErrInvalidPolicyLoad)
 	}
 	return PolicySourceCacheRecord{
@@ -295,6 +300,13 @@ func normalizePolicyCacheRecord(record PolicySourceCacheRecord, nowUnix int64) (
 		State:         PolicyCacheStateAt(record.LoadedAtUnix, record.ExpiresAtUnix, nowUnix),
 		Version:       version,
 	}, nil
+}
+
+func validPolicyCacheVersion(version string, allowEmpty bool) bool {
+	if version == "" {
+		return allowEmpty
+	}
+	return len(version) <= maxPolicyCacheVersionLength && !containsControlRune(version)
 }
 
 func copyBytes(input []byte) []byte {
