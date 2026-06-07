@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_marker_record.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_hash", "ledger_hash", "review_hash", "label", "created_at_unix", "fixture_only", "marker_hash"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "release_hash": {"type": "string"},
+    "ledger_hash": {"type": "string"},
+    "review_hash": {"type": "string"},
+    "label": {"type": "string"},
+    "created_at_unix": {"type": "integer"},
+    "fixture_only": {"type": "boolean"},
+    "marker_hash": {"type": "string"}
+  }
+}
