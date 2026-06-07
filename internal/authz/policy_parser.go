@@ -128,10 +128,10 @@ func ValidatePolicyParseResult(result PolicyParseResult) error {
 		return fmt.Errorf("%w: parse result reason does not match decision", ErrInvalidPolicyParser)
 	}
 	if _, err := normalizePolicySemanticsModes(result.ExpectedModes); err != nil {
-		return err
+		return fmt.Errorf("%w: invalid parse result expected modes", ErrInvalidPolicyParser)
 	}
 	if _, err := NormalizePolicyDocuments(result.PolicyDocuments); err != nil {
-		return err
+		return fmt.Errorf("%w: invalid parse result policy documents", ErrInvalidPolicyParser)
 	}
 	if !result.FixtureOnly {
 		return fmt.Errorf("%w: parse result must be fixture-only", ErrInvalidPolicyParser)
