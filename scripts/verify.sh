@@ -3,9 +3,15 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/verify.sh [go|rust|all]
+Usage: scripts/verify.sh [go|rust|e2e|all]
 
 Runs the same verification commands used by CI.
+
+Targets:
+  go    Run Go formatting, vet, tests, race tests, and sidecar build.
+  rust  Run Rust formatting, workspace tests, and clippy.
+  e2e   Run Docker-backed CSS-through-sidecar e2e checks.
+  all   Run go and rust targets. The e2e target is intentionally explicit.
 USAGE
 }
 
@@ -44,6 +50,14 @@ run_rust() {
   cargo clippy --workspace --lib -- -D warnings
 }
 
+run_e2e() {
+  local root
+  root="$(repo_root)"
+  cd "${root}"
+
+  bash scripts/e2e-css.sh
+}
+
 main() {
   local target
   target="${1:-all}"
@@ -53,6 +67,9 @@ main() {
       ;;
     rust)
       run_rust
+      ;;
+    e2e)
+      run_e2e
       ;;
     all)
       run_go
