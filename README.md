@@ -1,10 +1,10 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, deterministic policy-source metadata helpers, policy-source loader/cache metadata helpers, cache-store adapter contracts, refresh-plan metadata, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, Phase 9, and Phase 10 are complete. CSS remains the Solid protocol and authorization authority.
+Go/Rust sidecar for Community Solid Server. The current implementation is a Go sidecar that runs in front of CSS and provides a tested gateway shell: config validation, health/readiness endpoints, request IDs, structured logs, body-size limits, request-target validation, optional Origin enforcement, fixed-window rate limiting, DPoP/OAuth auth preflight, optional authorization shadow observation, optional external authz evaluator integration, privacy-safe authz shadow metrics, policy-input metadata preparation, deterministic policy-source metadata helpers, policy-source loader/cache metadata helpers, cache-store adapter contracts, refresh-plan metadata, policy semantics fixture contracts, and reverse proxying to CSS. Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, Phase 9, Phase 10, and Phase 11 are complete. CSS remains the Solid protocol and authorization authority.
 
 ## Current phase
 
-Phase 10 is complete. The next safe boundary is Phase 11: policy semantics fixtures without runtime enforcement.
+Phase 11 is complete. The next safe boundary is Phase 12: semantic parser scaffolds in shadow-only fixture mode.
 
 Implemented:
 
@@ -80,10 +80,16 @@ Implemented:
 - Phase 10.4 refresh classification for missing, expired, stale, soon-expiring, and fresh records.
 - Phase 10.5 refresh-plan schema and regression tests.
 - Phase 10.6 Phase 10 completion documentation.
+- Phase 11.1 policy semantics fixture suite types and normalizer.
+- Phase 11.2 WAC, ACP, and SAI fixture family validation.
+- Phase 11.3 expected decision, reason-code, and mode validation.
+- Phase 11.4 shared policy semantics fixture manifest and JSON schema.
+- Phase 11.5 Go and Rust fixture-shape regression tests.
+- Phase 11.6 Phase 11 completion documentation.
 
-Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, WAC/ACP/SAI policy evaluation, RDF parsing/canonicalization, production policy enforcement, decision caching, notification fan-out.
+Not implemented yet: authoritative Solid-OIDC issuer/WebID validation, policy parsing, RDF canonicalization, production policy enforcement, decision caching, notification fan-out.
 
-See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-completion.md`, `docs/phase-7.md`, `docs/phase-8-completion.md`, `docs/phase-9-completion.md`, and `docs/phase-10-completion.md` for completed-phase guarantees, non-goals, and handoff boundaries.
+See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-completion.md`, `docs/phase-7.md`, `docs/phase-8-completion.md`, `docs/phase-9-completion.md`, `docs/phase-10-completion.md`, and `docs/phase-11-completion.md` for completed-phase guarantees, non-goals, and handoff boundaries.
 
 ## Project structure
 
@@ -96,7 +102,7 @@ See `docs/phase-4-completion.md`, `docs/phase-5-completion.md`, `docs/phase-6-co
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, policy-source metadata normalization, source loading/cache metadata helpers, cache-store adapter contracts, refresh-plan metadata, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
+- `internal/authz/`: authorization-contract request builder, codecs, validators, local shadow evaluator, optional external CLI evaluator, evaluator backoff wrapper, policy-input metadata normalization, policy-source metadata normalization, source loading/cache metadata helpers, cache-store adapter contracts, refresh-plan metadata, policy semantics fixture contracts, privacy-safe aggregate metrics, deterministic audit hashing, privacy-safe shadow observability, structured invalid-contract decisions, and non-enforcing middleware scaffold.
 - `internal/audit/`: redacted rejection audit helpers.
 - `contracts/`: JSON schemas and fixtures for sidecar/kernel interfaces.
 - `rust/`: Rust workspace for deterministic internal kernels.
@@ -170,9 +176,11 @@ Policy input metadata can be supplied to `BuildRequest` through `BuildOptions`. 
 
 Phase 8 through 10 source metadata helpers normalize source descriptors, discover source hints, convert already-available bounded source content into policy document descriptors, derive cache metadata records with stable keys, and build deterministic refresh plans. This remains metadata preparation only and does not change shadow-mode decision behavior.
 
+Phase 11 policy semantics fixtures define expected future outcomes for WAC, ACP, and SAI families as shared fixture data. They validate shape and vocabulary only; they do not change runtime evaluator behavior.
+
 ## Contract fixtures
 
-Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read `authz_manifest.json` to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that every manifest case produces the expected shadow decision. `contracts/authz_fixture_manifest.schema.json` defines the manifest contract and fixture filename patterns. Invalid fixtures lock structured deny behavior for unsupported schema versions, malformed request IDs, unsupported methods, missing modes, and unsafe resource URIs. `authz_request.with_policy_inputs.json` and `authz_decision.with_policy_inputs.json` lock the metadata-bearing policy input shape and deterministic hashes while still returning shadow-mode abstain. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid contract while retaining privacy-safe correlation. Go and Rust tests audit the fixture directory so duplicate manifest file references, invalid fixture names, and orphan `authz_request.*.json` or `authz_decision.*.json` files fail fast. Manifest fixture stems must match `[A-Za-z0-9_-]+`, matching the JSON schema exactly, and both Go and Rust include positive/negative regression cases for this filename boundary. Rust tests also reject unknown manifest fields and mismatched valid/invalid decision shape. Request and decision schemas explicitly require visible-ASCII request IDs; request schemas also constrain resource/policy URIs to HTTP(S) without fragments, backslashes, or control characters. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing; shadow deny decisions are observable but do not block CSS. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
+Shared Go/Rust authorization fixtures live under `contracts/fixtures/`. The Go sidecar and Rust policy kernel both read `authz_manifest.json` to keep `authz.v1` request, decision, and audit-hash behavior aligned. Go and Rust tests assert that every manifest case produces the expected shadow decision. `contracts/authz_fixture_manifest.schema.json` defines the manifest contract and fixture filename patterns. Invalid fixtures lock structured deny behavior for unsupported schema versions, malformed request IDs, unsupported methods, missing modes, and unsafe resource URIs. `authz_request.with_policy_inputs.json` and `authz_decision.with_policy_inputs.json` lock the metadata-bearing policy input shape and deterministic hashes while still returning shadow-mode abstain. `policy_semantics_manifest.json` locks Phase 11 fixture-only expected outcome shape for WAC, ACP, and SAI families. Malformed request IDs are replaced in decisions with `invalid-request-<request_hash_prefix>` so the decision remains a valid contract while retaining privacy-safe correlation. Go and Rust tests audit the fixture directory so duplicate manifest file references, invalid fixture names, and orphan `authz_request.*.json` or `authz_decision.*.json` files fail fast. Manifest fixture stems must match `[A-Za-z0-9_-]+`, matching the JSON schema exactly, and both Go and Rust include positive/negative regression cases for this filename boundary. Rust tests also reject unknown manifest fields and mismatched valid/invalid decision shape. Request and decision schemas explicitly require visible-ASCII request IDs; request schemas also constrain resource/policy URIs to HTTP(S) without fragments, backslashes, or control characters. The Go shadow evaluator mirrors Rust-kernel invalid-contract outcomes while the HTTP middleware remains non-enforcing; shadow deny decisions are observable but do not block CSS. The Go codec rejects unknown JSON fields and trailing JSON; Rust contract types reject unknown fields through Serde.
 
 ## Test
 
