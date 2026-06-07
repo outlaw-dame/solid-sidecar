@@ -1,20 +1,20 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, fixture release metadata, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, fixture release metadata, marker metadata, and reverse proxying to CSS.
 
-CSS remains the Solid protocol and access-control authority. Fixture and artifact phases through Phase 28 are metadata/test scaffolding only and do not change runtime evaluator behavior or enforce access decisions.
+CSS remains the Solid protocol and access-control authority. Fixture and artifact phases through Phase 31 are metadata/test scaffolding only and do not change runtime evaluator behavior or enforce access decisions.
 
 ## Current status
 
-Phase 28 is complete. The next safe boundary is Phase 29.
+Phase 31 is complete. The next safe boundary is Phase 32.
 
 Recent completed phases:
 
-- Phase 26: fixture release records with consistency checks.
-- Phase 27: fixture release ledgers with deterministic ordering.
-- Phase 28: fixture release reviews with deterministic metadata.
+- Phase 29: fixture marker records with release consistency checks.
+- Phase 30: fixture marker logs with deterministic ordering.
+- Phase 31: fixture marker reviews with deterministic metadata.
 
-Completed phase notes live under `docs/phase-*-completion.md`.
+Completed phase notes live under `docs/phase-*-completion.md` where tool filtering allowed the doc to be created.
 
 ## Project structure
 
@@ -27,7 +27,7 @@ Completed phase notes live under `docs/phase-*-completion.md`.
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
 - `internal/authn/`: OAuth/DPoP request preflight and replay cache.
-- `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, metrics, audit hashing, and non-enforcing middleware.
+- `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
 - `docs/`: architecture and phase notes.
