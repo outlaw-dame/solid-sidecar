@@ -1,0 +1,74 @@
+{
+  "schema_version": "policy.semantics.fixtures.v1",
+  "cases": [
+    {
+      "name": "wac read allow fixture",
+      "family": "wac",
+      "description": "Metadata-only fixture for a future read allow outcome.",
+      "request": {
+        "schema_version": "authz.v1",
+        "request_id": "sem-wac-read-allow",
+        "method": "GET",
+        "resource_uri": "https://pod.example/alice/card",
+        "requested_modes": ["read"],
+        "now_unix": 1700000000
+      },
+      "policy_documents": [
+        {
+          "uri": "https://pod.example/policies/wac-read.acl",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "content_type": "text/turtle"
+        }
+      ],
+      "expected_decision": "allow",
+      "expected_reason_code": "policy_allow",
+      "expected_modes": ["read"]
+    },
+    {
+      "name": "acp write deny fixture",
+      "family": "acp",
+      "description": "Metadata-only fixture for a future write deny outcome.",
+      "request": {
+        "schema_version": "authz.v1",
+        "request_id": "sem-acp-write-deny",
+        "method": "PATCH",
+        "resource_uri": "https://pod.example/alice/card",
+        "requested_modes": ["write"],
+        "now_unix": 1700000000
+      },
+      "policy_documents": [
+        {
+          "uri": "https://pod.example/policies/acp-write.jsonld",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "content_type": "application/ld+json"
+        }
+      ],
+      "expected_decision": "deny",
+      "expected_reason_code": "policy_deny",
+      "expected_modes": ["write"]
+    },
+    {
+      "name": "sai append abstain fixture",
+      "family": "sai",
+      "description": "Metadata-only fixture for a future append abstain outcome.",
+      "request": {
+        "schema_version": "authz.v1",
+        "request_id": "sem-sai-append-abstain",
+        "method": "POST",
+        "resource_uri": "https://pod.example/alice/inbox",
+        "requested_modes": ["append"],
+        "now_unix": 1700000000
+      },
+      "policy_documents": [
+        {
+          "uri": "https://pod.example/policies/sai-append.ttl",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "content_type": "text/turtle"
+        }
+      ],
+      "expected_decision": "abstain",
+      "expected_reason_code": "kernel_abstain_shadow_mode",
+      "expected_modes": ["append"]
+    }
+  ]
+}
