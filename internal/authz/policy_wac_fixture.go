@@ -50,7 +50,7 @@ func WACFixtureFactsFromParseResult(result PolicyParseResult) (WACFixtureFacts, 
 		FixtureName:     result.FixtureName,
 		RequestHash:     result.RequestHash,
 		PolicyHash:      result.PolicyHash,
-		TargetURI:       documents[0].URI,
+		TargetURI:       result.ResourceURI,
 		Modes:           modes,
 		ExpectedDecision: result.ExpectedDecision,
 		ExpectedReason:   result.ExpectedReason,
@@ -131,9 +131,6 @@ func ValidateWACFixtureFacts(facts WACFixtureFacts) error {
 	}
 	if len(documents) == 0 {
 		return fmt.Errorf("%w: wac fixture policy documents are required", ErrInvalidWACFixtureFacts)
-	}
-	if facts.TargetURI != documents[0].URI {
-		return fmt.Errorf("%w: wac fixture target must match first policy document", ErrInvalidWACFixtureFacts)
 	}
 	if !facts.FixtureOnly {
 		return fmt.Errorf("%w: wac fixture facts must be fixture-only", ErrInvalidWACFixtureFacts)
