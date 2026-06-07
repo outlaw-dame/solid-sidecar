@@ -39,11 +39,14 @@ func TestPolicyFixtureReleaseHashIsDeterministic(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	manifest, err := PolicyFixtureBundleManifestForBundle(bundle)
 	if err != nil { t.Fatal(err) }
-	bundleArtifact, _ := PolicyFixtureArtifactRecordForBundle(bundle, 100, 0, "release")
-	manifestArtifact, _ := PolicyFixtureArtifactRecordForManifest(manifest, 100, 0, "release")
+	bundleArtifact, err := PolicyFixtureArtifactRecordForBundle(bundle, 100, 0, "release")
+	if err != nil { t.Fatal(err) }
+	manifestArtifact, err := PolicyFixtureArtifactRecordForManifest(manifest, 100, 0, "release")
+	if err != nil { t.Fatal(err) }
 	catalog, err := PolicyFixtureArtifactCatalogFromRecords([]PolicyFixtureArtifactRecord{bundleArtifact, manifestArtifact})
 	if err != nil { t.Fatal(err) }
-	exportRecord, _ := PolicyFixtureExportRecordForBundle(bundle, "bundle.json", 100, 512)
+	exportRecord, err := PolicyFixtureExportRecordForBundle(bundle, "bundle.json", 100, 512)
+	if err != nil { t.Fatal(err) }
 	index, err := PolicyFixtureExportIndexFromRecords([]PolicyFixtureExportRecord{exportRecord})
 	if err != nil { t.Fatal(err) }
 	check, err := PolicyFixtureExportCheckForIndex(index, 200)
