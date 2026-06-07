@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solid-sidecar.local/contracts/fixture_release_review.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "ledger_hash", "record_count", "checked_at_unix", "fixture_only", "review_hash"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "policy.fixture.release_review.v1"},
+    "status": {"type": "string", "enum": ["ok", "failed"]},
+    "ledger_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "record_count": {"type": "integer", "minimum": 0},
+    "checked_at_unix": {"type": "integer", "minimum": 0},
+    "fixture_only": {"type": "boolean", "const": true},
+    "review_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
