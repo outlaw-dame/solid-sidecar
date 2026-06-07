@@ -6,15 +6,14 @@ CSS remains the Solid protocol and access-control authority. Fixture and artifac
 
 ## Current status
 
-Phase 31 is complete. The next safe boundary is Phase 32.
+The project has now pivoted from metadata phases to production-readiness work. The current implementation target is the CSS-through-sidecar runnable path described in `docs/production-implementation-plan.md`.
 
-Recent completed phases:
+Recently completed production-readiness work:
 
-- Phase 29: fixture marker records with release consistency checks.
-- Phase 30: fixture marker logs with deterministic ordering.
-- Phase 31: fixture marker reviews with deterministic metadata.
-
-Completed phase notes live under `docs/phase-*-completion.md` where tool filtering allowed the doc to be created.
+- Docker-backed CSS-through-sidecar e2e script.
+- Explicit `scripts/verify.sh e2e` target.
+- Failure-time CSS and sidecar log dumping for e2e runs.
+- Local runbook for running CSS behind the sidecar.
 
 ## Project structure
 
@@ -30,10 +29,12 @@ Completed phase notes live under `docs/phase-*-completion.md` where tool filteri
 - `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
-- `docs/`: architecture and phase notes.
+- `docs/`: architecture, phase notes, and runbooks.
 - `scripts/`: local/CI verification scripts.
 
 ## Run locally
+
+See `docs/runbook-local.md` for the full local runbook.
 
 Start CSS on port 3000, then run:
 
@@ -56,15 +57,23 @@ docker compose -f deploy/compose/docker-compose.dev.yml up --build
 
 ## Test
 
-Run all local checks with the same entrypoint used by CI:
+Run normal Go and Rust checks:
 
 ```sh
 bash scripts/verify.sh all
 ```
 
-Run only one side of the stack:
+Run one side of the stack:
 
 ```sh
 bash scripts/verify.sh go
 bash scripts/verify.sh rust
 ```
+
+Run the Docker-backed CSS-through-sidecar e2e harness explicitly:
+
+```sh
+bash scripts/verify.sh e2e
+```
+
+The e2e target is intentionally not part of `all` because it requires Docker and starts CSS.
