@@ -119,6 +119,9 @@ func normalizeInMemoryPolicySourceEntry(source PolicySource, entry InMemoryPolic
 	if int64(len(entry.Content)) > MaxLoadedPolicyDocumentBytes {
 		return InMemoryPolicySourceEntry{}, fmt.Errorf("%w: policy source content too large", ErrInvalidPolicyLoad)
 	}
+	if entry.LoadedAtUnix < 0 || entry.ExpiresAtUnix < 0 {
+		return InMemoryPolicySourceEntry{}, fmt.Errorf("%w: policy source timestamps must be non-negative", ErrInvalidPolicyLoad)
+	}
 	contentType := strings.TrimSpace(entry.ContentType)
 	if contentType == "" {
 		contentType = source.ContentType
@@ -158,6 +161,9 @@ func PolicySourceCacheKey(source PolicySource) string {
 }
 
 func PolicyCacheRecordForLoadedSource(loaded LoadedPolicySource, loadedAtUnix int64, expiresAtUnix int64, version string) (PolicySourceCacheRecord, error) {
+	if loadedAtUnix < 0 || expiresAtUnix < 0 {
+		return PolicySourceCacheRecord{}, fmt.Errorf("%w: policy source timestamps must be non-negative", ErrInvalidPolicyLoad)
+	}
 	documents, err := PolicyDocumentsFromLoadedSources([]LoadedPolicySource{loaded})
 	if err != nil {
 		return PolicySourceCacheRecord{}, err
@@ -191,6 +197,9 @@ func PolicySourceCacheVersion(source PolicySource, document PolicyDocument, load
 	}
 	normalizedDocuments, err := NormalizePolicyDocuments([]PolicyDocument{document})
 	if err != nil || len(normalizedDocuments) != 1 {
+		return ""
+	}
+	if normalizedDocuments[0].URI != normalizedSource.URI {
 		return ""
 	}
 	parts := []string{
@@ -249,6 +258,9 @@ func NormalizePolicyCacheRecords(input []PolicySourceCacheRecord, nowUnix int64)
 }
 
 func normalizePolicyCacheRecord(record PolicySourceCacheRecord, nowUnix int64) (PolicySourceCacheRecord, error) {
+	if record.LoadedAtUnix < 0 || record.ExpiresAtUnix < 0 {
+		return PolicySourceCacheRecord{}, fmt.Errorf("%w: policy source timestamps must be non-negative", ErrInvalidPolicyLoad)
+	}
 	source, err := normalizePolicySource(record.Source)
 	if err != nil {
 		return PolicySourceCacheRecord{}, err
@@ -256,6 +268,9 @@ func normalizePolicyCacheRecord(record PolicySourceCacheRecord, nowUnix int64) (
 	documents, err := NormalizePolicyDocuments([]PolicyDocument{record.Document})
 	if err != nil || len(documents) != 1 {
 		return PolicySourceCacheRecord{}, fmt.Errorf("%w: invalid policy cache document", ErrInvalidPolicyLoad)
+	}
+	if documents[0].URI != source.URI {
+		return PolicySourceCacheRecord{}, fmt.Errorf("%w: policy cache document uri does not match source", ErrInvalidPolicyLoad)
 	}
 	cacheKey := strings.TrimSpace(record.CacheKey)
 	if cacheKey == "" {
