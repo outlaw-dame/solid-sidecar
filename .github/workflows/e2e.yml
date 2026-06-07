@@ -1,0 +1,63 @@
+name: CSS through sidecar e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/e2e.yml'
+      - 'cmd/**'
+      - 'configs/**'
+      - 'deploy/**'
+      - 'go.mod'
+      - 'internal/**'
+      - 'scripts/e2e-css.sh'
+      - 'scripts/verify.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/e2e.yml'
+      - 'cmd/**'
+      - 'configs/**'
+      - 'deploy/**'
+      - 'go.mod'
+      - 'internal/**'
+      - 'scripts/e2e-css.sh'
+      - 'scripts/verify.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  css-through-sidecar:
+    name: CSS through sidecar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show tool versions
+        run: |
+          docker version
+          docker compose version
+          curl --version
+
+      - name: Run CSS-through-sidecar e2e
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/e2e-css.sh 2>&1 | tee e2e.log
+
+      - name: Upload e2e log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-through-sidecar-e2e-log
+          path: e2e.log
+          if-no-files-found: warn
+          retention-days: 14
