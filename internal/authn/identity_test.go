@@ -34,7 +34,7 @@ func TestValidateIdentityClaimsAcceptsTrustedShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateIdentityClaims returned error: %v", err)
 	}
-	if identity.Issuer != "https://issuer.example/" || identity.WebID != "https://alice.example/profile/card" || identity.ClientID != "client-1" {
+	if identity.Issuer != "https://issuer.example/" || identity.WebID != "https://alice.example/profile/card#me" || identity.ClientID != "client-1" {
 		t.Fatalf("unexpected identity: %#v", identity)
 	}
 }
