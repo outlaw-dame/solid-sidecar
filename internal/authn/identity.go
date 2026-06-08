@@ -25,17 +25,17 @@ type IdentityClaims struct {
 }
 
 type IdentityValidationOptions struct {
-	AllowedIssuers []string
+	AllowedIssuers  []string
 	ExpectedAudience string
-	Now time.Time
-	ClockSkew time.Duration
+	Now              time.Time
+	ClockSkew        time.Duration
 }
 
 type TrustedIdentity struct {
-	Issuer string
-	WebID string
-	ClientID string
-	Audience []string
+	Issuer    string
+	WebID     string
+	ClientID  string
+	Audience  []string
 	ExpiresAt time.Time
 }
 
@@ -44,12 +44,12 @@ func ParseIdentityClaimsJSON(input []byte) (IdentityClaims, error) {
 		return IdentityClaims{}, fmt.Errorf("%w: claims size out of bounds", ErrInvalidIdentityToken)
 	}
 	var raw struct {
-		Issuer string `json:"iss"`
-		Subject string `json:"sub"`
-		Audience any `json:"aud"`
-		ClientID string `json:"client_id"`
-		IssuedAt int64 `json:"iat"`
-		ExpiresAt int64 `json:"exp"`
+		Issuer    string `json:"iss"`
+		Subject   string `json:"sub"`
+		Audience  any    `json:"aud"`
+		ClientID  string `json:"client_id"`
+		IssuedAt  int64  `json:"iat"`
+		ExpiresAt int64  `json:"exp"`
 	}
 	if err := json.Unmarshal(input, &raw); err != nil {
 		return IdentityClaims{}, fmt.Errorf("%w: claims are not valid JSON", ErrInvalidIdentityToken)
@@ -70,11 +70,11 @@ func ValidateIdentityClaims(claims IdentityClaims, opts IdentityValidationOption
 	if skew <= 0 {
 		skew = 2 * time.Minute
 	}
-	issuer, err := canonicalIdentityURI(claims.Issuer, maxIdentityIssuerLength)
+	issuer, err := canonicalIssuerURI(claims.Issuer)
 	if err != nil {
 		return TrustedIdentity{}, fmt.Errorf("%w: invalid issuer", ErrInvalidIdentityToken)
 	}
-	webID, err := canonicalIdentityURI(claims.Subject, maxIdentitySubjectLength)
+	webID, err := canonicalWebIDURI(claims.Subject)
 	if err != nil {
 		return TrustedIdentity{}, fmt.Errorf("%w: invalid subject", ErrInvalidIdentityToken)
 	}
@@ -123,22 +123,39 @@ func normalizeAudienceClaim(value any) ([]string, error) {
 	}
 }
 
-func canonicalIdentityURI(value string, maxLen int) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > maxLen || strings.ContainsAny(value, "\r\n\x00") {
-		return "", errors.New("invalid uri")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+func canonicalIssuerURI(value string) (string, error) {
+	parsed, err := parseHTTPSIdentityURI(value, maxIdentityIssuerLength)
+	if err != nil || parsed.Fragment != "" {
 		return "", errors.New("invalid uri")
 	}
 	parsed.RawQuery = ""
 	return parsed.String(), nil
 }
 
+func canonicalWebIDURI(value string) (string, error) {
+	parsed, err := parseHTTPSIdentityURI(value, maxIdentitySubjectLength)
+	if err != nil {
+		return "", errors.New("invalid uri")
+	}
+	parsed.RawQuery = ""
+	return parsed.String(), nil
+}
+
+func parseHTTPSIdentityURI(value string, maxLen int) (*url.URL, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > maxLen || strings.ContainsAny(value, "\r\n\x00") {
+		return nil, errors.New("invalid uri")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return nil, errors.New("invalid uri")
+	}
+	return parsed, nil
+}
+
 func issuerAllowed(issuer string, allowed []string) bool {
 	for _, item := range allowed {
-		candidate, err := canonicalIdentityURI(item, maxIdentityIssuerLength)
+		candidate, err := canonicalIssuerURI(item)
 		if err == nil && candidate == issuer {
 			return true
 		}
