@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"sync"
 	"time"
 )
@@ -19,30 +20,30 @@ const defaultIssuerCacheTTL = 10 * time.Minute
 var ErrInvalidIssuerMetadata = errors.New("invalid issuer metadata")
 
 type IssuerDiscoveryClient struct {
-	HTTPClient *http.Client
+	HTTPClient   *http.Client
 	MaxBodyBytes int64
-	CacheTTL time.Duration
-	Now func() time.Time
-	cache *IssuerMetadataCache
+	CacheTTL     time.Duration
+	Now          func() time.Time
+	cache        *IssuerMetadataCache
 }
 
 type IssuerMetadata struct {
-	Issuer string `json:"issuer"`
-	JWKSURI string `json:"jwks_uri"`
+	Issuer    string    `json:"issuer"`
+	JWKSURI   string    `json:"jwks_uri"`
 	FetchedAt time.Time `json:"-"`
 	ExpiresAt time.Time `json:"-"`
 }
 
 type JWKS struct {
-	Keys []json.RawMessage `json:"keys"`
-	FetchedAt time.Time `json:"-"`
-	ExpiresAt time.Time `json:"-"`
+	Keys      []json.RawMessage `json:"keys"`
+	FetchedAt time.Time         `json:"-"`
+	ExpiresAt time.Time         `json:"-"`
 }
 
 type IssuerMetadataCache struct {
-	mu sync.Mutex
+	mu      sync.Mutex
 	entries map[string]IssuerMetadata
-	sets map[string]JWKS
+	sets    map[string]JWKS
 }
 
 func NewIssuerMetadataCache() *IssuerMetadataCache {
@@ -198,7 +199,10 @@ func issuerDiscoveryURL(issuer string) (string, error) {
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 		return "", fmt.Errorf("%w: invalid issuer", ErrInvalidIssuerMetadata)
 	}
-	parsed.Path = stringsTrimRightSlash(parsed.Path) + "/.well-known/openid-configuration"
+	parsed.Path = path.Join(parsed.Path, ".well-known", "openid-configuration")
+	if parsed.Path == ".well-known/openid-configuration" {
+		parsed.Path = "/" + parsed.Path
+	}
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
@@ -206,21 +210,10 @@ func issuerDiscoveryURL(issuer string) (string, error) {
 
 func canonicalJWKSURI(value string) (string, error) {
 	parsed, err := parseHTTPSIdentityURI(value, 2048)
-	if err != nil || parsed.Fragment != "" {
+	if err != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
 		return "", fmt.Errorf("%w: invalid jwks uri", ErrInvalidIssuerMetadata)
 	}
-	parsed.RawQuery = ""
 	return parsed.String(), nil
-}
-
-func stringsTrimRightSlash(value string) string {
-	for len(value) > 1 && value[len(value)-1] == '/' {
-		value = value[:len(value)-1]
-	}
-	if value == "" {
-		return ""
-	}
-	return value
 }
 
 func (c *IssuerMetadataCache) GetIssuer(issuer string, now time.Time) (IssuerMetadata, bool) {
