@@ -40,8 +40,8 @@ func TestVerifyIDTokenWithJWKSetRejectsUnknownKid(t *testing.T) {
 	key, set := mustRSAJWKSet(t, "key-1")
 	token := mustSignedIDToken(t, key, "key-2", IdentityClaims{Issuer: "https://issuer.example/", Subject: "https://alice.example/profile/card#me", Audience: []string{"solid-sidecar"}, IssuedAt: 90, ExpiresAt: 200})
 	_, err := VerifyIDTokenWithJWKSet(token, set, IdentityValidationOptions{AllowedIssuers: []string{"https://issuer.example/"}, ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
-	if !errors.Is(err, ErrInvalidOIDCDiscovery) {
-		t.Fatalf("error = %v, want ErrInvalidOIDCDiscovery", err)
+	if !errors.Is(err, ErrInvalidIdentityToken) {
+		t.Fatalf("error = %v, want ErrInvalidIdentityToken", err)
 	}
 }
 
