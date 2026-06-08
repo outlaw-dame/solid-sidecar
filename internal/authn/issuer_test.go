@@ -91,6 +91,34 @@ func TestIssuerDiscoveryClientRejectsInvalidMetadata(t *testing.T) {
 	}
 }
 
+func TestIssuerDiscoveryClientRejectsCrossOriginJWKS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"issuer":%q,"jwks_uri":"https://other.example/jwks"}`, serverIssuer(r))
+	}))
+	defer server.Close()
+
+	client := NewIssuerDiscoveryClient(server.Client())
+	_, err := client.Discover(context.Background(), server.URL)
+	if !errors.Is(err, ErrInvalidIssuerMetadata) {
+		t.Fatalf("error = %v, want ErrInvalidIssuerMetadata", err)
+	}
+}
+
+func TestIssuerDiscoveryClientRejectsUnexpectedContentType(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintf(w, `{"issuer":%q,"jwks_uri":%q}`, serverIssuer(r), serverIssuer(r)+"/jwks")
+	}))
+	defer server.Close()
+
+	client := NewIssuerDiscoveryClient(server.Client())
+	_, err := client.Discover(context.Background(), server.URL)
+	if !errors.Is(err, ErrInvalidIssuerMetadata) {
+		t.Fatalf("error = %v, want ErrInvalidIssuerMetadata", err)
+	}
+}
+
 func TestIssuerDiscoveryClientRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"issuer":"` + serverIssuer(r) + `","jwks_uri":"` + serverIssuer(r) + `/jwks","padding":"1234567890"}`))
