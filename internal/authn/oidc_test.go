@@ -2,6 +2,7 @@ package authn
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ func TestOIDCDiscoveryClientDiscoversIssuerAndJWKS(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration/issuer":
-			_, _ = w.Write([]byte(`{"issuer":"` + r.HostURL() + `/issuer","jwks_uri":"` + r.HostURL() + `/jwks"}`))
+			_, _ = w.Write([]byte(`{"issuer":"` + hostURL(r) + `/issuer","jwks_uri":"` + hostURL(r) + `/jwks"}`))
 		case "/jwks":
 			_, _ = w.Write([]byte(`{"keys":[{"kid":"key-1","kty":"RSA","use":"sig"}]}`))
 		default:
@@ -45,7 +46,7 @@ func TestOIDCDiscoveryClientDiscoversIssuerAndJWKS(t *testing.T) {
 func TestOIDCDiscoveryRejectsIssuerMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"issuer":"http://other.example/issuer","jwks_uri":"` + r.HostURL() + `/jwks"}`))
+		_, _ = w.Write([]byte(`{"issuer":"http://other.example/issuer","jwks_uri":"` + hostURL(r) + `/jwks"}`))
 	}))
 	defer server.Close()
 
@@ -59,7 +60,7 @@ func TestOIDCDiscoveryRejectsIssuerMismatch(t *testing.T) {
 func TestOIDCDiscoveryRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"issuer":"` + r.HostURL() + `/issuer","jwks_uri":"` + r.HostURL() + `/jwks","padding":"too-large"}`))
+		_, _ = w.Write([]byte(`{"issuer":"` + hostURL(r) + `/issuer","jwks_uri":"` + hostURL(r) + `/jwks","padding":"too-large"}`))
 	}))
 	defer server.Close()
 
@@ -76,9 +77,9 @@ func TestValidateJWKSetRejectsUnsafeKeys(t *testing.T) {
 		set  JWKSet
 	}{
 		{name: "empty", set: JWKSet{}},
-		{name: "missing kid", set: JWKSet{Keys: []jsonRaw{jsonRaw(`{"kty":"RSA"}`)}}},
-		{name: "unsupported kty", set: JWKSet{Keys: []jsonRaw{jsonRaw(`{"kid":"key-1","kty":"oct"}`)}}},
-		{name: "duplicate kid", set: JWKSet{Keys: []jsonRaw{jsonRaw(`{"kid":"key-1","kty":"RSA"}`), jsonRaw(`{"kid":"key-1","kty":"RSA"}`)}}},
+		{name: "missing kid", set: JWKSet{Keys: []json.RawMessage{json.RawMessage(`{"kty":"RSA"}`)}}},
+		{name: "unsupported kty", set: JWKSet{Keys: []json.RawMessage{json.RawMessage(`{"kid":"key-1","kty":"oct"}`)}}},
+		{name: "duplicate kid", set: JWKSet{Keys: []json.RawMessage{json.RawMessage(`{"kid":"key-1","kty":"RSA"}`), json.RawMessage(`{"kid":"key-1","kty":"RSA"}`)}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -90,8 +91,6 @@ func TestValidateJWKSetRejectsUnsafeKeys(t *testing.T) {
 	}
 }
 
-type jsonRaw []byte
-
-func (r *http.Request) HostURL() string {
+func hostURL(r *http.Request) string {
 	return "http://" + r.Host
 }
