@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"sync"
 	"time"
 )
@@ -110,6 +111,9 @@ func (c *IssuerDiscoveryClient) FetchJWKS(ctx context.Context, metadata IssuerMe
 	if err != nil {
 		return JWKS{}, err
 	}
+	if !sameOrigin(metadata.Issuer, jwksURI) {
+		return JWKS{}, fmt.Errorf("%w: jwks uri must be same-origin with issuer", ErrInvalidIssuerMetadata)
+	}
 	body, err := c.getBounded(ctx, jwksURI)
 	if err != nil {
 		return JWKS{}, err
@@ -147,6 +151,9 @@ func (c *IssuerDiscoveryClient) getBounded(ctx context.Context, target string) (
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: unexpected status", ErrInvalidIssuerMetadata)
 	}
+	if contentType := strings.ToLower(res.Header.Get("Content-Type")); contentType != "" && !strings.Contains(contentType, "application/json") {
+		return nil, fmt.Errorf("%w: unexpected content type", ErrInvalidIssuerMetadata)
+	}
 	limit := c.MaxBodyBytes
 	if limit <= 0 || limit > defaultIssuerMaxBodyBytes {
 		limit = defaultIssuerMaxBodyBytes
@@ -172,6 +179,9 @@ func (c *IssuerDiscoveryClient) normalizeMetadata(expectedIssuer string, metadat
 	jwksURI, err := canonicalJWKSURI(metadata.JWKSURI)
 	if err != nil {
 		return IssuerMetadata{}, err
+	}
+	if !sameOrigin(issuer, jwksURI) {
+		return IssuerMetadata{}, fmt.Errorf("%w: jwks uri must be same-origin with issuer", ErrInvalidIssuerMetadata)
 	}
 	metadata.Issuer = issuer
 	metadata.JWKSURI = jwksURI
@@ -214,6 +224,18 @@ func canonicalJWKSURI(value string) (string, error) {
 		return "", fmt.Errorf("%w: invalid jwks uri", ErrInvalidIssuerMetadata)
 	}
 	return parsed.String(), nil
+}
+
+func sameOrigin(left string, right string) bool {
+	leftURL, err := url.Parse(left)
+	if err != nil {
+		return false
+	}
+	rightURL, err := url.Parse(right)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(leftURL.Scheme, rightURL.Scheme) && strings.EqualFold(leftURL.Host, rightURL.Host)
 }
 
 func (c *IssuerMetadataCache) GetIssuer(issuer string, now time.Time) (IssuerMetadata, bool) {
