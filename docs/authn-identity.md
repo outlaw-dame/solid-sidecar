@@ -19,8 +19,10 @@ Implemented:
 - typed `TrustedIdentity` output for later request-builder integration;
 - bounded OpenID Provider metadata discovery;
 - issuer mismatch rejection;
+- JSON content-type checks when content type is present;
 - bounded JWKS fetches;
 - JWKS key-count bounds;
+- JWKS URI same-origin checks;
 - copy-safe issuer/JWKS cache entries;
 - cache TTL bounds.
 
@@ -56,7 +58,9 @@ The discovery client:
 
 - requires HTTPS issuer and JWKS URIs;
 - rejects issuer metadata when the returned issuer does not match the requested issuer;
+- requires JWKS URI to be same-origin with the issuer;
 - uses bounded response reads;
+- checks JSON content type when content type is present;
 - bounds JWKS key count;
 - rejects JWKS URIs with query strings or fragments;
 - caches issuer metadata and JWKS responses until bounded expiry;
