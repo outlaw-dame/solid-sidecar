@@ -82,9 +82,9 @@ func TestIdentityVerifierRejectsBadSignature(t *testing.T) {
 
 func newTestIssuerServer(t *testing.T, privateKey *rsa.PrivateKey, kid string) *httptest.Server {
 	t.Helper()
-	server := httptest.NewTLSServer(nil)
 	jwks := jwksForRSAKey(t, kid, &privateKey.PublicKey)
-	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
@@ -96,6 +96,6 @@ func newTestIssuerServer(t *testing.T, privateKey *rsa.PrivateKey, kid string) *
 		default:
 			http.NotFound(w, r)
 		}
-	})
+	}))
 	return server
 }
