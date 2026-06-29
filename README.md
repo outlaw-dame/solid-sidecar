@@ -1,19 +1,29 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, fixture release metadata, marker metadata, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, fixture release metadata, marker metadata, authn identity scaffolding, and reverse proxying to CSS.
 
-CSS remains the Solid protocol and access-control authority. Fixture and artifact phases through Phase 31 are metadata/test scaffolding only and do not change runtime evaluator behavior or enforce access decisions.
+CSS remains the Solid protocol and access-control authority. The sidecar is still non-enforcing; production authorization requires verified identity integration, live policy discovery, real policy parsing/evaluation, comparison against CSS behavior, and enforcement gates.
 
 ## Current status
 
-The project has now pivoted from metadata phases to production-readiness work. The current implementation target is the CSS-through-sidecar runnable path described in `docs/production-implementation-plan.md`.
+The project has pivoted from metadata phases to production-readiness work. Start with:
+
+- `docs/implementation-status.md` for the current done/missing audit.
+- `docs/production-implementation-plan.md` for the roadmap.
+- `docs/runbook-local.md` for local CSS-through-sidecar use.
+- `docs/runbook-staging.md` for staging rollout and rollback.
+- `docs/authn-identity.md` for authn identity/JWT status.
+- `docs/ci.md` for CI and e2e verification.
 
 Recently completed production-readiness work:
 
 - Docker-backed CSS-through-sidecar e2e script.
 - Explicit `scripts/verify.sh e2e` target.
 - Failure-time CSS and sidecar log dumping for e2e runs.
-- Local runbook for running CSS behind the sidecar.
+- Local and staging runbooks.
+- Issuer discovery and JWKS cache hardening.
+- RS256 JWT verification against JWKS.
+- Discovery-backed JWT verification restricted to explicitly allowed issuers.
 
 ## Project structure
 
@@ -25,11 +35,11 @@ Recently completed production-readiness work:
 - `internal/observability/`: structured logging and request IDs.
 - `internal/safety/`: request validation, security headers, optional Origin policy.
 - `internal/ratelimit/`: per-IP fixed-window rate limiter.
-- `internal/authn/`: OAuth/DPoP request preflight and replay cache.
+- `internal/authn/`: OAuth/DPoP preflight, identity claim validation, issuer discovery, JWKS cache, and JWT verification scaffolding.
 - `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
-- `docs/`: architecture, phase notes, and runbooks.
+- `docs/`: implementation status, architecture, phase notes, and runbooks.
 - `scripts/`: local/CI verification scripts.
 
 ## Run locally
