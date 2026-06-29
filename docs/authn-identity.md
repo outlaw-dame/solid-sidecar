@@ -2,7 +2,7 @@
 
 This document describes the current identity-confidence boundary in `internal/authn`.
 
-The current implementation validates bounded identity claim shapes, can discover issuer metadata plus JWKS documents with bounded HTTP fetches and copy-safe cache entries, and can verify compact RS256 JWTs against cached JWKS material. It does not yet perform DPoP confirmation binding, WebID ownership checks, middleware integration, or authz request-builder integration.
+The current implementation validates bounded identity claim shapes, discovers issuer metadata plus JWKS documents with bounded HTTP fetches and copy-safe cache entries, verifies compact RS256 JWTs against JWKS material, and provides an issuer-backed verifier that only discovers tokens from explicitly allowed issuers. It does not yet perform DPoP confirmation binding, WebID ownership checks, middleware integration, or authz request-builder integration.
 
 ## Current scaffold
 
@@ -29,7 +29,9 @@ Implemented:
 - RS256-only signature verification;
 - JWKS key selection by `kid`;
 - RSA JWK safety checks for `kty`, `alg`, `use`, modulus, and exponent;
-- verified JWT claims converted through `ValidateIdentityClaims` into `TrustedIdentity`.
+- verified JWT claims converted through `ValidateIdentityClaims` into `TrustedIdentity`;
+- issuer-backed token verification through `IdentityVerifier`;
+- pre-discovery issuer allowlist enforcement so arbitrary token issuers cannot trigger network discovery.
 
 Not implemented yet:
 
@@ -42,7 +44,7 @@ Not implemented yet:
 
 ## Safety rule
 
-Do not treat parsed claims, fetched issuer metadata, or unverified tokens as trusted identity. Only `VerifyIdentityJWT` output may be considered signature-verified, and middleware must still avoid using it for request authorization until DPoP binding and integration work are complete.
+Do not treat parsed claims, fetched issuer metadata, or unverified tokens as trusted identity. `VerifyIdentityJWT` verifies signatures against already-provided JWKS material. `IdentityVerifier` additionally discovers issuer metadata and JWKS, but only for configured allowed issuers. Middleware must still avoid using verified identity for authorization until DPoP binding and integration work are complete.
 
 ## WebID handling
 
@@ -81,6 +83,18 @@ The JWT verifier currently:
 - rejects RSA keys below 2048 bits;
 - verifies the signature before parsing identity claims;
 - applies issuer, audience, expiration, issued-at, WebID, and client-ID validation after signature verification.
+
+## Issuer-backed verifier handling
+
+`IdentityVerifier` currently:
+
+- requires a non-empty allowed issuer list;
+- parses the compact token only far enough to extract untrusted issuer claims;
+- rejects issuers not in the allowlist before discovery;
+- discovers issuer metadata through `IssuerDiscoveryClient`;
+- fetches JWKS through the bounded cache;
+- verifies the token with `VerifyIdentityJWT`;
+- returns `TrustedIdentity` only after signature and claim validation succeed.
 
 ## Next implementation steps
 
