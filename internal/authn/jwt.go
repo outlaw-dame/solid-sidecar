@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -29,6 +30,36 @@ type rsaJWK struct {
 	Use       string `json:"use,omitempty"`
 	N         string `json:"n"`
 	E         string `json:"e"`
+}
+
+func VerifyIdentityJWTWithDiscovery(ctx context.Context, token string, discovery *IssuerDiscoveryClient, opts IdentityValidationOptions) (TrustedIdentity, error) {
+	if discovery == nil {
+		return TrustedIdentity{}, fmt.Errorf("%w: nil discovery client", ErrInvalidJWT)
+	}
+	_, payload, _, _, err := parseCompactJWT(token)
+	if err != nil {
+		return TrustedIdentity{}, err
+	}
+	claims, err := ParseIdentityClaimsJSON(payload)
+	if err != nil {
+		return TrustedIdentity{}, err
+	}
+	issuer, err := canonicalIssuerURI(claims.Issuer)
+	if err != nil {
+		return TrustedIdentity{}, fmt.Errorf("%w: invalid issuer", ErrInvalidJWT)
+	}
+	if len(opts.AllowedIssuers) == 0 || !issuerAllowed(issuer, opts.AllowedIssuers) {
+		return TrustedIdentity{}, fmt.Errorf("%w: issuer is not allowed for discovery", ErrInvalidJWT)
+	}
+	metadata, err := discovery.Discover(ctx, issuer)
+	if err != nil {
+		return TrustedIdentity{}, err
+	}
+	jwks, err := discovery.FetchJWKS(ctx, metadata)
+	if err != nil {
+		return TrustedIdentity{}, err
+	}
+	return VerifyIdentityJWT(token, jwks, opts)
 }
 
 func VerifyIdentityJWT(token string, jwks JWKS, opts IdentityValidationOptions) (TrustedIdentity, error) {
