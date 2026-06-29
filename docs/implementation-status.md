@@ -49,13 +49,14 @@ Implemented:
 - RS256-only JWT signature verification;
 - RSA JWK key selection by `kid`;
 - RSA JWK safety checks;
-- discovery-backed JWT verification restricted to explicitly allowed issuers.
+- discovery-backed JWT verification restricted to explicitly allowed issuers;
+- cooldown-protected JWKS refresh;
+- one verification retry after JWT signature/key failure.
 
 Still missing before authn can feed authorization decisions:
 
-- key refresh after signature/key-selection miss;
 - DPoP confirmation / key-binding checks;
-- WebID profile ownership proof;
+- WebID profile ownership proof if required by the selected Solid-OIDC interpretation;
 - middleware integration behind explicit config;
 - authz request-builder integration;
 - e2e tests with real signed tokens from a test issuer.
@@ -117,17 +118,16 @@ Still missing:
 
 Continue in this order:
 
-1. Key refresh on JWT signature/key-selection miss.
-2. DPoP confirmation/key-binding checks.
-3. Authn middleware integration behind explicit config.
-4. Pass verified identity into authz request construction.
-5. Live policy source discovery on the request path in shadow mode.
-6. Live policy source loading/cache integration in shadow mode.
-7. RDF parser boundary selection and hardening.
-8. WAC parser in shadow mode.
-9. WAC evaluator in shadow mode.
-10. CSS behavior comparison harness.
-11. Enforcement gate design.
+1. DPoP confirmation/key-binding checks.
+2. Authn middleware integration behind explicit config.
+3. Pass verified identity into authz request construction.
+4. Live policy source discovery on the request path in shadow mode.
+5. Live policy source loading/cache integration in shadow mode.
+6. RDF parser boundary selection and hardening.
+7. WAC parser in shadow mode.
+8. WAC evaluator in shadow mode.
+9. CSS behavior comparison harness.
+10. Enforcement gate design.
 
 ## Current safety boundary
 
