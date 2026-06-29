@@ -2,6 +2,7 @@ package authn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -49,5 +50,16 @@ func (v *IdentityVerifier) Verify(ctx context.Context, token string) (TrustedIde
 	if err != nil {
 		return TrustedIdentity{}, err
 	}
-	return VerifyIdentityJWT(token, jwks, v.Options)
+	identity, err := VerifyIdentityJWT(token, jwks, v.Options)
+	if err == nil {
+		return identity, nil
+	}
+	if !errors.Is(err, ErrInvalidJWT) {
+		return TrustedIdentity{}, err
+	}
+	refreshedJWKS, refreshed, refreshErr := v.Discovery.RefreshJWKS(ctx, metadata)
+	if refreshErr != nil || !refreshed {
+		return TrustedIdentity{}, err
+	}
+	return VerifyIdentityJWT(token, refreshedJWKS, v.Options)
 }
