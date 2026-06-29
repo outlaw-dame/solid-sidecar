@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -46,7 +47,7 @@ func TestVerifyIdentityJWTWithDiscovery(t *testing.T) {
 		"exp": 200,
 	})
 	client := NewIssuerDiscoveryClient(server.Client())
-	identity, err := VerifyIdentityJWTWithDiscovery(contextWithTestTimeout(t), token, client, IdentityValidationOptions{AllowedIssuers: []string{issuerURL}, ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
+	identity, err := VerifyIdentityJWTWithDiscovery(context.Background(), token, client, IdentityValidationOptions{AllowedIssuers: []string{issuerURL}, ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
 	if err != nil {
 		t.Fatalf("VerifyIdentityJWTWithDiscovery returned error: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestVerifyIdentityJWTWithDiscovery(t *testing.T) {
 func TestVerifyIdentityJWTWithDiscoveryRequiresAllowedIssuer(t *testing.T) {
 	privateKey := mustRSAKey(t)
 	token := signTestJWT(t, privateKey, "key-1", "RS256", validJWTClaims())
-	_, err := VerifyIdentityJWTWithDiscovery(contextWithTestTimeout(t), token, NewIssuerDiscoveryClient(nil), IdentityValidationOptions{ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
+	_, err := VerifyIdentityJWTWithDiscovery(context.Background(), token, NewIssuerDiscoveryClient(nil), IdentityValidationOptions{ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
 	if !errors.Is(err, ErrInvalidJWT) {
 		t.Fatalf("error = %v, want ErrInvalidJWT", err)
 	}
