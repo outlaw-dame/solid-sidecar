@@ -8,10 +8,61 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestVerifyIdentityJWTWithDiscovery(t *testing.T) {
+	privateKey := mustRSAKey(t)
+	var issuerURL string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			fmt.Fprintf(w, `{"issuer":%q,"jwks_uri":%q}`, issuerURL, issuerURL+"/jwks")
+		case "/jwks":
+			jwks := jwksForRSAKey(t, "key-1", &privateKey.PublicKey)
+			encoded, err := json.Marshal(jwks)
+			if err != nil {
+				t.Fatalf("Marshal JWKS returned error: %v", err)
+			}
+			_, _ = w.Write(encoded)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	issuerURL = server.URL
+
+	token := signTestJWT(t, privateKey, "key-1", "RS256", map[string]any{
+		"iss": issuerURL,
+		"sub": "https://alice.example/profile/card#me",
+		"aud": "solid-sidecar",
+		"iat": 90,
+		"exp": 200,
+	})
+	client := NewIssuerDiscoveryClient(server.Client())
+	identity, err := VerifyIdentityJWTWithDiscovery(contextWithTestTimeout(t), token, client, IdentityValidationOptions{AllowedIssuers: []string{issuerURL}, ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
+	if err != nil {
+		t.Fatalf("VerifyIdentityJWTWithDiscovery returned error: %v", err)
+	}
+	if identity.Issuer != issuerURL || identity.WebID != "https://alice.example/profile/card#me" {
+		t.Fatalf("unexpected identity: %#v", identity)
+	}
+}
+
+func TestVerifyIdentityJWTWithDiscoveryRequiresAllowedIssuer(t *testing.T) {
+	privateKey := mustRSAKey(t)
+	token := signTestJWT(t, privateKey, "key-1", "RS256", validJWTClaims())
+	_, err := VerifyIdentityJWTWithDiscovery(contextWithTestTimeout(t), token, NewIssuerDiscoveryClient(nil), IdentityValidationOptions{ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
+	if !errors.Is(err, ErrInvalidJWT) {
+		t.Fatalf("error = %v, want ErrInvalidJWT", err)
+	}
+}
 
 func TestVerifyIdentityJWTAcceptsValidRS256Token(t *testing.T) {
 	privateKey := mustRSAKey(t)
