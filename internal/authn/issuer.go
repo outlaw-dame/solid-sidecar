@@ -17,15 +17,17 @@ import (
 const defaultIssuerHTTPTimeout = 5 * time.Second
 const defaultIssuerMaxBodyBytes int64 = 1 << 20
 const defaultIssuerCacheTTL = 10 * time.Minute
+const defaultJWKSRefreshCooldown = 30 * time.Second
 
 var ErrInvalidIssuerMetadata = errors.New("invalid issuer metadata")
 
 type IssuerDiscoveryClient struct {
-	HTTPClient   *http.Client
-	MaxBodyBytes int64
-	CacheTTL     time.Duration
-	Now          func() time.Time
-	cache        *IssuerMetadataCache
+	HTTPClient          *http.Client
+	MaxBodyBytes        int64
+	CacheTTL            time.Duration
+	JWKSRefreshCooldown time.Duration
+	Now                 func() time.Time
+	cache               *IssuerMetadataCache
 }
 
 type IssuerMetadata struct {
@@ -42,20 +44,21 @@ type JWKS struct {
 }
 
 type IssuerMetadataCache struct {
-	mu      sync.Mutex
-	entries map[string]IssuerMetadata
-	sets    map[string]JWKS
+	mu        sync.Mutex
+	entries   map[string]IssuerMetadata
+	sets      map[string]JWKS
+	refreshes map[string]time.Time
 }
 
 func NewIssuerMetadataCache() *IssuerMetadataCache {
-	return &IssuerMetadataCache{entries: map[string]IssuerMetadata{}, sets: map[string]JWKS{}}
+	return &IssuerMetadataCache{entries: map[string]IssuerMetadata{}, sets: map[string]JWKS{}, refreshes: map[string]time.Time{}}
 }
 
 func NewIssuerDiscoveryClient(httpClient *http.Client) *IssuerDiscoveryClient {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultIssuerHTTPTimeout}
 	}
-	return &IssuerDiscoveryClient{HTTPClient: httpClient, MaxBodyBytes: defaultIssuerMaxBodyBytes, CacheTTL: defaultIssuerCacheTTL, Now: time.Now, cache: NewIssuerMetadataCache()}
+	return &IssuerDiscoveryClient{HTTPClient: httpClient, MaxBodyBytes: defaultIssuerMaxBodyBytes, CacheTTL: defaultIssuerCacheTTL, JWKSRefreshCooldown: defaultJWKSRefreshCooldown, Now: time.Now, cache: NewIssuerMetadataCache()}
 }
 
 func (c *IssuerDiscoveryClient) Discover(ctx context.Context, issuer string) (IssuerMetadata, error) {
@@ -104,16 +107,36 @@ func (c *IssuerDiscoveryClient) FetchJWKS(ctx context.Context, metadata IssuerMe
 			return cached, nil
 		}
 	}
-	if _, err := canonicalIssuerURI(metadata.Issuer); err != nil {
-		return JWKS{}, fmt.Errorf("%w: invalid issuer", ErrInvalidIssuerMetadata)
-	}
-	jwksURI, err := canonicalJWKSURI(metadata.JWKSURI)
+	jwksURI, err := validatedJWKSURIForIssuer(metadata)
 	if err != nil {
 		return JWKS{}, err
 	}
-	if !sameOrigin(metadata.Issuer, jwksURI) {
-		return JWKS{}, fmt.Errorf("%w: jwks uri must be same-origin with issuer", ErrInvalidIssuerMetadata)
+	return c.fetchAndStoreJWKS(ctx, jwksURI, now)
+}
+
+func (c *IssuerDiscoveryClient) RefreshJWKS(ctx context.Context, metadata IssuerMetadata) (JWKS, bool, error) {
+	if c == nil {
+		return JWKS{}, false, fmt.Errorf("%w: nil discovery client", ErrInvalidIssuerMetadata)
 	}
+	jwksURI, err := validatedJWKSURIForIssuer(metadata)
+	if err != nil {
+		return JWKS{}, false, err
+	}
+	now := c.now()
+	if c.cache != nil && !c.cache.BeginJWKSRefresh(jwksURI, now, c.refreshCooldown()) {
+		if cached, ok := c.cache.GetJWKS(jwksURI, now); ok {
+			return cached, false, nil
+		}
+		return JWKS{}, false, fmt.Errorf("%w: jwks refresh cooldown active", ErrInvalidIssuerMetadata)
+	}
+	set, err := c.fetchAndStoreJWKS(ctx, jwksURI, now)
+	if err != nil {
+		return JWKS{}, true, err
+	}
+	return set, true, nil
+}
+
+func (c *IssuerDiscoveryClient) fetchAndStoreJWKS(ctx context.Context, jwksURI string, now time.Time) (JWKS, error) {
 	body, err := c.getBounded(ctx, jwksURI)
 	if err != nil {
 		return JWKS{}, err
@@ -197,6 +220,13 @@ func (c *IssuerDiscoveryClient) cacheTTL() time.Duration {
 	return c.CacheTTL
 }
 
+func (c *IssuerDiscoveryClient) refreshCooldown() time.Duration {
+	if c.JWKSRefreshCooldown <= 0 || c.JWKSRefreshCooldown > time.Hour {
+		return defaultJWKSRefreshCooldown
+	}
+	return c.JWKSRefreshCooldown
+}
+
 func (c *IssuerDiscoveryClient) now() time.Time {
 	if c.Now == nil {
 		return time.Now()
@@ -224,6 +254,21 @@ func canonicalJWKSURI(value string) (string, error) {
 		return "", fmt.Errorf("%w: invalid jwks uri", ErrInvalidIssuerMetadata)
 	}
 	return parsed.String(), nil
+}
+
+func validatedJWKSURIForIssuer(metadata IssuerMetadata) (string, error) {
+	issuer, err := canonicalIssuerURI(metadata.Issuer)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid issuer", ErrInvalidIssuerMetadata)
+	}
+	jwksURI, err := canonicalJWKSURI(metadata.JWKSURI)
+	if err != nil {
+		return "", err
+	}
+	if !sameOrigin(issuer, jwksURI) {
+		return "", fmt.Errorf("%w: jwks uri must be same-origin with issuer", ErrInvalidIssuerMetadata)
+	}
+	return jwksURI, nil
 }
 
 func sameOrigin(left string, right string) bool {
@@ -280,6 +325,19 @@ func (c *IssuerMetadataCache) StoreJWKS(uri string, set JWKS) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sets[uri] = copyJWKS(set)
+}
+
+func (c *IssuerMetadataCache) BeginJWKSRefresh(uri string, now time.Time, cooldown time.Duration) bool {
+	if c == nil {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if next, ok := c.refreshes[uri]; ok && now.Before(next) {
+		return false
+	}
+	c.refreshes[uri] = now.Add(cooldown)
+	return true
 }
 
 func copyJWKS(input JWKS) JWKS {
