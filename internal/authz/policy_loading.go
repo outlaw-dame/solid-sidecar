@@ -34,6 +34,7 @@ type PolicySourceCacheRecord struct {
 	CacheKey      string           `json:"cache_key"`
 	Source        PolicySource     `json:"source"`
 	Document      PolicyDocument   `json:"document"`
+	Content       []byte           `json:"-"` // Actual policy content, not serialized to JSON for security
 	LoadedAtUnix  int64            `json:"loaded_at_unix"`
 	ExpiresAtUnix int64            `json:"expires_at_unix,omitempty"`
 	State         PolicyCacheState `json:"state"`
@@ -188,6 +189,7 @@ func PolicyCacheRecordForLoadedSource(loaded LoadedPolicySource, loadedAtUnix in
 		CacheKey:      PolicySourceCacheKey(source),
 		Source:        source,
 		Document:      documents[0],
+		Content:       copyBytes(loaded.Content),
 		LoadedAtUnix:  loadedAtUnix,
 		ExpiresAtUnix: expiresAtUnix,
 		State:         PolicyCacheStateAt(loadedAtUnix, expiresAtUnix, loadedAtUnix),
@@ -295,6 +297,7 @@ func normalizePolicyCacheRecord(record PolicySourceCacheRecord, nowUnix int64) (
 		CacheKey:      cacheKey,
 		Source:        source,
 		Document:      documents[0],
+		Content:       copyBytes(record.Content),
 		LoadedAtUnix:  record.LoadedAtUnix,
 		ExpiresAtUnix: record.ExpiresAtUnix,
 		State:         PolicyCacheStateAt(record.LoadedAtUnix, record.ExpiresAtUnix, nowUnix),

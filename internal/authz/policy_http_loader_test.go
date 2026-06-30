@@ -118,8 +118,8 @@ func TestLoadPolicySourceSuccess(t *testing.T) {
 	if string(result.Loaded.Content) != policyContent {
 		t.Errorf("expected content %q, got %q", policyContent, string(result.Loaded.Content))
 	}
-	if result.Metadata == (PolicySourceCacheRecord{}) {
-		t.Fatal("expected metadata to be set")
+	if result.Metadata.CacheKey == "" {
+		t.Fatal("expected metadata cache key to be set")
 	}
 }
 

@@ -4,6 +4,7 @@ package authz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -19,6 +20,14 @@ type PolicyLoader interface {
 type PolicyDiscoveryMiddlewareOptions struct {
 	// Loader is the policy HTTP loader to use for fetching policies
 	Loader PolicyLoader
+
+	// CacheStore is the policy cache store for caching loaded policies
+	// If nil, no caching is performed (shadow mode without cache)
+	CacheStore PolicyCacheStore
+
+	// CacheDefaultExpiry is the default TTL for cached policies
+	// Default: 5 minutes
+	CacheDefaultExpiry time.Duration
 
 	// AllowedLinkRels is the list of Link relations to follow for policy discovery
 	// Default: ["acl", "describedby", "access-control", "policy"]
@@ -60,6 +69,8 @@ type PolicyDiscoveryMiddlewareOptions struct {
 func DefaultPolicyDiscoveryMiddlewareOptions(loader PolicyLoader) PolicyDiscoveryMiddlewareOptions {
 	return PolicyDiscoveryMiddlewareOptions{
 		Loader:             loader,
+		CacheStore:         nil, // No caching by default
+		CacheDefaultExpiry: 5 * time.Minute,
 		AllowedLinkRels:    []string{"acl", "describedby", "access-control", "policy"},
 		DerivedURITails:    []string{".acl", ".meta", ".well-known/solid"},
 		DefaultContentType: "text/turtle",
@@ -100,11 +111,29 @@ func NewPolicyDiscoveryMiddleware(options PolicyDiscoveryMiddlewareOptions) (*Po
 	if options.DefaultContentType == "" {
 		options.DefaultContentType = "text/turtle"
 	}
+	if options.CacheDefaultExpiry == 0 {
+		options.CacheDefaultExpiry = 5 * time.Minute
+	}
 	if len(options.AllowedLinkRels) == 0 {
 		options.AllowedLinkRels = []string{"acl", "describedby", "access-control", "policy"}
 	}
 	if len(options.DerivedURITails) == 0 {
 		options.DerivedURITails = []string{".acl", ".meta", ".well-known/solid"}
+	}
+
+	// If a cache store is provided, wrap the loader with a cached loader
+	if options.CacheStore != nil {
+		cachedLoader, err := NewCachedPolicyLoader(CachedPolicyLoaderOptions{
+			Loader:                options.Loader,
+			CacheStore:            options.CacheStore,
+			DefaultExpiryDuration: options.CacheDefaultExpiry,
+			Metrics:               NewNopPolicyCacheMetricsRecorder(),
+			Logger:                options.Logger,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create cached policy loader: %w", err)
+		}
+		options.Loader = cachedLoader
 	}
 
 	return &PolicyDiscoveryMiddleware{options: options}, nil
