@@ -74,12 +74,16 @@ Implemented:
 - local and external evaluator boundary;
 - fallback behavior when external evaluator fails;
 - backoff behavior for repeated external evaluator failures;
-- aggregate metrics without identifiers.
+- aggregate metrics without identifiers;
+- HTTP policy source loader with URI validation, scheme checking, and content-type filtering;
+- live policy source loading with retry logic for server errors and rate limiting;
+- body size limits for policy documents;
+- content type detection from response body;
+- AncestorPolicyWalk for container-level policy discovery and loading.
 
 Still missing before authorization can enforce:
 
 - live policy source discovery on the request path;
-- live policy source loading/cache integration on the request path;
 - RDF parser/canonicalization boundary;
 - WAC parser;
 - ACP parser;
