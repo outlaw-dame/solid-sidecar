@@ -1,317 +1,312 @@
 # Compression Compatibility Plan
 
-This document defines how `solid-sidecar` should add Gzip and Zstd support without breaking Solid compatibility, CSS pass-through behavior, HTTP semantics, caching, range requests, or existing clients.
+This document defines how `solid-sidecar` should add Gzip and Zstd support without breaking Solid clients, CSS compatibility, HTTP semantics, caches, range requests, ETags, signatures, or streaming behavior.
 
-Compression is a performance feature. It must never change Solid authorization behavior, resource identity, RDF semantics, request routing, or CSS compatibility. It must be negotiated, observable, bounded, and reversible.
+Compression is a performance feature, not a protocol shortcut. It must be negotiated, reversible, observable, and safe to disable immediately.
 
-## Scope
+## Goals
 
-This plan covers:
+- Support response compression for compatible clients.
+- Support Gzip first because it is widely deployed and broadly compatible.
+- Support Zstd only behind explicit configuration because client and intermediary support is newer and less universal.
+- Preserve CSS behavior for clients that do not advertise compression support.
+- Keep Solid protocol behavior unchanged.
+- Avoid corrupting `HEAD`, `Range`, `ETag`, `Content-Length`, `Content-Encoding`, and cache semantics.
+- Keep request decompression off by default until limits, threat model, and CSS compatibility are proven.
 
-- response compression for sidecar-generated responses;
-- optional response compression for proxied CSS responses when safe;
-- request decompression only where explicitly configured and safe;
-- Gzip as the first broadly compatible content-coding;
-- Zstd as an opt-in content-coding behind explicit feature/config gates;
-- cache and ETag correctness;
-- range request safety;
-- streaming behavior;
-- e2e compatibility tests against direct CSS behavior.
+## Non-goals for the first implementation
 
-This plan does not cover RDF graph compression, storage-layer compression, archive formats, or application-level resource transformations.
+- Do not require clients to support compression.
+- Do not force Zstd globally.
+- Do not compress every response.
+- Do not decompress arbitrary request bodies by default.
+- Do not change RDF, ACL, ACP, SAI, or storage semantics.
+- Do not alter authorization behavior based on compression state.
 
 ## Compatibility rule
 
-The sidecar must default to compatibility-preserving behavior:
+The sidecar must preserve identity-compatible responses when the client does not opt into compression.
 
-- if a client does not send `Accept-Encoding`, return identity-compatible responses;
-- if a client sends `Accept-Encoding: gzip`, Gzip may be used only for eligible responses;
-- if a client sends `Accept-Encoding: zstd`, Zstd may be used only when Zstd support is explicitly enabled;
-- if the response already has `Content-Encoding`, do not recompress it;
-- if a request uses a content-coding the sidecar cannot safely decode or proxy unchanged, reject or pass through according to explicit config and compatibility tests;
-- never compress in ways that corrupt `Content-Length`, `Content-Range`, `ETag`, `Digest`, signatures, or streaming semantics.
+A request without `Accept-Encoding: gzip` or `Accept-Encoding: zstd` must receive an uncompressed response unless CSS itself returns an encoded response.
 
-## Phase C1: compression configuration model
+A request with `Accept-Encoding: gzip` may receive Gzip only if response compression is enabled and the response is eligible.
 
-Implement configuration before implementation behavior.
+A request with `Accept-Encoding: zstd` may receive Zstd only if Zstd is explicitly enabled and the response is eligible.
 
-Suggested shape:
+If both Gzip and Zstd are acceptable, the sidecar may prefer Zstd only when configured to do so. Otherwise, prefer Gzip until deployment evidence proves Zstd is safe with target clients and intermediaries.
+
+## Configuration shape
+
+Initial config should be explicit and conservative:
 
 ```yaml
 compression:
-  enabled: false
   responses:
-    gzip_enabled: true
-    zstd_enabled: false
-    min_size_bytes: 1024
-    level: default
-    proxied_css_responses: false
+    enabled: false
+    gzip:
+      enabled: true
+      min_bytes: 1024
+      level: default
+    zstd:
+      enabled: false
+      min_bytes: 1024
+      level: default
+    prefer: gzip
+    skip_content_types:
+      - image/
+      - audio/
+      - video/
+      - application/zip
+      - application/gzip
+      - application/zstd
+      - application/octet-stream
+    skip_when_authorization_present: false
+    skip_error_responses: true
+    skip_ranges: true
   requests:
     decompression_enabled: false
-    gzip_enabled: true
-    zstd_enabled: false
+    allowed_encodings:
+      - gzip
     max_decompressed_bytes: 10485760
-  compatibility:
-    skip_range_requests: true
-    skip_already_encoded: true
-    skip_unknown_content_type: true
-    add_vary_accept_encoding: true
+    zstd_enabled: false
 ```
 
-Rules:
+Notes:
 
-- response compression must be disabled by default until tests exist;
-- Gzip may become default-on later only after compatibility evidence;
-- Zstd must remain explicit opt-in until client/intermediary compatibility is proven;
-- proxied CSS response compression must be separate from sidecar-generated response compression;
-- request decompression must remain explicit opt-in.
+- `responses.enabled` must default to `false` until e2e compatibility tests exist.
+- `zstd.enabled` must default to `false` even after Gzip support lands.
+- request decompression must default to `false`.
+- response compression can be enabled independently from request decompression.
 
-Acceptance criteria:
+## Response compression rules
 
-- config validation rejects ambiguous combinations;
-- Zstd cannot be enabled accidentally by enabling generic compression;
-- max decompressed size is required before request decompression can be enabled.
+The sidecar may compress a response only when all of the following are true:
 
-## Phase C2: response content-coding negotiation
+1. response compression is enabled;
+2. the client advertises a supported encoding in `Accept-Encoding`;
+3. CSS did not already return `Content-Encoding`;
+4. the response status is eligible;
+5. the method is eligible;
+6. the response body is above the configured minimum size when size is known;
+7. the content type is not skipped;
+8. the request is not a range request when `skip_ranges` is enabled;
+9. compression will not make response metadata incorrect.
 
-Implement HTTP negotiation correctly.
+Eligible methods:
 
-Rules:
+- `GET` may be compressed.
+- `HEAD` must never emit a body, but metadata must remain consistent.
+- `OPTIONS` should usually remain uncompressed unless there is strong evidence it helps.
+- write responses should be conservative and remain uncompressed initially.
 
-- parse `Accept-Encoding` according to q-values;
-- respect `identity;q=0` where feasible, but fail safely if no acceptable encoding can be produced;
-- prefer identity over compression for ineligible responses;
-- select Gzip only when client accepts Gzip and response is eligible;
-- select Zstd only when client accepts Zstd, response is eligible, and config enables Zstd;
-- always emit `Vary: Accept-Encoding` when response representation can vary by encoding;
-- do not double-compress;
-- do not compress if `Cache-Control: no-transform` is present unless explicitly documented and tested as safe.
+Eligible statuses:
 
-Acceptance criteria:
+- Prefer `200 OK` for the initial implementation.
+- Avoid `204 No Content`, `205 Reset Content`, and `304 Not Modified`.
+- Avoid redirects initially.
+- Avoid error responses while `skip_error_responses` is true.
 
-- clients without `Accept-Encoding` get identity responses;
-- `Accept-Encoding: gzip` negotiates Gzip only for eligible responses;
-- `Accept-Encoding: zstd` does not negotiate Zstd unless enabled;
-- q-value tests choose the correct encoding;
-- `Vary: Accept-Encoding` is present for compressed variants.
+## Header handling
 
-## Phase C3: response eligibility rules
+When the sidecar compresses a response, it must:
 
-Compression eligibility must be conservative.
+- set `Content-Encoding` to the selected encoding;
+- add or merge `Vary: Accept-Encoding`;
+- remove `Content-Length` unless the compressed length is known before headers are sent;
+- avoid sending stale identity-length values;
+- preserve `Content-Type`;
+- preserve privacy-safe cache headers unless variant handling requires adjustment;
+- avoid compressing if the response already has `Content-Encoding`.
 
-Eligible response types:
+When the sidecar does not compress a response, it should preserve CSS headers unchanged except for existing sidecar safety headers.
 
-- text/plain;
-- text/turtle;
-- application/ld+json;
-- application/json;
-- application/sparql-query;
-- application/sparql-results+json;
-- text/html only for sidecar-generated diagnostics/runbook pages, if any.
+## ETag handling
 
-Usually ineligible response types:
+Compression changes the bytes on the wire. Therefore, strong validators must not describe two different byte representations.
 
-- already-compressed media such as images, video, audio, zip, gzip, zstd, brotli, parquet, wasm where compression is ineffective or risky;
-- small responses below configured threshold;
-- responses with unknown or unsafe content type when `skip_unknown_content_type` is enabled;
-- responses with `Content-Encoding` already set;
-- partial content responses;
-- upgrade/hijacked/streaming protocols;
-- sensitive error bodies unless reviewed.
+Initial safe policy:
 
-Acceptance criteria:
+- If CSS returns a strong `ETag` and the sidecar dynamically compresses the response, convert it to a weak validator or remove it until a variant-aware ETag strategy exists.
+- If CSS returns a weak `ETag`, it may be preserved if the runtime documents that it represents semantic equivalence rather than octet identity.
+- If sidecar-managed caching is later added, cache keys must include the selected content-coding variant.
 
-- tests cover eligible RDF/JSON/text responses;
-- tests cover skipped image/binary/already-encoded responses;
-- small responses are not compressed;
-- compressed and identity variants are byte-compatible after decompression.
+Future variant-aware policy:
 
-## Phase C4: proxied CSS response safety
+- identity, gzip, and zstd variants may each have distinct strong ETags;
+- `Vary: Accept-Encoding` must always be present for compressed variants;
+- conditional requests must be evaluated against the correct variant.
 
-CSS pass-through compatibility matters more than bandwidth savings.
+## Range request handling
 
-Initial rule:
+Dynamic compression and byte ranges are easy to corrupt because ranges apply to a selected representation.
 
-- sidecar-generated responses may be compressed first;
-- proxied CSS responses should remain identity/pass-through until direct CSS vs sidecar comparison tests prove safety.
+Initial safe policy:
 
-When proxied compression is enabled:
+- Do not dynamically compress responses to requests containing `Range`.
+- Preserve CSS behavior for range requests.
+- If CSS returns `206 Partial Content`, pass it through unchanged.
+- Do not attempt to synthesize compressed ranges.
 
-- strip or recompute `Content-Length` correctly;
-- add or preserve `Vary: Accept-Encoding` correctly;
-- preserve `Cache-Control`, `Link`, `Allow`, `Accept-Patch`, `WAC-Allow`, and Solid-specific headers;
-- never alter response status;
-- never alter RDF content after decompression;
-- never alter authorization outcomes;
-- never compress 304 responses;
-- never compress 204 responses;
-- never compress responses to `HEAD` bodies, but ensure metadata reflects actual transfer behavior.
+Future policy may support pre-compressed variants only if range semantics are implemented against the compressed representation and tested carefully.
 
-Acceptance criteria:
+## `HEAD` handling
 
-- direct CSS and sidecar identity responses match for baseline fixtures;
-- compressed sidecar responses decompress to the same body as direct CSS for eligible fixtures;
-- Solid-specific headers survive compression;
-- `HEAD` responses remain header-correct and bodyless.
+`HEAD` responses must not include a body.
 
-## Phase C5: ETag and validators
+Initial safe policy:
 
-Compression changes the representation transferred over HTTP. Validators must remain correct.
+- Do not dynamically compress `HEAD` responses.
+- Preserve CSS metadata unless a later variant-aware design intentionally reports the selected representation metadata.
+- Tests must verify that `HEAD` never emits compressed body bytes.
 
-Rules:
+## Request decompression rules
 
-- do not reuse strong identity ETags for compressed variants unless they are intentionally weak or variant-aware;
-- preserve weak ETags only when safe;
-- if the sidecar compresses a response and cannot produce correct validator semantics, strip or weaken ETag according to documented policy;
-- never let identity/gzip/zstd variants share a cache entry without `Vary: Accept-Encoding`;
-- preserve `Last-Modified` when compression does not alter resource modification semantics;
-- document behavior for `If-None-Match` and `If-Modified-Since`.
+Request decompression is higher risk than response compression because it changes the body CSS receives and introduces decompression-bomb risks.
 
-Acceptance criteria:
-
-- cache tests prove identity, gzip, and zstd variants do not cross-contaminate;
-- conditional requests do not produce incorrect 304 responses;
-- ETag policy is documented and tested.
-
-## Phase C6: range request safety
-
-Dynamic compression and byte ranges can conflict.
-
-Initial rule:
-
-- skip dynamic compression when the request contains `Range`;
-- pass range requests through to CSS unchanged;
-- do not compress 206 Partial Content;
-- do not synthesize compressed byte ranges until a later dedicated design exists.
-
-Acceptance criteria:
-
-- `Range` requests through sidecar match direct CSS behavior;
-- 206 responses are not dynamically compressed;
-- `Content-Range` is never emitted for a different encoded byte stream than the one actually sent.
-
-## Phase C7: request decompression safety
-
-Request decompression is higher risk than response compression.
-
-Initial rule:
+Initial policy:
 
 - request decompression is disabled by default;
-- compressed requests may be passed through unchanged to CSS only if CSS compatibility is verified;
-- sidecar decompression is allowed only when explicitly enabled and bounded.
+- unsupported request `Content-Encoding` values should be passed through to CSS or rejected only behind explicit compatibility tests;
+- when enabled, decompression must enforce both compressed and decompressed byte limits;
+- decompressed body size must be bounded before proxying to CSS;
+- decompression failures must produce safe client errors without logging request bodies;
+- `Content-Encoding` must be removed before forwarding a decompressed body;
+- `Content-Length` must be updated or removed;
+- request hashes/audit metadata must clearly distinguish compressed and decompressed forms.
 
-If enabled:
+Allowed initial request encoding:
 
-- support Gzip first;
-- keep Zstd request decompression behind a separate explicit flag;
-- enforce compressed and decompressed size limits;
-- protect against decompression bombs;
-- set or normalize request headers before forwarding;
-- decide whether CSS receives decompressed body or original encoded body, and test both paths before enabling;
-- reject unsupported content-codings clearly.
+- Gzip only.
 
-Acceptance criteria:
+Zstd request decompression must remain disabled until response-side Zstd is proven and decompression-bomb protections are tested.
 
-- oversized decompressed bodies are rejected before exhausting memory;
-- unsupported request encodings fail safely;
-- `Content-Length` and `Content-Encoding` are correct after any transformation;
-- request-body logs remain disabled.
+## Streaming behavior
 
-## Phase C8: streaming behavior
+Dynamic compression must not break streaming resources or long-lived responses.
 
-Compression must not break streaming or long-lived responses.
+Initial policy:
 
-Rules:
+- skip compression for unknown streaming content types;
+- skip compression for responses that flush frequently unless streaming compression is explicitly tested;
+- avoid buffering unbounded responses to decide whether to compress;
+- expose metrics for skipped streaming responses.
 
-- do not buffer unbounded responses just to compress them;
-- skip compression for unknown-length streams unless streaming compression is explicitly implemented and tested;
-- preserve flushing behavior for streaming responses;
-- skip compression for protocol upgrades;
-- bound compressor memory.
+## Content type guidance
 
-Acceptance criteria:
+Good initial candidates:
 
-- readiness/health responses remain fast;
-- long-lived responses do not accumulate unbounded memory;
-- streaming responses are either explicitly skipped or explicitly stream-compressed with tests.
+- `text/turtle`;
+- `application/ld+json`;
+- `application/json`;
+- `text/plain`;
+- `text/html`;
+- `text/css`;
+- `application/javascript`;
+- XML/RDF textual formats where used.
 
-## Phase C9: security and privacy
+Skip by default:
 
-Compression can create side-channel risk when secrets and attacker-controlled content are reflected into the same compressed response.
+- images;
+- audio;
+- video;
+- archives;
+- already-compressed formats;
+- unknown binary content;
+- very small responses.
 
-Rules:
+## Security considerations
 
-- do not compress responses that include tokens, proofs, secrets, or sensitive reflected input;
-- avoid compression for detailed error bodies that may include user-provided values;
-- never log raw compressed or decompressed bodies;
-- record only aggregate compression metrics;
-- make compression disablement a one-line operational rollback.
+Compression can interact with secrets and attacker-controlled reflection.
 
-Acceptance criteria:
+Initial policy:
 
-- authn/authz error responses are reviewed before compression is allowed;
-- logs do not include compressed or decompressed bodies;
-- operators can disable compression without code changes.
+- do not compress responses that intentionally include token material;
+- do not log compressed or decompressed bodies;
+- keep authn/authz error responses uncompressed while error body shape is under review;
+- allow operators to disable compression instantly;
+- expose compression decision metrics without identifiers;
+- include compression in the threat model before enabling by default.
 
-## Phase C10: observability
+## Metrics
 
-Expose aggregate metrics only.
+Expose aggregate counters only:
 
-Suggested metrics:
-
-- responses eligible for compression;
-- responses compressed by encoding;
-- responses skipped by reason;
-- compression ratio buckets;
-- compression latency buckets;
+- compression response candidates;
+- compressed with gzip;
+- compressed with zstd;
+- skipped because client did not accept encoding;
+- skipped because already encoded;
+- skipped because range request;
+- skipped because content type;
+- skipped because too small;
+- skipped because status/method;
+- compression errors;
 - request decompression attempts;
-- decompression rejections by reason;
-- compressor errors.
+- request decompression rejected;
+- decompressed byte-limit failures.
 
-Do not include WebIDs, DIDs, resource paths, query strings, tokens, policy bodies, or request bodies in compression metrics.
+Do not include WebIDs, resource URLs, query strings, request bodies, response bodies, or policy bodies in metrics labels.
 
-## Phase C11: test matrix
+## Tests
 
-Required tests:
+Required before enabling Gzip:
 
-- no `Accept-Encoding` -> identity;
-- `Accept-Encoding: gzip` -> gzip when eligible;
-- `Accept-Encoding: zstd` -> identity when Zstd disabled;
-- `Accept-Encoding: zstd` -> zstd when Zstd enabled and eligible;
-- q-value negotiation;
-- `Vary: Accept-Encoding` presence;
-- ETag/conditional request behavior;
-- `HEAD` behavior;
-- `Range` pass-through;
-- already encoded response skipped;
-- small response skipped;
-- no-transform response skipped;
-- CSS direct vs sidecar identity comparison;
-- CSS direct vs sidecar decompressed compressed-body comparison;
-- unsupported request `Content-Encoding` behavior;
-- decompression size limit behavior if request decompression is enabled.
+- no `Accept-Encoding` returns identity-compatible response;
+- `Accept-Encoding: gzip` returns `Content-Encoding: gzip` only when enabled;
+- compressed body decompresses to CSS body for eligible `GET`;
+- `Vary: Accept-Encoding` is present for compressed responses;
+- existing `Vary` values are preserved and merged;
+- `Content-Length` is removed or correct;
+- existing `Content-Encoding` from CSS is not double-compressed;
+- small bodies are skipped;
+- skipped content types are skipped;
+- `Range` requests pass through unchanged;
+- `HEAD` never emits a body;
+- `304`, `204`, and `206` are not dynamically compressed;
+- strong ETag behavior follows the chosen safe policy.
 
-## Implementation order
+Required before enabling Zstd:
 
-1. Add config and validation only.
-2. Add sidecar-generated response Gzip.
-3. Add negotiation tests and `Vary` handling.
-4. Add CSS pass-through identity comparison tests.
-5. Add proxied CSS response Gzip behind explicit config.
-6. Add ETag/range/HEAD hardening tests.
-7. Add Zstd response support behind explicit config.
-8. Add request decompression only if needed and explicitly scoped.
-9. Add observability metrics.
-10. Update local/staging runbooks with rollback guidance.
+- all Gzip compatibility tests pass for Zstd variants;
+- clients without `zstd` support still get identity or Gzip;
+- Zstd is disabled by default;
+- `prefer: zstd` is ignored unless Zstd is enabled;
+- caches keep identity, Gzip, and Zstd variants separate;
+- staging evidence confirms intermediaries preserve Zstd responses correctly.
+
+Required before request decompression:
+
+- compressed and decompressed size limits;
+- decompression-bomb rejection;
+- malformed Gzip rejection;
+- body forwarding correctness;
+- `Content-Encoding` removal after decompression;
+- `Content-Length` correction/removal;
+- CSS compatibility tests for decompressed writes;
+- privacy-safe failure logs.
+
+## Rollout order
+
+1. Add config schema with all compression disabled by default.
+2. Add response negotiation parser tests.
+3. Add Gzip response compression for eligible `GET` only.
+4. Add CSS comparison tests for identity vs Gzip.
+5. Add metrics and skip reasons.
+6. Enable Gzip in local/staging only.
+7. Add Zstd implementation behind disabled config.
+8. Add Zstd e2e tests.
+9. Enable Zstd only in controlled staging.
+10. Consider request decompression only after response compression is stable.
 
 ## Stop conditions
 
-Pause compression implementation if:
+Disable or pause compression work if:
 
-- direct CSS vs sidecar compatibility cannot be measured;
-- compressed responses corrupt headers or validators;
-- range requests differ from CSS behavior;
-- ETags or caches cross-contaminate variants;
-- request decompression risks unbounded memory;
-- Zstd breaks existing clients or intermediaries;
-- compression risks exposing secrets through side channels.
+- responses differ from CSS when client did not opt in;
+- dynamic compression corrupts headers;
+- range requests break;
+- `HEAD` emits body bytes;
+- caches mix identity/Gzip/Zstd variants;
+- clients or intermediaries mishandle Zstd;
+- compression interacts with authn/authz error bodies in a way that could leak sensitive information;
+- operators cannot immediately disable compression.
