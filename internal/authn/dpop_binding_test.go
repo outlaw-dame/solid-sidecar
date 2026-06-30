@@ -59,6 +59,28 @@ func TestConfirmDPoPTokenBindingIgnoresOpaqueToken(t *testing.T) {
 	}
 }
 
+func TestConfirmDPoPTokenBindingIgnoresDottedOpaqueToken(t *testing.T) {
+	proof := mustDPoPProof(t, mustP256Key(t), ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "binding-opaque-dotted",
+		IAT: time.Unix(1_700_000_000, 0).Unix(),
+	})
+	if err := ConfirmDPoPTokenBinding("some.opaque.token", proof); err != nil {
+		t.Fatalf("dotted opaque tokens should not be treated as malformed JWTs: %v", err)
+	}
+}
+
+func TestDPoPConfirmationThumbprintIgnoresEmptyToken(t *testing.T) {
+	jkt, ok, err := DPoPConfirmationThumbprint("   ")
+	if err != nil {
+		t.Fatalf("empty tokens should be ignored: %v", err)
+	}
+	if ok || jkt != "" {
+		t.Fatalf("expected no confirmation thumbprint, got ok=%v jkt=%q", ok, jkt)
+	}
+}
+
 func TestConfirmDPoPTokenBindingIgnoresJWTWithoutCNF(t *testing.T) {
 	proof := mustDPoPProof(t, mustP256Key(t), ProofClaims{
 		HTM: "GET",
