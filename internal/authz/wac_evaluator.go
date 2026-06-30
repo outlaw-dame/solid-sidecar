@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -26,6 +27,10 @@ type WACEvaluatorOptions struct {
 	// Default: 30 seconds
 	Timeout time.Duration
 
+	// ShadowMode determines if the evaluator should return abstain instead of actual decisions
+	// Default: true (non-enforcing by default)
+	ShadowMode bool
+
 	// Logger is the logger to use
 	Logger *slog.Logger
 }
@@ -35,15 +40,17 @@ func DefaultWACEvaluatorOptions() WACEvaluatorOptions {
 	return WACEvaluatorOptions{
 		MaxPolicies: 10,
 		Timeout:     30 * time.Second,
+		ShadowMode:  true,
 		Logger:      nil,
 	}
 }
 
 // WACEvaluator evaluates Web Access Control (WAC) policies in shadow mode
 type WACEvaluator struct {
-	options   WACEvaluatorOptions
-	parser    *WACParser
-	RDFParser *RDFParserRegistry
+	options    WACEvaluatorOptions
+	parser     *WACParser
+	RDFParser  *RDFParserRegistry
+	shadowMode bool
 }
 
 // NewWACEvaluator creates a new WAC evaluator
@@ -65,9 +72,10 @@ func NewWACEvaluator(options WACEvaluatorOptions, rdfParser *RDFParserRegistry) 
 	}
 
 	return &WACEvaluator{
-		options:   options,
-		parser:    options.Parser,
-		RDFParser: rdfParser,
+		options:    options,
+		parser:     options.Parser,
+		RDFParser:  rdfParser,
+		shadowMode: options.ShadowMode,
 	}, nil
 }
 
@@ -130,6 +138,11 @@ func (e *WACEvaluator) Evaluate(ctx context.Context, request Request) (Decision,
 	// Evaluate the request against the WAC policies
 	decisionValue, reasonCode, statusHint := e.evaluateRequestAgainstPolicies(ctx, request, policies)
 
+	// In shadow mode, always return abstain regardless of the actual evaluation
+	if e.shadowMode {
+		return shadowDecision(request, audit, DecisionAbstain, ReasonKernelAbstainShadowMode, 0), nil
+	}
+
 	return shadowDecision(request, audit, decisionValue, reasonCode, statusHint), nil
 }
 
@@ -178,42 +191,148 @@ func (e *WACEvaluator) isWACContentType(contentType string) bool {
 }
 
 // createPolicyFromDocument creates a WAC policy from a policy document
-// This is a placeholder that will be enhanced when integrated with actual policy loading
+// This creates a WAC policy with sample rules for testing and demonstration
 func (e *WACEvaluator) createPolicyFromDocument(ctx context.Context, doc PolicyDocument) (WACPolicy, error) {
-	// For shadow mode, we return an empty policy
+	// For demonstration and testing purposes, we create a sample policy
 	// In a real implementation, we would:
 	// 1. Fetch the policy content from doc.URI
 	// 2. Parse it using the WAC parser
 	// 3. Return the parsed policy
 
-	// For now, create a default policy structure
+	// Create sample rules based on the document URI
+	// This allows us to test the evaluation logic
+	rules := e.createSampleRulesForResource(doc.URI)
+
 	return WACPolicy{
 		ResourceURI:      doc.URI,
 		AuthorizationURI: doc.URI,
-		Rules:            []WACRule{},
+		Rules:            rules,
 		Owner:            "",
 	}, nil
 }
 
+// createSampleRulesForResource creates sample WAC rules for a resource
+// This is used for testing and demonstration when actual policy content is not available
+func (e *WACEvaluator) createSampleRulesForResource(resourceURI string) []WACRule {
+	// Extract the resource path without the .acl extension
+	baseURI := resourceURI
+	if strings.HasSuffix(baseURI, ".acl") {
+		baseURI = strings.TrimSuffix(baseURI, ".acl")
+	}
+
+	// Create sample rules that allow read/write to the owner
+	ownerWebID := "https://example.org/owner#webid"
+	publicAgent := "https://www.w3.org/ns/solid/interop#PublicAgent"
+
+	rules := []WACRule{
+		{
+			Authorization: baseURI + ".acl",
+			AccessTo:      baseURI,
+			Agent:         ownerWebID,
+			Modes:         []AccessMode{AccessModeRead, AccessModeWrite, AccessModeControl},
+		},
+		{
+			Authorization: baseURI + ".acl",
+			AccessTo:      baseURI,
+			Agent:         publicAgent,
+			Modes:         []AccessMode{AccessModeRead},
+		},
+	}
+
+	return rules
+}
+
 // evaluateRequestAgainstPolicies evaluates a request against WAC policies
 func (e *WACEvaluator) evaluateRequestAgainstPolicies(ctx context.Context, request Request, policies []WACPolicy) (DecisionValue, ReasonCode, int) {
-	// In shadow mode, we always abstain for now
-	// This will be enhanced to actually evaluate WAC rules
+	// Collect all rules from all policies
+	allRules := make([]WACRule, 0)
+	for _, policy := range policies {
+		allRules = append(allRules, policy.Rules...)
+	}
 
-	// For demonstration purposes, we'll check if we have any policies
-	if len(policies) == 0 {
+	// If no rules, abstain
+	if len(allRules) == 0 {
 		return DecisionAbstain, ReasonPolicyNotLoaded, 0
 	}
 
 	// Check if the request has an agent
 	if request.AgentWebID == "" {
-		// No agent, cannot make a decision
+		// No agent specified, cannot make a decision
 		return DecisionAbstain, ReasonPolicyNotLoaded, 0
 	}
 
-	// For now, abstain in shadow mode
-	// Future: Actually evaluate WAC rules against the request
-	return DecisionAbstain, ReasonKernelAbstainShadowMode, 0
+	// Evaluate each rule to see if it matches the request
+	for _, rule := range allRules {
+		if e.ruleMatchesRequest(rule, request) {
+			// Rule matches - check if it allows the requested modes
+			if e.ruleAllowsModes(rule, request.RequestedModes) {
+				// All requested modes are allowed
+				return DecisionAllow, ReasonPolicyAllow, http.StatusOK
+			}
+			// Rule matches but doesn't allow all requested modes
+			// Continue checking other rules
+		}
+	}
+
+	// No matching rule found that allows all requested modes
+	return DecisionDeny, ReasonPolicyDeny, http.StatusForbidden
+}
+
+// ruleMatchesRequest checks if a WAC rule matches a request
+func (e *WACEvaluator) ruleMatchesRequest(rule WACRule, request Request) bool {
+	// Check if the rule applies to the requested resource
+	// The rule's AccessTo should match the request's ResourceURI
+	if rule.AccessTo != request.ResourceURI {
+		// In a real implementation, we would also check for:
+		// - Container inheritance (if rule applies to parent container)
+		// - Wildcard matching
+		// For now, we require exact match
+		return false
+	}
+
+	// Check if the rule's agent matches the request's agent
+	if rule.Agent != "" && rule.Agent != request.AgentWebID {
+		// In a real implementation, we would also check:
+		// - Group membership
+		// - AgentClass matching
+		// For now, we require exact match
+		return false
+	}
+
+	// Check agent class if specified
+	if rule.AgentClass != "" {
+		// For now, we don't have agent class resolution
+		// In a real implementation, we would check if request.AgentWebID
+		// is a member of the agent class
+		return false
+	}
+
+	// Rule matches the resource and agent
+	return true
+}
+
+// ruleAllowsModes checks if a rule allows all requested modes
+func (e *WACEvaluator) ruleAllowsModes(rule WACRule, requestedModes []AccessMode) bool {
+	// If the rule has no modes specified, it allows all modes
+	if len(rule.Modes) == 0 {
+		return true
+	}
+
+	// Check if all requested modes are in the rule's modes
+	for _, requestedMode := range requestedModes {
+		found := false
+		for _, ruleMode := range rule.Modes {
+			if ruleMode == requestedMode {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Log helpers

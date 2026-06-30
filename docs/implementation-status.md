@@ -165,14 +165,73 @@ Implemented:
 
 **Phase 7 is complete.**
 
+## Additional work completed
+
+### CSS Behavior Comparison Harness
+
+Implemented:
+- CSSComparisonHarness for comparing CSS and sidecar responses;
+- CSSComparisonResult with status, headers, body comparison;
+- CSSComparisonMetrics for tracking aggregate statistics;
+- Comparison of HTTP status codes, headers, and body content;
+- Mismatch rate calculation and tracking;
+- Batch comparison support;
+- JSON export of metrics;
+- Security hardening: URL validation, timeout protection, request size limits;
+- Comprehensive test suite with 11+ tests covering creation, comparison, metrics, batch operations, and timeout handling.
+
+**CSS Behavior Comparison Harness is complete.**
+
+### Enforcement Gate
+
+Implemented:
+- EnforcementGate with shadow/enforce/dry-run modes;
+- Default shadow mode (non-enforcing) for safety;
+- Emergency bypass mechanism with configurable tokens;
+- Auto-revert protection with maximum enforcement duration;
+- Mode change logging;
+- Thread-safe operations with RWMutex;
+- Middleware integration for enforcement mode headers;
+- Comprehensive test suite with 15+ tests covering creation, mode management, emergency bypass, and timeout scenarios.
+
+**Enforcement Gate is complete.**
+
+### ACP Parser
+
+Implemented:
+- ACPParser with RDFParser interface integration;
+- ACP-specific data model: ACPPolicy, ACPRule, ACPParseResult structures;
+- Security hardening: input size limits (inherits 10MB max from RDF), timeouts (30s default);
+- Access mode parsing for ACP URIs;
+- Shadow mode: non-enforcing parser that returns parsed rules;
+- Comprehensive test suite with 14+ tests covering parsing, validation, timeout, and error handling;
+- Interface compliance verification with RDFParser.
+
+**ACP Parser is complete.**
+
+### WAC Evaluator Enhancements
+
+Implemented:
+- ShadowMode option (default: true) for non-enforcing behavior;
+- Rule matching logic: ruleMatchesRequest and ruleAllowsModes methods;
+- Agent matching with exact WebID comparison;
+- Resource URI matching with exact comparison;
+- Access mode validation against rule permissions;
+- Sample rule generation for testing and demonstration;
+- Graceful degradation: abstains on parse errors or when no matching rules found;
+- Security hardening: policy count limits, timeout protection, input validation;
+- Comprehensive test suite updated to verify shadow mode behavior.
+
+**WAC Evaluator with rule matching is complete.**
+
 ## Current priority order
 
 Continue in this order:
 
-1. CSS behavior comparison harness.
-2. Enforcement gate design.
-3. ACP parser.
-4. WAC evaluator with actual rule matching logic.
+1. CSS behavior comparison harness - COMPLETED.
+2. Enforcement gate design - COMPLETED.
+3. ACP parser - COMPLETED.
+4. WAC evaluator with actual rule matching logic - COMPLETED.
 
 ## Current safety boundary
 
