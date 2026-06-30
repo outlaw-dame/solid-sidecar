@@ -432,12 +432,14 @@ func TestAncestorPolicyWalk(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		path := r.URL.Path
-		w.Header().Set("Content-Type", "text/turtle")
-		w.WriteHeader(http.StatusOK)
 
 		if path == "/container1/.acl" {
+			w.Header().Set("Content-Type", "text/turtle")
+			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, container1Policy)
 		} else if path == "/container2/.acl" {
+			w.Header().Set("Content-Type", "text/turtle")
+			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, container2Policy)
 		} else {
 			w.WriteHeader(http.StatusNotFound)

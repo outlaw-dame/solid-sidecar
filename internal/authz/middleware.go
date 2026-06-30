@@ -55,7 +55,14 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		request, err := BuildRequest(r, options.BuildOptions)
+		// Check if policy documents are in the request context (from policy discovery middleware)
+		// If so, use them; otherwise use the ones from BuildOptions
+		buildOptions := options.BuildOptions
+		if policyDocs := PolicyDocumentsFromContext(r.Context()); len(policyDocs) > 0 {
+			buildOptions.PolicyDocuments = policyDocs
+		}
+
+		request, err := BuildRequest(r, buildOptions)
 		if err != nil {
 			logShadowError(options.Logger, r, ShadowLogMessageRequestBuildFailed, ShadowErrorReasonRequestBuildFailed)
 			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonRequestBuildFailed)
