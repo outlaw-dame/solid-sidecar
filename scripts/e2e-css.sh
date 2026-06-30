@@ -45,35 +45,47 @@ assert_status() {
   local path="$2"
   local expected="$3"
   local actual
+  echo "Checking ${method} ${path}..." >&2
   actual="$(status_code "${method}" "${sidecar_url}${path}")"
+  echo "  Sidecar returned: ${actual} (expected: ${expected})" >&2
   if [[ "${actual}" != "${expected}" ]]; then
-    echo "expected ${method} ${path} to return ${expected}, got ${actual}" >&2
+    echo "FAILED: expected ${method} ${path} to return ${expected}, got ${actual}" >&2
     return 1
   fi
+  echo "  PASSED" >&2
 }
 
 assert_sidecar_matches_css_status() {
   local method="$1"
   local path="$2"
   local direct proxied
+  echo "Checking ${method} ${path} matches CSS..." >&2
   direct="$(status_code "${method}" "${css_url}${path}")"
   proxied="$(status_code "${method}" "${sidecar_url}${path}")"
+  echo "  CSS status: ${direct}, Sidecar status: ${proxied}" >&2
   if [[ "${direct}" != "${proxied}" ]]; then
-    echo "expected ${method} ${path} sidecar status ${proxied} to match CSS status ${direct}" >&2
+    echo "FAILED: expected ${method} ${path} sidecar status ${proxied} to match CSS status ${direct}" >&2
     return 1
   fi
+  echo "  PASSED" >&2
 }
 
 wait_for() {
   local url="$1"
   local deadline=$((SECONDS + wait_seconds))
+  echo "Waiting for ${url} (timeout: ${wait_seconds}s)..." >&2
   until curl -fsS "${url}" >/dev/null; do
     if (( SECONDS >= deadline )); then
-      echo "timed out waiting for ${url}" >&2
+      echo "TIMED OUT: Failed to reach ${url} within ${wait_seconds}s" >&2
+      echo "Trying to diagnose..." >&2
+      echo "Current time: $(date)" >&2
+      echo "Container status:" >&2
+      docker compose -p "${project_name}" -f "${compose_file}" ps >&2
       return 1
     fi
     sleep 2
   done
+  echo "Successfully connected to ${url}" >&2
 }
 
 main() {
@@ -93,9 +105,19 @@ main() {
   trap cleanup EXIT
   docker compose -p "${project_name}" -f "${compose_file}" down -v --remove-orphans >/dev/null 2>&1 || true
 
+  echo "=== Starting containers with docker-compose ===" >&2
   docker compose -p "${project_name}" -f "${compose_file}" up --build -d
+  echo "=== Containers started ===" >&2
+  echo "" >&2
+  echo "=== Container status ===" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" ps >&2
+  echo "" >&2
 
+  echo "=== Waiting for healthz endpoint ===" >&2
   wait_for "${sidecar_url}/healthz"
+  echo "=== healthz is ready ===" >&2
+  
+  echo "=== Waiting for readyz endpoint ===" >&2
   wait_for "${sidecar_url}/readyz"
 
   assert_status GET /healthz 200
