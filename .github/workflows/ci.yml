@@ -29,7 +29,19 @@ jobs:
           go-version: '1.22.x'
 
       - name: Verify Go
-        run: bash scripts/verify.sh go
+        run: |
+          set -o pipefail
+          bash scripts/verify.sh go 2>&1 | tee go-verify.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload Go verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-verify-log
+          path: go-verify.log
+          if-no-files-found: warn
+          retention-days: 7
 
   rust:
     name: Rust policy kernel
@@ -45,7 +57,19 @@ jobs:
           components: rustfmt, clippy
 
       - name: Verify Rust
-        run: bash scripts/verify.sh rust
+        run: |
+          set -o pipefail
+          bash scripts/verify.sh rust 2>&1 | tee rust-verify.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload Rust verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-verify-log
+          path: rust-verify.log
+          if-no-files-found: warn
+          retention-days: 7
 
   govulncheck:
     name: Vulnerability check

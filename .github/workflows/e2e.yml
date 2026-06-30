@@ -61,3 +61,21 @@ jobs:
           path: e2e.log
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Upload sidecar logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-through-sidecar-sidecar-logs
+          path: sidecar.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload CSS logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-through-sidecar-css-logs
+          path: css.log
+          if-no-files-found: warn
+          retention-days: 14

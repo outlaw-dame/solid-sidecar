@@ -151,6 +151,53 @@ func TestCanonicalJWKSURIRejectsQuery(t *testing.T) {
 	}
 }
 
+func TestIssuerDiscoveryClientRefetchesStaleJWKS(t *testing.T) {
+	now := time.Unix(100, 0)
+	jwksHits := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/jwks" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		jwksHits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[{"kty":"RSA","kid":"one"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewIssuerDiscoveryClient(server.Client())
+	client.Now = func() time.Time { return now }
+	client.CacheTTL = time.Minute
+	metadata := IssuerMetadata{Issuer: server.URL, JWKSURI: server.URL + "/jwks"}
+
+	// First fetch should hit the server
+	_, err := client.FetchJWKS(context.Background(), metadata)
+	if err != nil {
+		t.Fatalf("FetchJWKS returned error: %v", err)
+	}
+	if jwksHits != 1 {
+		t.Fatalf("jwks hits = %d, want 1", jwksHits)
+	}
+
+	// Second fetch within TTL should use cache
+	_, err = client.FetchJWKS(context.Background(), metadata)
+	if err != nil {
+		t.Fatalf("FetchJWKS cached returned error: %v", err)
+	}
+	if jwksHits != 1 {
+		t.Fatalf("jwks hits = %d, want 1 (cached)", jwksHits)
+	}
+
+	// Advance time beyond TTL - cache should be stale
+	client.Now = func() time.Time { return now.Add(2 * time.Minute) }
+	_, err = client.FetchJWKS(context.Background(), metadata)
+	if err != nil {
+		t.Fatalf("FetchJWKS stale cache returned error: %v", err)
+	}
+	if jwksHits != 2 {
+		t.Fatalf("jwks hits = %d, want 2 (refetch after TTL)", jwksHits)
+	}
+}
+
 func serverIssuer(r *http.Request) string {
 	return "https://" + r.Host
 }

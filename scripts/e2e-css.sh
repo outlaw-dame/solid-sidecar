@@ -18,8 +18,10 @@ dump_logs() {
   echo "--- docker compose ps ---" >&2
   docker compose -p "${project_name}" -f "${compose_file}" ps >&2 || true
   echo "--- css logs ---" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" logs --no-color css > css.log 2>&1 || true
   docker compose -p "${project_name}" -f "${compose_file}" logs --no-color css >&2 || true
   echo "--- sidecar logs ---" >&2
+  docker compose -p "${project_name}" -f "${compose_file}" logs --no-color sidecar > sidecar.log 2>&1 || true
   docker compose -p "${project_name}" -f "${compose_file}" logs --no-color sidecar >&2 || true
 }
 
