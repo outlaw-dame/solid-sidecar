@@ -79,11 +79,10 @@ Implemented:
 - live policy source loading with retry logic for server errors and rate limiting;
 - body size limits for policy documents;
 - content type detection from response body;
-- AncestorPolicyWalk for container-level policy discovery and loading.
+- AncestorPolicyWalk for container-level policy discovery and loading;
+- live policy source discovery middleware on the request path with configurable exponential backoff, DoS protection, Link header support, and derived URI tails.
 
 Still missing before authorization can enforce:
-
-- live policy source discovery on the request path;
 - RDF parser/canonicalization boundary;
 - WAC parser;
 - ACP parser;
@@ -137,8 +136,7 @@ Still missing:
 
 Continue in this order:
 
-1. Live policy source discovery on the request path in shadow mode.
-2. Live policy source loading/cache integration in shadow mode.
+1. Live policy source loading/cache integration in shadow mode.
 3. RDF parser boundary selection and hardening.
 4. WAC parser in shadow mode.
 5. WAC evaluator in shadow mode.
@@ -151,7 +149,7 @@ The sidecar must remain CSS-authoritative and non-enforcing until all of the fol
 
 - CI and e2e checks are visible and reliable;
 - authn middleware accepts only verified and key-bound identity;
-- live policy discovery/loading works in shadow mode without request-path hangs;
+- live policy discovery works in shadow mode without request-path hangs;
 - WAC/ACP parser/evaluator output can be compared against CSS behavior;
 - mismatch rate is measured;
 - enforcement gates and emergency bypass exist;
