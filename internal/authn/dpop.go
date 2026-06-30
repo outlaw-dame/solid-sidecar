@@ -97,6 +97,15 @@ func (v *DPoPVerifier) VerifyRequest(r *http.Request, accessToken string, proof 
 		if subtle.ConstantTimeCompare([]byte(claims.ATH), []byte(expectedATH)) != 1 {
 			return errors.New("DPoP ath does not match access token")
 		}
+		expectedJKT, ok, err := DPoPConfirmationThumbprint(accessToken)
+		if err != nil {
+			return err
+		}
+		if ok {
+			if err := confirmDPoPTokenBinding(header, expectedJKT); err != nil {
+				return err
+			}
+		}
 	}
 	cacheKey := replayKey(header, claims)
 	if ok := v.cache.Store(cacheKey, issuedAt.Add(v.cfg.ReplayWindow)); !ok {
@@ -130,7 +139,7 @@ func parseProof(proof string) (proofHeader, ProofClaims, []byte, []byte, error) 
 	if err := json.Unmarshal(claimsBytes, &claims); err != nil {
 		return proofHeader{}, ProofClaims{}, nil, nil, errors.New("DPoP claims are not valid JSON")
 	}
-	return header, claims, []byte(parts[0] + "." + parts[1]), signature, nil
+	return header, claims, []byte(parts[0]+"."+parts[1]), signature, nil
 }
 
 func verifySignature(header proofHeader, signingInput, signature []byte) error {
