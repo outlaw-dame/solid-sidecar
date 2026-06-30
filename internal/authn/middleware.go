@@ -53,9 +53,6 @@ func preflightRequest(verifier *DPoPVerifier, r *http.Request) error {
 			return errInvalidAuthorization("DPoP authorization requires DPoP proof header")
 		}
 		if hasProof {
-			if err := ConfirmDPoPTokenBinding(token, dpopProof); err != nil {
-				return err
-			}
 			return verifier.VerifyRequest(r, token, dpopProof)
 		}
 		return nil
