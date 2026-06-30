@@ -2,6 +2,8 @@ services:
   css:
     image: solidproject/community-server:latest
     command:
+      - -c
+      - config/default.json
       - -f
       - /data
     ports:
