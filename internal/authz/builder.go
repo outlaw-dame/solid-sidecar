@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlaw-dame/solid-sidecar/internal/authn"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
 
@@ -60,11 +61,17 @@ func BuildRequest(r *http.Request, options BuildOptions) (Request, error) {
 		now = options.Now().UTC()
 	}
 
+	// Extract trusted identity from request context if available
+	identity := authn.IdentityFromContext(r.Context())
+
 	return Request{
 		SchemaVersion:    SchemaVersion,
 		RequestID:        requestID,
 		Method:           r.Method,
 		ResourceURI:      resourceURI,
+		AgentWebID:       identity.WebID,
+		ClientID:         identity.ClientID,
+		Issuer:           identity.Issuer,
 		Origin:           strings.TrimSpace(r.Header.Get("Origin")),
 		RequestedModes:   modes,
 		ResourceVersion:  strings.TrimSpace(options.ResourceVersion),
@@ -105,12 +112,21 @@ func resourceURIForRequest(r *http.Request, publicBaseURL string) (string, error
 		parsedBase.Fragment = ""
 		out := *parsedBase
 		out.Path = joinBaseAndRequestPath(parsedBase.EscapedPath(), r.URL.EscapedPath())
-		out.RawQuery = r.URL.RawQuery
+		// Sanitize raw query to remove any fragments (handles httptest.NewRequest quirk)
+		rawQuery := r.URL.RawQuery
+		if idx := strings.IndexByte(rawQuery, '#'); idx >= 0 {
+			rawQuery = rawQuery[:idx]
+		}
+		out.RawQuery = rawQuery
 		out.Fragment = ""
 		return out.String(), nil
 	}
 
 	out := *r.URL
+	// Sanitize raw query to remove any fragments (handles httptest.NewRequest quirk)
+	if idx := strings.IndexByte(out.RawQuery, '#'); idx >= 0 {
+		out.RawQuery = out.RawQuery[:idx]
+	}
 	out.Fragment = ""
 	if out.Scheme == "" {
 		if r.TLS != nil {

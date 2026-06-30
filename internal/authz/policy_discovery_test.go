@@ -14,8 +14,8 @@ func TestDiscoverPolicySourcesCombinesExplicitLinkAndDerivedSources(t *testing.T
 		LinkHeaders: []string{
 			`<../policies/from-link.acl>; rel="acl"; type="text/turtle", <ignored>; rel="preview"`,
 		},
-		AllowedLinkRels:   []string{"acl"},
-		DerivedURITails:   []string{".meta/policy.acl"},
+		AllowedLinkRels:    []string{"acl"},
+		DerivedURITails:    []string{".meta/policy.acl"},
 		DefaultContentType: "text/turtle",
 	})
 	if err != nil {
@@ -80,16 +80,16 @@ func TestDerivedPolicySourcesRejectsUnsafeTail(t *testing.T) {
 
 func TestPolicyDiscoveryVersionIsDeterministic(t *testing.T) {
 	left := PolicyDiscoveryOptions{
-		ResourceURI:       "https://pod.example/alice/card",
-		AllowedLinkRels:   []string{"acl", "policy"},
+		ResourceURI:        "https://pod.example/alice/card",
+		AllowedLinkRels:    []string{"acl", "policy"},
 		DefaultContentType: "text/turtle",
-		LinkHeaders:       []string{`<https://pod.example/policies/a.acl>; rel="acl"; type="text/turtle"`},
+		LinkHeaders:        []string{`<https://pod.example/policies/a.acl>; rel="acl"; type="text/turtle"`},
 	}
 	right := PolicyDiscoveryOptions{
-		ResourceURI:       "https://pod.example/alice/card",
-		AllowedLinkRels:   []string{"policy", "acl", "acl"},
+		ResourceURI:        "https://pod.example/alice/card",
+		AllowedLinkRels:    []string{"policy", "acl", "acl"},
 		DefaultContentType: "text/turtle",
-		LinkHeaders:       []string{`<https://pod.example/policies/a.acl>; type="text/turtle"; rel="acl"`},
+		LinkHeaders:        []string{`<https://pod.example/policies/a.acl>; type="text/turtle"; rel="acl"`},
 	}
 	if PolicyDiscoveryVersion(left) == "" {
 		t.Fatal("expected discovery version")

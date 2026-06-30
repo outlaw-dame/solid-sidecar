@@ -42,10 +42,10 @@ type JWKSet struct {
 }
 
 type jwksKeyHeader struct {
-	KeyID string `json:"kid"`
-	KeyType string `json:"kty"`
+	KeyID     string `json:"kid"`
+	KeyType   string `json:"kty"`
 	Algorithm string `json:"alg"`
-	Use string `json:"use"`
+	Use       string `json:"use"`
 }
 
 func NewOIDCDiscoveryClient(cfg OIDCDiscoveryConfig) *OIDCDiscoveryClient {

@@ -9,13 +9,13 @@ const PolicyFixtureMarkerRecordSchemaVersion = "policy.fixture.marker.v1"
 
 type PolicyFixtureMarkerRecord struct {
 	SchemaVersion string `json:"schema_version"`
-	ReleaseHash string `json:"release_hash"`
-	LedgerHash string `json:"ledger_hash"`
-	ReviewHash string `json:"review_hash"`
-	Label string `json:"label"`
-	CreatedAtUnix int64 `json:"created_at_unix"`
-	FixtureOnly bool `json:"fixture_only"`
-	MarkerHash string `json:"marker_hash"`
+	ReleaseHash   string `json:"release_hash"`
+	LedgerHash    string `json:"ledger_hash"`
+	ReviewHash    string `json:"review_hash"`
+	Label         string `json:"label"`
+	CreatedAtUnix int64  `json:"created_at_unix"`
+	FixtureOnly   bool   `json:"fixture_only"`
+	MarkerHash    string `json:"marker_hash"`
 }
 
 func PolicyFixtureMarkerRecordForRelease(release PolicyFixtureReleaseRecord, ledger PolicyFixtureReleaseLedger, review PolicyFixtureReleaseReview, label string, createdAtUnix int64) (PolicyFixtureMarkerRecord, error) {

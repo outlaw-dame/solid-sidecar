@@ -1,6 +1,8 @@
 package authn
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -133,6 +135,150 @@ func TestMiddlewareDoesNotLeakTokenInLogs(t *testing.T) {
 	// We're only checking for actual token leakage
 	if strings.Contains(logOutput, "Authorization") {
 		t.Fatal("authorization header found in logs: " + logOutput)
+	}
+}
+
+func TestMiddlewareValidatesBearerTokenWithIdentityValidation(t *testing.T) {
+	// Create a valid JWT token
+	privateKey := mustRSAKey(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			// Use the server's URL as the issuer
+			issuerURL := "https://" + r.Host
+			fmt.Fprintf(w, `{"issuer":%q,"jwks_uri":%q}`, issuerURL, issuerURL+"/jwks")
+		case "/jwks":
+			jwks := jwksForRSAKey(t, "key-1", &privateKey.PublicKey)
+			encoded, err := json.Marshal(jwks)
+			if err != nil {
+				t.Fatalf("Marshal jwks returned error: %v", err)
+			}
+			w.Write(encoded)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	issuerURL := server.URL
+	claims := map[string]any{
+		"iss": issuerURL,
+		"sub": "https://alice.example/profile/card#me",
+		"aud": "solid-sidecar",
+		"iat": 90,
+		"exp": 200,
+	}
+	token := signTestJWT(t, privateKey, "key-1", "RS256", claims)
+
+	// Configure auth with identity validation enabled
+	cfg := config.AuthConfig{
+		PreflightEnabled:                true,
+		RequireDPoPForDPoPAuthorization: true,
+		ValidateDPoPSignature:           true,
+		MaxClockSkew:                    time.Minute,
+		ReplayWindow:                    10 * time.Minute,
+		IdentityValidationEnabled:       true,
+		AllowedIdentityIssuers:          []string{issuerURL},
+		ExpectedIdentityAudience:        "solid-sidecar",
+	}
+
+	// Create a custom identity verifier that can reach our test server
+	// Use a fixed time that matches the token's timestamps (iat: 90, exp: 200)
+	now := time.Unix(100, 0)
+	identityVerifier := NewIdentityVerifier(NewIssuerDiscoveryClient(server.Client()), IdentityValidationOptions{
+		AllowedIssuers:   []string{issuerURL},
+		ExpectedAudience: "solid-sidecar",
+		Now:              now,
+		ClockSkew:        time.Minute,
+	})
+	// Set the verifier's discovery client's Now function
+	if discClient := identityVerifier.Discovery; discClient != nil {
+		discClient.Now = func() time.Time { return now }
+	}
+
+	handler := MiddlewareWithVerifier(cfg, testLogger(), NewReplayCache(), identityVerifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check that the identity was stored in context
+		identity := IdentityFromContext(r.Context())
+		if identity.WebID != "https://alice.example/profile/card#me" {
+			t.Fatalf("expected WebID to be set in context, got: %s", identity.WebID)
+		}
+		if identity.Issuer != issuerURL {
+			t.Fatalf("expected Issuer to be set in context, got: %s", identity.Issuer)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/resource", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+}
+
+func TestMiddlewareRejectsInvalidBearerTokenWithIdentityValidation(t *testing.T) {
+	// Configure auth with identity validation enabled but no valid token
+	cfg := config.AuthConfig{
+		PreflightEnabled:                true,
+		RequireDPoPForDPoPAuthorization: true,
+		ValidateDPoPSignature:           true,
+		MaxClockSkew:                    time.Minute,
+		ReplayWindow:                    10 * time.Minute,
+		IdentityValidationEnabled:       true,
+		AllowedIdentityIssuers:          []string{"https://issuer.example/"},
+		ExpectedIdentityAudience:        "solid-sidecar",
+	}
+
+	handler := Middleware(cfg, testLogger(), NewReplayCache(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("expected request to be rejected")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/resource", nil)
+	req.Header.Set("Authorization", "Bearer invalid-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestMiddlewareAllowsBearerTokenWithoutIdentityValidation(t *testing.T) {
+	cfg := config.AuthConfig{
+		PreflightEnabled:                true,
+		RequireDPoPForDPoPAuthorization: true,
+		ValidateDPoPSignature:           true,
+		MaxClockSkew:                    time.Minute,
+		ReplayWindow:                    10 * time.Minute,
+		IdentityValidationEnabled:       false, // Disabled
+		AllowedIdentityIssuers:          []string{"https://issuer.example/"},
+		ExpectedIdentityAudience:        "solid-sidecar",
+	}
+
+	called := false
+	handler := Middleware(cfg, testLogger(), NewReplayCache(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		// Check that no identity was set in context
+		identity := IdentityFromContext(r.Context())
+		if identity.WebID != "" {
+			t.Fatalf("expected no identity in context when validation is disabled, got: %s", identity.WebID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/resource", nil)
+	req.Header.Set("Authorization", "Bearer any-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if !called {
+		t.Fatal("expected handler to be called")
+	}
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
 	}
 }
 

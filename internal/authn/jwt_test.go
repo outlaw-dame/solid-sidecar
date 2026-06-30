@@ -69,12 +69,12 @@ func TestVerifyIdentityJWTAcceptsValidRS256Token(t *testing.T) {
 	privateKey := mustRSAKey(t)
 	jwks := jwksForRSAKey(t, "key-1", &privateKey.PublicKey)
 	token := signTestJWT(t, privateKey, "key-1", "RS256", map[string]any{
-		"iss": "https://issuer.example/",
-		"sub": "https://alice.example/profile/card#me",
-		"aud": "solid-sidecar",
+		"iss":       "https://issuer.example/",
+		"sub":       "https://alice.example/profile/card#me",
+		"aud":       "solid-sidecar",
 		"client_id": "client-1",
-		"iat": 90,
-		"exp": 200,
+		"iat":       90,
+		"exp":       200,
 	})
 	identity, err := VerifyIdentityJWT(token, jwks, IdentityValidationOptions{AllowedIssuers: []string{"https://issuer.example/"}, ExpectedAudience: "solid-sidecar", Now: time.Unix(100, 0), ClockSkew: time.Second})
 	if err != nil {
@@ -158,8 +158,8 @@ func jwksForRSAKey(t *testing.T, kid string, publicKey *rsa.PublicKey) JWKS {
 		"kid": kid,
 		"alg": "RS256",
 		"use": "sig",
-		"n": base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
-		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes()),
+		"n":   base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
+		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes()),
 	}
 	encoded, err := json.Marshal(jwk)
 	if err != nil {

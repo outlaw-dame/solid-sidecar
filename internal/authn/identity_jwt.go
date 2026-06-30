@@ -8,9 +8,9 @@ import (
 )
 
 type identityJWTHeader struct {
-	Type string `json:"typ"`
+	Type      string `json:"typ"`
 	Algorithm string `json:"alg"`
-	KeyID string `json:"kid"`
+	KeyID     string `json:"kid"`
 }
 
 func ValidateSignedIdentityToken(token string, keys JWKSet, opts IdentityValidationOptions) (TrustedIdentity, error) {

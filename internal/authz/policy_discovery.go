@@ -17,11 +17,11 @@ const (
 var ErrInvalidPolicyDiscovery = errors.New("invalid authz policy discovery input")
 
 type PolicyDiscoveryOptions struct {
-	ResourceURI       string
-	ExplicitSources   []PolicySource
-	LinkHeaders       []string
-	AllowedLinkRels   []string
-	DerivedURITails   []string
+	ResourceURI        string
+	ExplicitSources    []PolicySource
+	LinkHeaders        []string
+	AllowedLinkRels    []string
+	DerivedURITails    []string
 	DefaultContentType string
 }
 

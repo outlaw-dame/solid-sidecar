@@ -14,13 +14,13 @@ const PolicyFixtureSummarySchemaVersion = "policy.fixture.summary.v1"
 var ErrInvalidPolicyFixtureSnapshot = errors.New("invalid authz policy fixture snapshot")
 
 type PolicyFixtureSnapshot struct {
-	SchemaVersion   string                `json:"schema_version"`
-	Family          PolicySemanticsFamily `json:"family"`
-	FixtureName     string                `json:"fixture_name"`
-	RequestHash     string                `json:"request_hash"`
-	PolicyHash      string                `json:"policy_hash"`
-	TargetURI       string                `json:"target_uri"`
-	Modes           []AccessMode          `json:"modes"`
+	SchemaVersion    string                `json:"schema_version"`
+	Family           PolicySemanticsFamily `json:"family"`
+	FixtureName      string                `json:"fixture_name"`
+	RequestHash      string                `json:"request_hash"`
+	PolicyHash       string                `json:"policy_hash"`
+	TargetURI        string                `json:"target_uri"`
+	Modes            []AccessMode          `json:"modes"`
 	ExpectedDecision DecisionValue         `json:"expected_decision"`
 	ExpectedReason   ReasonCode            `json:"expected_reason_code"`
 	DocumentCount    int                   `json:"document_count"`
@@ -95,13 +95,13 @@ func PolicyFixtureSnapshotFromParseResult(result PolicyParseResult) (PolicyFixtu
 		return PolicyFixtureSnapshot{}, fmt.Errorf("%w: snapshot documents are required", ErrInvalidPolicyFixtureSnapshot)
 	}
 	snapshot := PolicyFixtureSnapshot{
-		SchemaVersion:   PolicyFixtureSnapshotSchemaVersion,
-		Family:          result.Family,
-		FixtureName:     result.FixtureName,
-		RequestHash:     result.RequestHash,
-		PolicyHash:      result.PolicyHash,
-		TargetURI:       result.ResourceURI,
-		Modes:           modes,
+		SchemaVersion:    PolicyFixtureSnapshotSchemaVersion,
+		Family:           result.Family,
+		FixtureName:      result.FixtureName,
+		RequestHash:      result.RequestHash,
+		PolicyHash:       result.PolicyHash,
+		TargetURI:        result.ResourceURI,
+		Modes:            modes,
 		ExpectedDecision: result.ExpectedDecision,
 		ExpectedReason:   result.ExpectedReason,
 		DocumentCount:    len(documents),

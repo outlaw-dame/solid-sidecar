@@ -22,7 +22,7 @@ const (
 )
 
 type PolicySourceLoadResult struct {
-	Loaded   LoadedPolicySource     `json:"loaded"`
+	Loaded   LoadedPolicySource      `json:"loaded"`
 	Metadata PolicySourceCacheRecord `json:"metadata"`
 }
 

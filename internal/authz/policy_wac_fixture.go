@@ -12,12 +12,12 @@ const WACFixtureFactsSchemaVersion = "policy.wac.fixture_facts.v1"
 var ErrInvalidWACFixtureFacts = errors.New("invalid authz wac fixture facts")
 
 type WACFixtureFacts struct {
-	SchemaVersion   string           `json:"schema_version"`
-	FixtureName     string           `json:"fixture_name"`
-	RequestHash     string           `json:"request_hash"`
-	PolicyHash      string           `json:"policy_hash"`
-	TargetURI       string           `json:"target_uri"`
-	Modes           []AccessMode     `json:"modes"`
+	SchemaVersion    string           `json:"schema_version"`
+	FixtureName      string           `json:"fixture_name"`
+	RequestHash      string           `json:"request_hash"`
+	PolicyHash       string           `json:"policy_hash"`
+	TargetURI        string           `json:"target_uri"`
+	Modes            []AccessMode     `json:"modes"`
 	ExpectedDecision DecisionValue    `json:"expected_decision"`
 	ExpectedReason   ReasonCode       `json:"expected_reason_code"`
 	PolicyDocuments  []PolicyDocument `json:"policy_documents"`
@@ -46,12 +46,12 @@ func WACFixtureFactsFromParseResult(result PolicyParseResult) (WACFixtureFacts, 
 		return WACFixtureFacts{}, false, fmt.Errorf("%w: wac fixture policy documents are required", ErrInvalidWACFixtureFacts)
 	}
 	facts := WACFixtureFacts{
-		SchemaVersion:   WACFixtureFactsSchemaVersion,
-		FixtureName:     result.FixtureName,
-		RequestHash:     result.RequestHash,
-		PolicyHash:      result.PolicyHash,
-		TargetURI:       result.ResourceURI,
-		Modes:           modes,
+		SchemaVersion:    WACFixtureFactsSchemaVersion,
+		FixtureName:      result.FixtureName,
+		RequestHash:      result.RequestHash,
+		PolicyHash:       result.PolicyHash,
+		TargetURI:        result.ResourceURI,
+		Modes:            modes,
 		ExpectedDecision: result.ExpectedDecision,
 		ExpectedReason:   result.ExpectedReason,
 		PolicyDocuments:  documents,

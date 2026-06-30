@@ -40,15 +40,15 @@ func (ShadowEvaluator) Evaluate(ctx context.Context, request Request) (Decision,
 
 func shadowDecision(request Request, audit AuditFields, decision DecisionValue, reason ReasonCode, statusHint int) Decision {
 	return Decision{
-		SchemaVersion:    SchemaVersion,
-		RequestID:        decisionRequestID(request, audit),
-		Decision:         decision,
-		ReasonCode:       reason,
-		StatusHint:       statusHint,
-		CacheTTLSeconds:  0,
-		PolicyVersion:    request.PolicyVersion,
-		ResourceVersion:  request.ResourceVersion,
-		Audit:            audit,
+		SchemaVersion:   SchemaVersion,
+		RequestID:       decisionRequestID(request, audit),
+		Decision:        decision,
+		ReasonCode:      reason,
+		StatusHint:      statusHint,
+		CacheTTLSeconds: 0,
+		PolicyVersion:   request.PolicyVersion,
+		ResourceVersion: request.ResourceVersion,
+		Audit:           audit,
 	}
 }
 

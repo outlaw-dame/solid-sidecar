@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,11 @@ import (
 	"strings"
 	"time"
 )
+
+// Context key for storing trusted identity in request context
+type identityContextKey struct{}
+
+var identityKey = identityContextKey{}
 
 const maxIdentityIssuerLength = 2048
 const maxIdentitySubjectLength = 2048
@@ -25,7 +31,7 @@ type IdentityClaims struct {
 }
 
 type IdentityValidationOptions struct {
-	AllowedIssuers  []string
+	AllowedIssuers   []string
 	ExpectedAudience string
 	Now              time.Time
 	ClockSkew        time.Duration
@@ -37,6 +43,20 @@ type TrustedIdentity struct {
 	ClientID  string
 	Audience  []string
 	ExpiresAt time.Time
+}
+
+// IdentityFromContext retrieves the trusted identity from the request context.
+// Returns zero-value TrustedIdentity if not present.
+func IdentityFromContext(ctx context.Context) TrustedIdentity {
+	if identity, ok := ctx.Value(identityKey).(TrustedIdentity); ok {
+		return identity
+	}
+	return TrustedIdentity{}
+}
+
+// IdentityToContext returns a new context with the trusted identity attached.
+func IdentityToContext(ctx context.Context, identity TrustedIdentity) context.Context {
+	return context.WithValue(ctx, identityKey, identity)
 }
 
 func ParseIdentityClaimsJSON(input []byte) (IdentityClaims, error) {

@@ -12,13 +12,13 @@ const PolicyFamilyFixtureFactsSchemaVersion = "policy.family.fixture_facts.v1"
 var ErrInvalidPolicyFamilyFixtureFacts = errors.New("invalid authz policy family fixture facts")
 
 type PolicyFamilyFixtureFacts struct {
-	SchemaVersion   string                `json:"schema_version"`
-	Family          PolicySemanticsFamily `json:"family"`
-	FixtureName     string                `json:"fixture_name"`
-	RequestHash     string                `json:"request_hash"`
-	PolicyHash      string                `json:"policy_hash"`
-	TargetURI       string                `json:"target_uri"`
-	Modes           []AccessMode          `json:"modes"`
+	SchemaVersion    string                `json:"schema_version"`
+	Family           PolicySemanticsFamily `json:"family"`
+	FixtureName      string                `json:"fixture_name"`
+	RequestHash      string                `json:"request_hash"`
+	PolicyHash       string                `json:"policy_hash"`
+	TargetURI        string                `json:"target_uri"`
+	Modes            []AccessMode          `json:"modes"`
 	ExpectedDecision DecisionValue         `json:"expected_decision"`
 	ExpectedReason   ReasonCode            `json:"expected_reason_code"`
 	PolicyDocuments  []PolicyDocument      `json:"policy_documents"`
@@ -50,13 +50,13 @@ func PolicyFamilyFixtureFactsFromParseResult(result PolicyParseResult, family Po
 		return PolicyFamilyFixtureFacts{}, false, fmt.Errorf("%w: fixture documents are required", ErrInvalidPolicyFamilyFixtureFacts)
 	}
 	facts := PolicyFamilyFixtureFacts{
-		SchemaVersion:   PolicyFamilyFixtureFactsSchemaVersion,
-		Family:          family,
-		FixtureName:     result.FixtureName,
-		RequestHash:     result.RequestHash,
-		PolicyHash:      result.PolicyHash,
-		TargetURI:       result.ResourceURI,
-		Modes:           modes,
+		SchemaVersion:    PolicyFamilyFixtureFactsSchemaVersion,
+		Family:           family,
+		FixtureName:      result.FixtureName,
+		RequestHash:      result.RequestHash,
+		PolicyHash:       result.PolicyHash,
+		TargetURI:        result.ResourceURI,
+		Modes:            modes,
 		ExpectedDecision: result.ExpectedDecision,
 		ExpectedReason:   result.ExpectedReason,
 		PolicyDocuments:  documents,

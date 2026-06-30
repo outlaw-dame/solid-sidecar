@@ -61,13 +61,22 @@ fn equivalent_policy_documents_hash_deterministically() {
     let left_decision = evaluate(&left, &KernelConfig::default());
     let right_decision = evaluate(&right, &KernelConfig::default());
 
-    assert_eq!(left_decision.audit.policy_hash, right_decision.audit.policy_hash);
+    assert_eq!(
+        left_decision.audit.policy_hash,
+        right_decision.audit.policy_hash
+    );
 
-    left.resource_metadata.insert("z".to_owned(), "1".to_owned());
-    right.resource_metadata.insert("z".to_owned(), "1".to_owned());
+    left.resource_metadata
+        .insert("z".to_owned(), "1".to_owned());
+    right
+        .resource_metadata
+        .insert("z".to_owned(), "1".to_owned());
     let left_decision = evaluate(&left, &KernelConfig::default());
     let right_decision = evaluate(&right, &KernelConfig::default());
-    assert_eq!(left_decision.audit.request_hash, right_decision.audit.request_hash);
+    assert_eq!(
+        left_decision.audit.request_hash,
+        right_decision.audit.request_hash
+    );
 }
 
 #[test]
@@ -100,12 +109,14 @@ fn sample_request() -> AuthzRequest {
         policy_documents: vec![
             PolicyDocument {
                 uri: "https://pod.example/.acl".to_owned(),
-                sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+                sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_owned(),
                 content_type: "text/turtle".to_owned(),
             },
             PolicyDocument {
                 uri: "https://pod.example/settings/policies".to_owned(),
-                sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+                sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    .to_owned(),
                 content_type: "text/turtle".to_owned(),
             },
         ],

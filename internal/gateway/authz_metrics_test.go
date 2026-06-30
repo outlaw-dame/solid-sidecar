@@ -36,7 +36,7 @@ func TestAuthzMetricsSnapshotRecordsShadowDecision(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "http://pod.example/card", nil)
+	req := httptest.NewRequest(http.MethodGet, "/card", nil)
 	res := httptest.NewRecorder()
 	server.http.Handler.ServeHTTP(res, req)
 	if res.Code != http.StatusNoContent {

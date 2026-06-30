@@ -32,7 +32,10 @@ fn rust_policy_semantics_manifest_shape_is_stable() -> Result<(), Box<dyn std::e
 
 fn validate_policy_semantics_manifest(manifest: &PolicySemanticsManifest) -> Result<(), String> {
     if manifest.schema_version != "policy.semantics.fixtures.v1" {
-        return Err(format!("unexpected policy semantics schema: {}", manifest.schema_version));
+        return Err(format!(
+            "unexpected policy semantics schema: {}",
+            manifest.schema_version
+        ));
     }
     if manifest.cases.is_empty() {
         return Err("policy semantics manifest must not be empty".to_owned());
@@ -45,9 +48,15 @@ fn validate_policy_semantics_manifest(manifest: &PolicySemanticsManifest) -> Res
             return Err("policy semantics case name is required".to_owned());
         }
         if !matches!(fixture.family.as_str(), "wac" | "acp" | "sai") {
-            return Err(format!("invalid policy semantics family: {}", fixture.family));
+            return Err(format!(
+                "invalid policy semantics family: {}",
+                fixture.family
+            ));
         }
-        if !expected_reason_matches_decision(&fixture.expected_decision, &fixture.expected_reason_code) {
+        if !expected_reason_matches_decision(
+            &fixture.expected_decision,
+            &fixture.expected_reason_code,
+        ) {
             return Err(format!(
                 "expected reason {} does not match decision {}",
                 fixture.expected_reason_code, fixture.expected_decision
@@ -56,16 +65,30 @@ fn validate_policy_semantics_manifest(manifest: &PolicySemanticsManifest) -> Res
         if fixture.request.is_null() {
             return Err(format!("case {} has null request", fixture.name));
         }
-        if fixture.policy_documents.as_ref().map_or(false, Vec::is_empty) {
-            return Err(format!("case {} has empty policy document list", fixture.name));
+        if fixture
+            .policy_documents
+            .as_ref()
+            .map_or(false, Vec::is_empty)
+        {
+            return Err(format!(
+                "case {} has empty policy document list",
+                fixture.name
+            ));
         }
         if fixture.expected_modes.as_ref().map_or(false, |modes| {
-            modes.iter().any(|mode| !matches!(mode.as_str(), "read" | "append" | "write" | "control"))
+            modes
+                .iter()
+                .any(|mode| !matches!(mode.as_str(), "read" | "append" | "write" | "control"))
         }) {
             return Err(format!("case {} has invalid expected mode", fixture.name));
         }
-        if fixture.description.as_ref().map_or(false, |description| description.chars().any(char::is_control)) {
-            return Err(format!("case {} has control character description", fixture.name));
+        if fixture.description.as_ref().map_or(false, |description| {
+            description.chars().any(char::is_control)
+        }) {
+            return Err(format!(
+                "case {} has control character description",
+                fixture.name
+            ));
         }
         if !names.insert(format!("{}:{}", fixture.family, fixture.name)) {
             return Err(format!("duplicate policy semantics case: {}", fixture.name));

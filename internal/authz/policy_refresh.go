@@ -22,11 +22,11 @@ const (
 type PolicyRefreshReason string
 
 const (
-	PolicyRefreshReasonMissing   PolicyRefreshReason = "missing"
-	PolicyRefreshReasonExpired   PolicyRefreshReason = "expired"
-	PolicyRefreshReasonStale     PolicyRefreshReason = "stale"
-	PolicyRefreshReasonFresh     PolicyRefreshReason = "fresh"
-	PolicyRefreshReasonNoSource  PolicyRefreshReason = "no_source"
+	PolicyRefreshReasonMissing  PolicyRefreshReason = "missing"
+	PolicyRefreshReasonExpired  PolicyRefreshReason = "expired"
+	PolicyRefreshReasonStale    PolicyRefreshReason = "stale"
+	PolicyRefreshReasonFresh    PolicyRefreshReason = "fresh"
+	PolicyRefreshReasonNoSource PolicyRefreshReason = "no_source"
 )
 
 type PolicyCacheStore interface {
@@ -127,13 +127,13 @@ type PolicyRefreshPlan struct {
 }
 
 type PolicyRefreshItem struct {
-	Source       PolicySource        `json:"source"`
-	CacheKey     string              `json:"cache_key"`
-	Action       PolicyRefreshAction `json:"action"`
-	Reason       PolicyRefreshReason `json:"reason"`
-	NextCheckAt  int64               `json:"next_check_at_unix,omitempty"`
-	RecordState  PolicyCacheState    `json:"record_state,omitempty"`
-	RecordVersion string             `json:"record_version,omitempty"`
+	Source        PolicySource        `json:"source"`
+	CacheKey      string              `json:"cache_key"`
+	Action        PolicyRefreshAction `json:"action"`
+	Reason        PolicyRefreshReason `json:"reason"`
+	NextCheckAt   int64               `json:"next_check_at_unix,omitempty"`
+	RecordState   PolicyCacheState    `json:"record_state,omitempty"`
+	RecordVersion string              `json:"record_version,omitempty"`
 }
 
 func BuildPolicyRefreshPlan(options PolicyRefreshPlanOptions) (PolicyRefreshPlan, error) {

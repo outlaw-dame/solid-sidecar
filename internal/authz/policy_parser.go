@@ -16,12 +16,12 @@ type PolicySemanticsParser interface {
 }
 
 type PolicyParseResult struct {
-	SchemaVersion   string                `json:"schema_version"`
-	Family          PolicySemanticsFamily `json:"family"`
-	FixtureName     string                `json:"fixture_name"`
-	ResourceURI     string                `json:"resource_uri"`
-	RequestHash     string                `json:"request_hash"`
-	PolicyHash      string                `json:"policy_hash"`
+	SchemaVersion    string                `json:"schema_version"`
+	Family           PolicySemanticsFamily `json:"family"`
+	FixtureName      string                `json:"fixture_name"`
+	ResourceURI      string                `json:"resource_uri"`
+	RequestHash      string                `json:"request_hash"`
+	PolicyHash       string                `json:"policy_hash"`
 	ExpectedDecision DecisionValue         `json:"expected_decision"`
 	ExpectedReason   ReasonCode            `json:"expected_reason_code"`
 	ExpectedModes    []AccessMode          `json:"expected_modes,omitempty"`
@@ -96,12 +96,12 @@ func ParsePolicySemanticsFixtures(ctx context.Context, suite PolicySemanticsFixt
 
 func parseResultForFixtureCase(fixtureCase PolicySemanticsFixtureCase, audit AuditFields) PolicyParseResult {
 	return PolicyParseResult{
-		SchemaVersion:   PolicyParseResultSchemaVersion,
-		Family:          fixtureCase.Family,
-		FixtureName:     fixtureCase.Name,
-		ResourceURI:     fixtureCase.Request.ResourceURI,
-		RequestHash:     audit.RequestHash,
-		PolicyHash:      audit.PolicyHash,
+		SchemaVersion:    PolicyParseResultSchemaVersion,
+		Family:           fixtureCase.Family,
+		FixtureName:      fixtureCase.Name,
+		ResourceURI:      fixtureCase.Request.ResourceURI,
+		RequestHash:      audit.RequestHash,
+		PolicyHash:       audit.PolicyHash,
 		ExpectedDecision: fixtureCase.ExpectedDecision,
 		ExpectedReason:   fixtureCase.ExpectedReason,
 		ExpectedModes:    append([]AccessMode(nil), fixtureCase.ExpectedModes...),

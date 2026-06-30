@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/outlaw-dame/solid-sidecar/internal/authn"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
 )
 
@@ -120,6 +121,153 @@ func TestBuildRequestRequiresRequestID(t *testing.T) {
 
 	if _, err := BuildRequest(req, BuildOptions{Now: fixedNow}); err == nil {
 		t.Fatal("expected missing request id to fail")
+	}
+}
+
+func TestBuildRequestExtractsIdentityFromContext(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+
+	// Create a trusted identity
+	identity := authn.TrustedIdentity{
+		Issuer:    "https://issuer.example/",
+		WebID:     "https://alice.example/profile/card#me",
+		ClientID:  "client-123",
+		Audience:  []string{"solid-sidecar"},
+		ExpiresAt: time.Unix(1_700_000_100, 0).UTC(),
+	}
+
+	// Store identity in request context
+	req = req.WithContext(authn.IdentityToContext(req.Context(), identity))
+
+	built, err := BuildRequest(req, BuildOptions{
+		PublicBaseURL: "https://pod.example/base/",
+		Now:           fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest returned error: %v", err)
+	}
+
+	if built.AgentWebID != identity.WebID {
+		t.Fatalf("expected AgentWebID to be %q, got %q", identity.WebID, built.AgentWebID)
+	}
+	if built.ClientID != identity.ClientID {
+		t.Fatalf("expected ClientID to be %q, got %q", identity.ClientID, built.ClientID)
+	}
+	if built.Issuer != identity.Issuer {
+		t.Fatalf("expected Issuer to be %q, got %q", identity.Issuer, built.Issuer)
+	}
+}
+
+func TestBuildRequestHandlesMissingIdentityInContext(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+
+	// No identity in context - should result in empty identity fields
+	built, err := BuildRequest(req, BuildOptions{
+		PublicBaseURL: "https://pod.example/base/",
+		Now:           fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest returned error: %v", err)
+	}
+
+	if built.AgentWebID != "" {
+		t.Fatalf("expected AgentWebID to be empty, got %q", built.AgentWebID)
+	}
+	if built.ClientID != "" {
+		t.Fatalf("expected ClientID to be empty, got %q", built.ClientID)
+	}
+	if built.Issuer != "" {
+		t.Fatalf("expected Issuer to be empty, got %q", built.Issuer)
+	}
+}
+
+func TestBuildRequestPreservesOtherFieldsWithIdentity(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card?x=1", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+	req.Header.Set("Origin", "https://app.example")
+
+	// Create a trusted identity
+	identity := authn.TrustedIdentity{
+		Issuer:    "https://issuer.example/",
+		WebID:     "https://alice.example/profile/card#me",
+		ClientID:  "client-123",
+		Audience:  []string{"solid-sidecar"},
+		ExpiresAt: time.Unix(1_700_000_100, 0).UTC(),
+	}
+
+	// Store identity in request context
+	req = req.WithContext(authn.IdentityToContext(req.Context(), identity))
+
+	built, err := BuildRequest(req, BuildOptions{
+		PublicBaseURL: "https://pod.example/base/",
+		Now:           fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest returned error: %v", err)
+	}
+
+	// Verify all fields are correctly set
+	if built.RequestID != "req-123" {
+		t.Fatalf("unexpected request id: %q", built.RequestID)
+	}
+	if built.ResourceURI != "https://pod.example/base/alice/card?x=1" {
+		t.Fatalf("unexpected resource uri: %q", built.ResourceURI)
+	}
+	if built.Origin != "https://app.example" {
+		t.Fatalf("unexpected origin: %q", built.Origin)
+	}
+	if built.AgentWebID != identity.WebID {
+		t.Fatalf("expected AgentWebID to be %q, got %q", identity.WebID, built.AgentWebID)
+	}
+	if built.ClientID != identity.ClientID {
+		t.Fatalf("expected ClientID to be %q, got %q", identity.ClientID, built.ClientID)
+	}
+	if built.Issuer != identity.Issuer {
+		t.Fatalf("expected Issuer to be %q, got %q", identity.Issuer, built.Issuer)
+	}
+	assertModes(t, built.RequestedModes, []AccessMode{AccessModeRead})
+}
+
+func TestBuildRequestWithIdentityAndNoPublicBaseURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/alice/card", nil)
+	req = req.WithContext(observability.WithRequestID(req.Context(), "req-123"))
+	req.Header.Set("Origin", "https://app.example")
+
+	// Create a trusted identity
+	identity := authn.TrustedIdentity{
+		Issuer:    "https://issuer.example/",
+		WebID:     "https://alice.example/profile/card#me",
+		ClientID:  "client-456",
+		Audience:  []string{"solid-sidecar"},
+		ExpiresAt: time.Unix(1_700_000_100, 0).UTC(),
+	}
+
+	// Store identity in request context
+	req = req.WithContext(authn.IdentityToContext(req.Context(), identity))
+
+	// Set up request host for resource URI construction
+	req.Host = "pod.example"
+
+	built, err := BuildRequest(req, BuildOptions{
+		Now: fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest returned error: %v", err)
+	}
+
+	if built.AgentWebID != identity.WebID {
+		t.Fatalf("expected AgentWebID to be %q, got %q", identity.WebID, built.AgentWebID)
+	}
+	if built.ClientID != identity.ClientID {
+		t.Fatalf("expected ClientID to be %q, got %q", identity.ClientID, built.ClientID)
+	}
+	if built.Issuer != identity.Issuer {
+		t.Fatalf("expected Issuer to be %q, got %q", identity.Issuer, built.Issuer)
+	}
+	if built.ResourceURI != "http://pod.example/alice/card" {
+		t.Fatalf("unexpected resource uri: %q", built.ResourceURI)
 	}
 }
 

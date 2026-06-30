@@ -33,9 +33,17 @@ fn rust_kernel_matches_shared_fixtures() -> Result<(), Box<dyn std::error::Error
 
         assert_eq!(actual, expected, "fixture case {}", fixture.name);
         if fixture.valid_request {
-            assert_eq!(actual.decision, Decision::Abstain, "valid fixture should abstain");
+            assert_eq!(
+                actual.decision,
+                Decision::Abstain,
+                "valid fixture should abstain"
+            );
         } else {
-            assert_eq!(actual.decision, Decision::Deny, "invalid fixture should deny");
+            assert_eq!(
+                actual.decision,
+                Decision::Deny,
+                "invalid fixture should deny"
+            );
         }
     }
 
@@ -126,7 +134,10 @@ fn validate_manifest(manifest: &FixtureManifest) -> Result<(), String> {
             ));
         }
         if !valid_fixture_name(&fixture.request, "authz_request.") {
-            return Err(format!("invalid request fixture filename: {}", fixture.request));
+            return Err(format!(
+                "invalid request fixture filename: {}",
+                fixture.request
+            ));
         }
         if !valid_fixture_name(&fixture.decision, "authz_decision.") {
             return Err(format!(
@@ -135,7 +146,10 @@ fn validate_manifest(manifest: &FixtureManifest) -> Result<(), String> {
             ));
         }
         if !names.insert(fixture.name.as_str()) {
-            return Err(format!("duplicate fixture manifest case name: {}", fixture.name));
+            return Err(format!(
+                "duplicate fixture manifest case name: {}",
+                fixture.name
+            ));
         }
         if !requests.insert(fixture.request.as_str()) {
             return Err(format!(

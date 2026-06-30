@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/outlaw-dame/solid-sidecar/internal/audit"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
@@ -12,57 +13,79 @@ import (
 // Middleware performs Phase 3 auth preflight. It rejects malformed OAuth/DPoP
 // request shapes before CSS, but it does not make final Solid access decisions.
 func Middleware(cfg config.AuthConfig, logger *slog.Logger, cache *ReplayCache, next http.Handler) http.Handler {
+	return MiddlewareWithVerifier(cfg, logger, cache, nil, next)
+}
+
+func MiddlewareWithVerifier(cfg config.AuthConfig, logger *slog.Logger, cache *ReplayCache, identityVerifier *IdentityVerifier, next http.Handler) http.Handler {
 	if !cfg.PreflightEnabled {
 		return next
 	}
 	verifier := NewDPoPVerifier(cfg, cache)
+	if identityVerifier == nil && cfg.IdentityValidationEnabled && len(cfg.AllowedIdentityIssuers) > 0 {
+		identityVerifier = NewIdentityVerifier(NewIssuerDiscoveryClient(nil), IdentityValidationOptions{
+			AllowedIssuers:   cfg.AllowedIdentityIssuers,
+			ExpectedAudience: cfg.ExpectedIdentityAudience,
+			Now:              time.Now(),
+			ClockSkew:        cfg.MaxClockSkew,
+		})
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if err := preflightRequest(verifier, r); err != nil {
+		newReq, err := preflightRequest(verifier, identityVerifier, cfg, r)
+		if err != nil {
 			w.Header().Set("WWW-Authenticate", `DPoP error="invalid_dpop_proof"`)
 			audit.LogRejectedRequest(logger, r, http.StatusUnauthorized, err.Error())
 			http.Error(w, "invalid authentication proof", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, newReq)
 	})
 }
 
-func preflightRequest(verifier *DPoPVerifier, r *http.Request) error {
+func preflightRequest(verifier *DPoPVerifier, identityVerifier *IdentityVerifier, cfg config.AuthConfig, r *http.Request) (*http.Request, error) {
 	authorizationValues := r.Header.Values("Authorization")
 	if len(authorizationValues) == 0 {
-		return nil
+		return r, nil
 	}
 	if len(authorizationValues) != 1 {
-		return errInvalidAuthorization("multiple Authorization headers are not allowed")
+		return r, errInvalidAuthorization("multiple Authorization headers are not allowed")
 	}
 	scheme, token, err := parseAuthorization(authorizationValues[0])
 	if err != nil {
-		return err
+		return r, err
 	}
 	dpopProof, hasProof, err := dpopProofHeader(r)
 	if err != nil {
-		return err
+		return r, err
 	}
 	switch strings.ToLower(scheme) {
 	case "dpop":
 		if verifier.cfg.RequireDPoPForDPoPAuthorization && !hasProof {
-			return errInvalidAuthorization("DPoP authorization requires DPoP proof header")
+			return r, errInvalidAuthorization("DPoP authorization requires DPoP proof header")
 		}
 		if hasProof {
-			return verifier.VerifyRequest(r, token, dpopProof)
+			return r, verifier.VerifyRequest(r, token, dpopProof)
 		}
-		return nil
+		return r, nil
 	case "bearer":
 		if hasProof {
-			return errInvalidAuthorization("Bearer authorization must not include DPoP proof")
+			return r, errInvalidAuthorization("Bearer authorization must not include DPoP proof")
 		}
-		return nil
+		// Validate Bearer token if identity validation is enabled
+		if cfg.IdentityValidationEnabled && len(cfg.AllowedIdentityIssuers) > 0 && identityVerifier != nil {
+			identity, err := identityVerifier.Verify(r.Context(), token)
+			if err != nil {
+				return r, errInvalidAuthorization("Bearer token validation failed: " + err.Error())
+			}
+			// Store trusted identity in request context for authz layer
+			return r.WithContext(IdentityToContext(r.Context(), identity)), nil
+		}
+		return r, nil
 	default:
-		return errInvalidAuthorization("unsupported Authorization scheme")
+		return r, errInvalidAuthorization("unsupported Authorization scheme")
 	}
 }
 

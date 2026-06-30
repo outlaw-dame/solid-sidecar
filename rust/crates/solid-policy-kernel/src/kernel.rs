@@ -209,7 +209,11 @@ fn canonical_policy_documents(policy_documents: &[PolicyDocument]) -> String {
     for policy_document in sorted {
         push_field(&mut output, "policy_uri", &policy_document.uri);
         push_field(&mut output, "policy_sha256", &policy_document.sha256);
-        push_field(&mut output, "policy_content_type", &policy_document.content_type);
+        push_field(
+            &mut output,
+            "policy_content_type",
+            &policy_document.content_type,
+        );
     }
     output
 }
@@ -281,8 +285,10 @@ mod tests {
             now_unix: 0,
         };
         let audit = AuditFields {
-            request_hash: "0123456789abcdef0123456789abcdefffffffffffffffffffffffffffffffff".to_owned(),
-            policy_hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_owned(),
+            request_hash: "0123456789abcdef0123456789abcdefffffffffffffffffffffffffffffffff"
+                .to_owned(),
+            policy_hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                .to_owned(),
         };
 
         assert_eq!(

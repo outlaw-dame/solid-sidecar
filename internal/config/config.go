@@ -12,24 +12,24 @@ import (
 )
 
 const (
-	defaultAddress                         = ":8443"
-	defaultBackendURL                      = "http://127.0.0.1:3000"
-	defaultBackendHealth                   = "/"
-	defaultMaxBodyBytes                    = int64(32 << 20) // 32 MiB
-	defaultProxyTimeout                    = 30 * time.Second
-	defaultServerTimeout                   = 15 * time.Second
-	defaultReadHeaderLimit                 = 5 * time.Second
-	defaultShutdownTimeout                 = 10 * time.Second
-	defaultMaxHeaderBytes                  = 1 << 20 // 1 MiB, matching net/http's default.
-	DefaultAuthzEvaluatorLocal             = "local"
-	DefaultAuthzEvaluatorExternalCLI       = "external_cli"
-	DefaultAuthzExternalTimeout            = 2 * time.Second
-	DefaultAuthzExternalMaxOutputBytes     = int64(64 << 10) // 64 KiB
-	DefaultAuthzExternalBackoffBaseDelay   = 500 * time.Millisecond
-	DefaultAuthzExternalBackoffMaxDelay    = 30 * time.Second
-	maxAuthzExternalTimeout                = 10 * time.Second
-	maxAuthzExternalMaxOutputBytes         = int64(1 << 20) // 1 MiB
-	maxAuthzExternalBackoffMaxDelay        = 5 * time.Minute
+	defaultAddress                       = ":8443"
+	defaultBackendURL                    = "http://127.0.0.1:3000"
+	defaultBackendHealth                 = "/"
+	defaultMaxBodyBytes                  = int64(32 << 20) // 32 MiB
+	defaultProxyTimeout                  = 30 * time.Second
+	defaultServerTimeout                 = 15 * time.Second
+	defaultReadHeaderLimit               = 5 * time.Second
+	defaultShutdownTimeout               = 10 * time.Second
+	defaultMaxHeaderBytes                = 1 << 20 // 1 MiB, matching net/http's default.
+	DefaultAuthzEvaluatorLocal           = "local"
+	DefaultAuthzEvaluatorExternalCLI     = "external_cli"
+	DefaultAuthzExternalTimeout          = 2 * time.Second
+	DefaultAuthzExternalMaxOutputBytes   = int64(64 << 10) // 64 KiB
+	DefaultAuthzExternalBackoffBaseDelay = 500 * time.Millisecond
+	DefaultAuthzExternalBackoffMaxDelay  = 30 * time.Second
+	maxAuthzExternalTimeout              = 10 * time.Second
+	maxAuthzExternalMaxOutputBytes       = int64(1 << 20) // 1 MiB
+	maxAuthzExternalBackoffMaxDelay      = 5 * time.Minute
 )
 
 // Config is the complete sidecar configuration for the current Go gateway.
@@ -82,6 +82,10 @@ type AuthConfig struct {
 	MaxClockSkew                    time.Duration
 	ReplayWindow                    time.Duration
 	PublicBaseURL                   string
+	// Identity validation configuration
+	IdentityValidationEnabled bool
+	AllowedIdentityIssuers    []string
+	ExpectedIdentityAudience  string
 }
 
 type AuthzConfig struct {
@@ -288,6 +292,12 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.Auth.ReplayWindow)
 	case "auth.public_base_url":
 		cfg.Auth.PublicBaseURL = value
+	case "auth.identity_validation_enabled":
+		return parseBool(value, &cfg.Auth.IdentityValidationEnabled, "auth.identity_validation_enabled")
+	case "auth.allowed_identity_issuers":
+		cfg.Auth.AllowedIdentityIssuers = splitCSV(value)
+	case "auth.expected_identity_audience":
+		cfg.Auth.ExpectedIdentityAudience = value
 	case "authz.shadow_enabled":
 		return parseBool(value, &cfg.Authz.ShadowEnabled, "authz.shadow_enabled")
 	case "authz.public_base_url":
@@ -391,6 +401,17 @@ func applyEnv(cfg *Config) {
 	}
 	if value := os.Getenv("SOLID_SIDECAR_AUTH_PUBLIC_BASE_URL"); value != "" {
 		cfg.Auth.PublicBaseURL = value
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_IDENTITY_VALIDATION_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.IdentityValidationEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_ALLOWED_IDENTITY_ISSUERS"); value != "" {
+		cfg.Auth.AllowedIdentityIssuers = splitCSV(value)
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_EXPECTED_IDENTITY_AUDIENCE"); value != "" {
+		cfg.Auth.ExpectedIdentityAudience = value
 	}
 	if value := os.Getenv("SOLID_SIDECAR_AUTHZ_SHADOW_ENABLED"); value != "" {
 		if parsed, err := strconv.ParseBool(value); err == nil {

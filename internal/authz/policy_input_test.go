@@ -80,7 +80,7 @@ func TestPolicyVersionForDocumentsIsDeterministic(t *testing.T) {
 
 func TestNormalizeResourceMetadata(t *testing.T) {
 	got, err := NormalizeResourceMetadata(map[string]string{
-		" etag ":          " abc ",
+		" etag ":         " abc ",
 		"content_length": " 123 ",
 	})
 	if err != nil {
