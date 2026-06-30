@@ -149,14 +149,30 @@ Implemented:
 
 **Phase 6 is complete.**
 
+## Phase 7 work completed
+
+Implemented:
+
+- WAC evaluator with Evaluator interface integration for use with existing authorization middleware;
+- WAC-specific evaluation: policy document parsing, content type detection, rule evaluation;
+- Security hardening: policy count limits (10 default), timeout protection (30s default);
+- Shadow mode: non-enforcing evaluation that abstains from making decisions;
+- Request validation: schema version, request ID, method, resource URI, modes, policy documents;
+- Content type detection for WAC policies (Turtle, JSON-LD, N-Triples);
+- Graceful degradation: abstains on parse errors or when no matching rules found;
+- Comprehensive test suite with 12+ tests covering creation, configuration, evaluation scenarios, timeout, and max policies;
+- Interface compliance verification with Evaluator.
+
+**Phase 7 is complete.**
+
 ## Current priority order
 
 Continue in this order:
 
-1. WAC evaluator in shadow mode.
-2. CSS behavior comparison harness.
-3. Enforcement gate design.
-4. ACP parser.
+1. CSS behavior comparison harness.
+2. Enforcement gate design.
+3. ACP parser.
+4. WAC evaluator with actual rule matching logic.
 
 ## Current safety boundary
 
@@ -167,6 +183,7 @@ The sidecar must remain CSS-authoritative and non-enforcing until all of the fol
 - live policy discovery and loading/cache works in shadow mode without request-path hangs;
 - RDF parser boundary with content type detection, parser registry, security hardening, input validation, and timeout protection;
 - WAC parser in shadow mode for parsing WAC policies;
+- WAC evaluator in shadow mode for evaluating WAC policies;
 - WAC/ACP parser/evaluator output can be compared against CSS behavior;
 - mismatch rate is measured;
 - enforcement gates and emergency bypass exist;
