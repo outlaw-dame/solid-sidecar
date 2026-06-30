@@ -67,6 +67,34 @@ did:solid:pod-alice-example-01
 
 The implementation must reject ambiguous or unsafe identifiers before resolver work begins.
 
+## Default deterministic mapping
+
+The initial host-like mapping convention is:
+
+```text
+did:solid:<host>
+  -> https://<host>/.well-known/did/solid.json
+```
+
+Example:
+
+```text
+did:solid:alice.example
+  -> https://alice.example/.well-known/did/solid.json
+```
+
+Rules:
+
+- host-like method-specific identifiers must be lowercase DNS-style names;
+- resolution uses HTTPS only outside explicit local test fixtures;
+- the fetched DID document `id` must exactly match the normalized DID;
+- redirects must be disabled or tightly bounded by resolver policy;
+- query strings and fragments are not allowed in the method-specific identifier;
+- the fetch must use bounded response size, timeout, content-type checks, and SSRF protections;
+- non-host opaque identifiers are not globally resolved by default and require explicit local registry or resolver configuration.
+
+This mapping is project-defined and may change before runtime implementation. Resolver code must keep it isolated behind a documented mapping strategy so it can be revised without changing DID parsing semantics.
+
 ## Identity model
 
 `did:solid` complements the canonical Solid identity model:
@@ -97,6 +125,7 @@ A resolved `did:solid` document should be a DID document with:
 
 - `id` equal to the DID;
 - at least one verification method;
+- each verification method containing `id`, `type`, `controller`, and public key material;
 - at least one assertion or authentication relationship appropriate for the selected key type;
 - a WebID service endpoint;
 - a Solid storage service endpoint where applicable;
@@ -184,11 +213,20 @@ Preferred first key types:
 
 Rules:
 
-- verification methods must be controlled by the DID;
+- verification methods must be bounded, explicitly typed, and include a valid `controller` property;
+- verification method `id` values must be DID URLs controlled by the resolved DID document;
+- verification method `controller` values must match the DID or another explicitly trusted controller relationship defined by this method;
 - key material must be public only;
 - private key material must never be logged;
 - unsupported key types fail closed for DID binding;
 - key IDs must be fragment-only under the DID document where possible.
+
+A verification method is invalid for `did:solid` binding if it lacks any of the following:
+
+- `id`;
+- `type`;
+- `controller`;
+- supported public key material such as `publicKeyMultibase` or a reviewed equivalent.
 
 ## Resolution model
 
@@ -217,6 +255,7 @@ Initial source policy options:
 ```yaml
 did_solid:
   enabled: false
+  default_mapping_enabled: false
   allowed_resolvers:
     - local
     - https
@@ -228,18 +267,28 @@ The resolver must not perform arbitrary unbounded network fetches.
 
 ## DID-to-document discovery
 
-The project must choose one of these before resolver implementation:
+The project-defined default mapping is host-like well-known discovery:
 
-1. explicit local registry mapping DID to DID document URL;
-2. HTTPS well-known mapping from method-specific ID;
-3. Solid storage description mapping;
-4. other reviewed deterministic mapping.
+```text
+did:solid:<host> -> https://<host>/.well-known/did/solid.json
+```
+
+The first implementation should still keep this disabled by default outside tests until resolver SSRF, redirect, content-type, and cache behavior are implemented.
+
+Supported discovery strategies:
+
+1. explicit local registry mapping DID to DID document for tests;
+2. host-like HTTPS well-known mapping from method-specific ID;
+3. explicit HTTPS resolver configuration for staging;
+4. Solid storage description mapping after storage-description semantics are documented;
+5. other reviewed deterministic mapping.
 
 Initial safest path:
 
 - local registry for tests;
+- disabled-by-default host-like well-known mapping;
 - explicit HTTPS resolver configuration for staging;
-- no global network discovery by default.
+- no global network discovery for opaque non-host identifiers by default.
 
 ## Update and rotation
 
@@ -276,15 +325,16 @@ Rules:
 
 - strict DID parser;
 - valid/invalid DID vectors;
-- method-specific-id normalization tests;
-- no network access.
+- host-like method-specific-id normalization tests;
+- default mapping tests for host-like IDs;
+- no network access during parsing.
 
 ### Phase C: local resolver
 
 - local fixture registry;
 - DID document parser;
 - service endpoint validation;
-- verification method validation;
+- verification method validation, including required `id`, `type`, `controller`, and public key material;
 - WebID service extraction.
 
 ### Phase D: WebID backlink validation
@@ -329,10 +379,12 @@ Controls:
 - explicit resolver allowlist;
 - strict DID syntax parser;
 - HTTPS-only remote endpoints unless local fixtures are used;
+- disabled-by-default well-known network mapping until resolver safety is implemented;
 - bounded document size;
 - bounded fetch timeout;
 - safe content-type handling;
 - copy-safe caches;
+- required verification method `id`, `type`, `controller`, and public key material;
 - bidirectional DID/WebID binding;
 - no DID-only authorization;
 - privacy-safe metrics and logs.
@@ -361,10 +413,27 @@ Therefore:
 - Solid protocol conformance must not depend on DID support;
 - deployments must be able to disable DID support entirely.
 
+## Test vectors
+
+Required test vectors before implementation:
+
+- valid host-like DID maps to `https://<host>/.well-known/did/solid.json`;
+- invalid host-like DID is rejected before network access;
+- non-host opaque DID requires explicit resolver configuration;
+- fetched DID document `id` mismatch fails binding;
+- verification method without `controller` fails binding;
+- verification method without public key material fails binding;
+- unsupported key type fails binding;
+- valid DID/WebID backlink succeeds;
+- missing or mismatched backlink fails DID binding without breaking WebID-only authn;
+- resolver timeout and oversized document fail safely.
+
 ## Acceptance criteria before implementation proceeds
 
 - DID syntax and test vectors are documented.
+- Default host-like mapping is either finalized or explicitly disabled behind resolver config.
 - WebID backlink predicate is reviewed and documented.
-- resolver source policy is explicit.
-- security and privacy risks are added to the threat model.
-- runtime integration plan states clearly that DID binding does not grant access by itself.
+- Resolver source policy is explicit.
+- Verification method validation requires `id`, `type`, `controller`, and public key material.
+- Security and privacy risks are added to the threat model.
+- Runtime integration plan states clearly that DID binding does not grant access by itself.
