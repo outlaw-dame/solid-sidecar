@@ -14,9 +14,10 @@ const maxDPoPThumbprintLength = 128
 var ErrDPoPTokenBinding = errors.New("invalid DPoP token binding")
 
 // ConfirmDPoPTokenBinding verifies the optional JWT cnf.jkt confirmation claim
-// against the public JWK embedded in the DPoP proof header. Opaque access tokens
-// and JWTs without cnf.jkt are left to the issuer/token verifier; this helper
-// only enforces binding when token-side confirmation material is present.
+// against the public JWK embedded in the DPoP proof header. Request-path code
+// should prefer DPoPVerifier.VerifyRequest so the proof is parsed once and the
+// signature is verified before binding. This helper remains for focused tests
+// and non-request callers.
 func ConfirmDPoPTokenBinding(accessToken, proof string) error {
 	expected, ok, err := DPoPConfirmationThumbprint(accessToken)
 	if err != nil || !ok {
@@ -26,6 +27,10 @@ func ConfirmDPoPTokenBinding(accessToken, proof string) error {
 	if err != nil {
 		return err
 	}
+	return confirmDPoPTokenBinding(header, expected)
+}
+
+func confirmDPoPTokenBinding(header proofHeader, expected string) error {
 	actual, err := proofJWKThumbprint(header.JWK)
 	if err != nil {
 		return err
@@ -39,13 +44,21 @@ func ConfirmDPoPTokenBinding(accessToken, proof string) error {
 // DPoPConfirmationThumbprint extracts cnf.jkt from a compact JWT access token.
 // It does not validate token signatures or identity claims and must not be used
 // as trusted identity input. Its only purpose is proof-key confirmation binding.
+// Empty tokens and opaque tokens return ok=false so issuer/token validation can
+// handle them without false-positive JWT parsing failures.
 func DPoPConfirmationThumbprint(accessToken string) (string, bool, error) {
 	accessToken = strings.TrimSpace(accessToken)
-	if accessToken == "" || len(accessToken) > 32768 || strings.ContainsAny(accessToken, "\r\n\x00") {
+	if accessToken == "" {
+		return "", false, nil
+	}
+	if len(accessToken) > 32768 || strings.ContainsAny(accessToken, "\r\n\x00") {
 		return "", false, fmt.Errorf("%w: token size or characters invalid", ErrDPoPTokenBinding)
 	}
 	parts := strings.Split(accessToken, ".")
 	if len(parts) != 3 {
+		return "", false, nil
+	}
+	if !looksLikeJWTHeader(parts[0]) {
 		return "", false, nil
 	}
 	claimsBytes, err := base64RawURL.DecodeString(parts[1])
@@ -68,6 +81,20 @@ func DPoPConfirmationThumbprint(accessToken string) (string, bool, error) {
 		return "", false, fmt.Errorf("%w: cnf.jkt is invalid", ErrDPoPTokenBinding)
 	}
 	return jkt, true, nil
+}
+
+func looksLikeJWTHeader(encodedHeader string) bool {
+	headerBytes, err := base64RawURL.DecodeString(encodedHeader)
+	if err != nil {
+		return false
+	}
+	var header struct {
+		Type string `json:"typ"`
+	}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(header.Type), "JWT")
 }
 
 func proofJWKThumbprint(raw json.RawMessage) (string, error) {
