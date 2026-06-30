@@ -4,8 +4,6 @@ services:
     command:
       - -f
       - /data
-      - -b
-      - http://localhost:8443/
     ports:
       - "3000:3000"
     volumes:
