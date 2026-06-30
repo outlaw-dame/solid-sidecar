@@ -79,6 +79,7 @@ type AuthConfig struct {
 	PreflightEnabled                bool
 	RequireDPoPForDPoPAuthorization bool
 	ValidateDPoPSignature           bool
+	RequireDPoPKeyConfirmation      bool
 	MaxClockSkew                    time.Duration
 	ReplayWindow                    time.Duration
 	PublicBaseURL                   string
@@ -86,6 +87,7 @@ type AuthConfig struct {
 	IdentityValidationEnabled bool
 	AllowedIdentityIssuers    []string
 	ExpectedIdentityAudience  string
+	VerifyWebIDOwnership      bool
 }
 
 type AuthzConfig struct {
@@ -132,6 +134,8 @@ func Defaults() Config {
 			PreflightEnabled:                true,
 			RequireDPoPForDPoPAuthorization: true,
 			ValidateDPoPSignature:           true,
+			RequireDPoPKeyConfirmation:      true,
+			VerifyWebIDOwnership:            false, // Disabled by default for compatibility
 			MaxClockSkew:                    5 * time.Minute,
 			ReplayWindow:                    10 * time.Minute,
 		},
@@ -286,6 +290,8 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseBool(value, &cfg.Auth.RequireDPoPForDPoPAuthorization, "auth.require_dpop_for_dpop_authorization")
 	case "auth.validate_dpop_signature":
 		return parseBool(value, &cfg.Auth.ValidateDPoPSignature, "auth.validate_dpop_signature")
+	case "auth.require_dpop_key_confirmation":
+		return parseBool(value, &cfg.Auth.RequireDPoPKeyConfirmation, "auth.require_dpop_key_confirmation")
 	case "auth.max_clock_skew":
 		return parseDuration(value, &cfg.Auth.MaxClockSkew)
 	case "auth.replay_window":
@@ -294,6 +300,8 @@ func setValue(cfg *Config, section, key, value string) error {
 		cfg.Auth.PublicBaseURL = value
 	case "auth.identity_validation_enabled":
 		return parseBool(value, &cfg.Auth.IdentityValidationEnabled, "auth.identity_validation_enabled")
+	case "auth.verify_webid_ownership":
+		return parseBool(value, &cfg.Auth.VerifyWebIDOwnership, "auth.verify_webid_ownership")
 	case "auth.allowed_identity_issuers":
 		cfg.Auth.AllowedIdentityIssuers = splitCSV(value)
 	case "auth.expected_identity_audience":
@@ -389,6 +397,11 @@ func applyEnv(cfg *Config) {
 			cfg.Auth.ValidateDPoPSignature = parsed
 		}
 	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_REQUIRE_DPOP_KEY_CONFIRMATION"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.RequireDPoPKeyConfirmation = parsed
+		}
+	}
 	if value := os.Getenv("SOLID_SIDECAR_AUTH_MAX_CLOCK_SKEW"); value != "" {
 		if parsed, err := time.ParseDuration(value); err == nil {
 			cfg.Auth.MaxClockSkew = parsed
@@ -405,6 +418,11 @@ func applyEnv(cfg *Config) {
 	if value := os.Getenv("SOLID_SIDECAR_AUTH_IDENTITY_VALIDATION_ENABLED"); value != "" {
 		if parsed, err := strconv.ParseBool(value); err == nil {
 			cfg.Auth.IdentityValidationEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTH_VERIFY_WEBID_OWNERSHIP"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.VerifyWebIDOwnership = parsed
 		}
 	}
 	if value := os.Getenv("SOLID_SIDECAR_AUTH_ALLOWED_IDENTITY_ISSUERS"); value != "" {

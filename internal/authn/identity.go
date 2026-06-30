@@ -28,6 +28,9 @@ type IdentityClaims struct {
 	ClientID  string   `json:"client_id,omitempty"`
 	IssuedAt  int64    `json:"iat,omitempty"`
 	ExpiresAt int64    `json:"exp,omitempty"`
+	// CNF contains the key confirmation claim (RFC 7800)
+	// For DPoP-bound tokens, this contains the JWK thumbprint of the proof key
+	CNF json.RawMessage `json:"cnf,omitempty"`
 }
 
 type IdentityValidationOptions struct {
