@@ -114,12 +114,11 @@ Implemented:
 - storage-root discovery handling and validation;
 - container slash and redirect behavior middleware;
 - description-resource link handling and parsing;
-- CORS behavior tests for browser Solid apps.
-
-Still missing for Phase 2:
-
+- CORS behavior tests for browser Solid apps;
 - direct CSS vs sidecar pass-through comparison for common request shapes;
 - compatibility matrix for CSS behavior that is intentionally proxied unchanged.
+
+**Phase 2 is complete.**
 
 Still missing:
 
