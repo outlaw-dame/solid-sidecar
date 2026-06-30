@@ -10,6 +10,7 @@ The project has pivoted from metadata phases to production-readiness work. Start
 
 - `docs/implementation-status.md` for the current done/missing audit.
 - `docs/production-implementation-plan.md` for the roadmap.
+- `docs/solid-runtime-roadmap-index.md` for the expanded roadmap documentation index.
 - `docs/solid-runtime-phase-roadmap.md` for the Go/Rust Solid runtime phase roadmap, including `did:solid`.
 - `docs/did-solid-method.md` for the initial project-defined `did:solid` method design.
 - `docs/compression-compatibility.md` for Gzip/Zstd compatibility rules and implementation phases.
