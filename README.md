@@ -10,6 +10,10 @@ The project has pivoted from metadata phases to production-readiness work. Start
 
 - `docs/implementation-status.md` for the current done/missing audit.
 - `docs/production-implementation-plan.md` for the roadmap.
+- `docs/solid-runtime-roadmap-index.md` for the expanded roadmap documentation index.
+- `docs/solid-runtime-phase-roadmap.md` for the Go/Rust Solid runtime phase roadmap, including `did:solid`.
+- `docs/did-solid-method.md` for the initial project-defined `did:solid` method design.
+- `docs/compression-compatibility.md` for Gzip/Zstd compatibility rules and implementation phases.
 - `docs/runbook-local.md` for local CSS-through-sidecar use.
 - `docs/runbook-staging.md` for staging rollout and rollback.
 - `docs/authn-identity.md` for authn identity/JWT status.
@@ -39,7 +43,7 @@ Recently completed production-readiness work:
 - `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
-- `docs/`: implementation status, architecture, phase notes, and runbooks.
+- `docs/`: implementation status, architecture, phase notes, `did:solid`, compression compatibility, and runbooks.
 - `scripts/`: local/CI verification scripts.
 
 ## Run locally
