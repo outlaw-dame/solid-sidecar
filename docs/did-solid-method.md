@@ -1,46 +1,49 @@
-# did:solid Method Design
+# `did:solid` Method Design
 
-This document defines the initial `did:solid` design direction for `solid-sidecar`.
+This document defines the initial project-scoped design for `did:solid` in `solid-sidecar`.
 
-`did:solid` is a project-defined Solid-oriented DID method extension. It is not treated as a replacement for WebID, Solid-OIDC, WAC, ACP, or CSS compatibility. Until a broader standards process adopts compatible semantics, this repository must document `did:solid` as an experimental interoperability layer with explicit feature gates.
+`did:solid` is not currently treated as a replacement for WebID, Solid-OIDC, WAC, ACP, SAI, or CSS compatibility. It is a DID-based controller identity extension for a modern Solid runtime path. It must strengthen portability and cryptographic control without creating an authorization shortcut.
 
-## Goals
+## Status
 
-`did:solid` should provide:
+Status: design draft.
 
-- portable controller identity for Solid agents;
-- cryptographic key discovery and rotation that can be linked to a Solid WebID;
-- service endpoint discovery for Solid storage, WebID, OIDC issuer, and notifications;
-- a foundation for future DID-aware authorization policies without granting access by DID alone;
-- testable, deterministic resolver behavior suitable for Go/Rust runtime integration.
+Implementation status:
 
-## Non-goals
+- no resolver is implemented yet;
+- no DID document parser is implemented yet;
+- no runtime authorization behavior depends on `did:solid` yet;
+- no policy engine should grant access from a DID alone.
 
-`did:solid` must not:
+## Scope
 
-- replace WebID as the primary Solid agent identifier in this repository's compatibility path;
-- bypass Solid-OIDC;
-- bypass WAC, ACP, SAI, or CSS authorization behavior;
-- imply that a DID controller has access to a resource without explicit policy;
-- require a blockchain or ledger by default;
-- leak private Solid storage locations through public DID documents unless the user/operator explicitly opts in;
-- make existing Solid clients incompatible.
+The scope of `did:solid` is:
 
-## Compatibility rule
+- identify a Solid controller using a DID;
+- bind that DID to a Solid WebID;
+- bind that DID to one or more verification methods;
+- advertise Solid-related service endpoints;
+- support key rotation and deactivation semantics;
+- allow future policy engines to reason about DID-bound identity only after explicit policy support exists.
 
-The identity model remains:
+Out of scope for the first implementation:
+
+- replacing Solid-OIDC;
+- replacing WebID;
+- replacing WAC or ACP;
+- blockchain anchoring by default;
+- granting access directly from DID ownership;
+- cross-project P2P identity semantics.
+
+## Method name and syntax
+
+Method name:
 
 ```text
-Solid-OIDC verified token + DPoP binding -> trusted WebID identity
-trusted WebID identity + optional did:solid binding -> enriched AgentIdentity
-AgentIdentity + WAC/ACP/SAI policy -> authorization decision
+solid
 ```
 
-A valid DID document proves only DID controller information. It does not prove authorization to a Solid resource.
-
-## Method syntax
-
-Initial syntax:
+DID shape:
 
 ```text
 did:solid:<method-specific-id>
@@ -48,199 +51,25 @@ did:solid:<method-specific-id>
 
 The method-specific identifier must be:
 
-- ASCII;
-- lowercase-normalized where possible;
-- URL-safe;
+- non-empty;
+- ASCII-only in the first implementation;
+- lowercase normalized;
 - bounded in length;
-- unambiguous after percent-decoding rules are applied;
-- rejected if it contains path traversal, control characters, query strings, fragments, or reserved delimiters not explicitly allowed by the final method grammar.
+- free of query strings, fragments, and path traversal semantics;
+- parsed by a strict method parser.
 
-A future version may define method-specific variants, for example:
+Initial examples:
 
 ```text
-did:solid:web:<host-scoped-id>
-did:solid:pod:<storage-scoped-id>
+did:solid:alice.example
+did:solid:pod-alice-example-01
 ```
 
-Do not implement variants until the grammar and resolver behavior are documented with test vectors.
+The implementation must reject ambiguous or unsafe identifiers before resolver work begins.
 
-## DID document requirements
+## Identity model
 
-A `did:solid` DID document should include:
-
-- `id` equal to the DID being resolved;
-- at least one verification method;
-- authentication relationship referencing a verification method;
-- assertion method relationship when profile assertions are supported;
-- service endpoint for the Solid WebID;
-- service endpoint for the Solid storage or storage description;
-- service endpoint for the Solid-OIDC issuer;
-- optional service endpoint for Solid notifications;
-- optional service endpoint for a public profile or documentation resource.
-
-Example shape:
-
-```json
-{
-  "@context": [
-    "https://www.w3.org/ns/did/v1"
-  ],
-  "id": "did:solid:example-alice",
-  "verificationMethod": [
-    {
-      "id": "did:solid:example-alice#key-1",
-      "type": "JsonWebKey2020",
-      "controller": "did:solid:example-alice",
-      "publicKeyJwk": {
-        "kty": "OKP",
-        "crv": "Ed25519",
-        "x": "..."
-      }
-    }
-  ],
-  "authentication": [
-    "did:solid:example-alice#key-1"
-  ],
-  "assertionMethod": [
-    "did:solid:example-alice#key-1"
-  ],
-  "service": [
-    {
-      "id": "did:solid:example-alice#webid",
-      "type": "SolidWebID",
-      "serviceEndpoint": "https://alice.example/profile/card#me"
-    },
-    {
-      "id": "did:solid:example-alice#storage",
-      "type": "SolidStorage",
-      "serviceEndpoint": "https://alice.example/"
-    },
-    {
-      "id": "did:solid:example-alice#issuer",
-      "type": "SolidOIDCIssuer",
-      "serviceEndpoint": "https://issuer.example/"
-    }
-  ]
-}
-```
-
-The exact context, service type names, verification method types, and endpoint constraints must be finalized before implementation.
-
-## Key material
-
-Preferred verification method support:
-
-- Ed25519 for deterministic modern signatures;
-- P-256 as an optional compatibility key type for browser/WebCrypto and platform keychain integrations;
-- RSA only if required for compatibility, not as the preferred new-key path.
-
-Rules:
-
-- private keys are never stored in the sidecar;
-- resolver validates only public verification material;
-- minimum key strength must be enforced;
-- unsupported key types fail closed for DID authentication;
-- old keys must remain discoverable for a bounded rotation window only when explicitly documented.
-
-## DID to WebID binding
-
-A DID document may claim a WebID service endpoint. That claim is not sufficient by itself.
-
-A trusted binding requires:
-
-1. DID document lists the WebID service endpoint.
-2. WebID profile links back to the DID.
-3. The WebID profile is retrieved through a bounded, safe fetch path.
-4. The WebID profile relationship uses a documented predicate.
-5. The Solid-OIDC trusted issuer relationship remains valid where authn depends on Solid-OIDC.
-
-Candidate WebID backlink predicate must be documented before implementation. Until then, use fixtures only and do not enforce DID/WebID binding in production.
-
-## WebID to DID binding
-
-The WebID profile should be able to advertise a controller DID.
-
-Candidate shape:
-
-```turtle
-<#me> <https://solidproject.org/ns/solid/terms#controllerDid> <did:solid:example-alice> .
-```
-
-The predicate above is a placeholder for project documentation. Do not treat it as standardized until the project finalizes the vocabulary decision.
-
-Rules:
-
-- preserve WebID fragment identifiers;
-- reject backlink mismatch;
-- reject multiple conflicting controller DIDs unless a future multi-controller model is explicitly designed;
-- do not log full WebIDs or DID documents in normal request logs.
-
-## Resolution model
-
-The initial resolver should be conservative.
-
-Possible resolution sources:
-
-- explicit local resolver map for tests;
-- configured HTTPS resolver endpoint;
-- Solid storage description link;
-- WebID profile backlink;
-- operator-configured resolver base.
-
-Initial implementation should start with test/local and explicitly configured HTTPS resolution only. Do not perform arbitrary network discovery from attacker-controlled DIDs.
-
-Resolver steps:
-
-1. Parse and validate DID syntax.
-2. Check local/test resolver map.
-3. If configured, resolve through allowed resolver endpoint.
-4. Fetch with bounded timeout and size.
-5. Require JSON DID document content type where available.
-6. Validate DID document `id` equals requested DID.
-7. Validate verification methods.
-8. Extract service endpoints.
-9. Optionally validate WebID backlink.
-10. Return a copy-safe resolved document structure.
-
-Acceptance criteria:
-
-- arbitrary DID strings cannot trigger arbitrary SSRF;
-- resolver has timeout and response-size limits;
-- invalid documents fail closed;
-- successful resolution returns copy-safe structures;
-- resolver errors are privacy-safe.
-
-## Update and rotation model
-
-The method must document update and key rotation before production use.
-
-Minimum requirements:
-
-- old key -> new key rotation proof, or authoritative update through the configured resolver source;
-- bounded overlap window for old and new keys;
-- revocation/deactivation semantics;
-- audit-safe rotation logs;
-- cache invalidation on rotation.
-
-Rules:
-
-- key rotation cannot silently change the bound WebID;
-- WebID change requires explicit evidence and should be treated as a high-risk identity transition;
-- stale DID document cache entries must not preserve removed keys beyond configured bounds.
-
-## Deactivation model
-
-A deactivated DID must fail closed for DID binding.
-
-Rules:
-
-- deactivation does not delete historical audit references;
-- deactivation must not remove the ability to explain old decisions using historical metadata hashes;
-- deactivation must not revoke WebID identity by itself unless Solid-OIDC/WebID verification also fails.
-
-## AgentIdentity integration
-
-`did:solid` should flow into the canonical identity model as optional enrichment:
+`did:solid` complements the canonical Solid identity model:
 
 ```text
 AgentIdentity {
@@ -256,138 +85,286 @@ AgentIdentity {
 
 Rules:
 
-- WebID-only identity remains valid;
-- DID-enhanced identity has a higher identity-assurance annotation only when the DID/WebID binding is verified;
-- DID binding failures degrade to WebID-only behavior unless config requires DID;
-- authz must not grant additional access based on DID until policy semantics support DID references.
+- WebID remains the primary Solid agent identifier.
+- Solid-OIDC remains the primary web authentication path.
+- `did:solid` can raise assurance only after DID/WebID binding is verified.
+- DID ownership alone must not grant resource access.
+- Authorization remains policy-driven through WAC, ACP, SAI, or explicitly documented future policy semantics.
 
-## Authorization interaction
+## DID document shape
 
-Initial rule:
+A resolved `did:solid` document should be a DID document with:
 
-```text
-DID does not authorize. Policy authorizes.
+- `id` equal to the DID;
+- at least one verification method;
+- at least one assertion or authentication relationship appropriate for the selected key type;
+- a WebID service endpoint;
+- a Solid storage service endpoint where applicable;
+- an OIDC issuer service endpoint where applicable;
+- optional notification endpoint;
+- optional profile or documentation endpoint.
+
+Example shape:
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1"
+  ],
+  "id": "did:solid:alice.example",
+  "verificationMethod": [
+    {
+      "id": "did:solid:alice.example#key-1",
+      "type": "Multikey",
+      "controller": "did:solid:alice.example",
+      "publicKeyMultibase": "z..."
+    }
+  ],
+  "authentication": [
+    "did:solid:alice.example#key-1"
+  ],
+  "assertionMethod": [
+    "did:solid:alice.example#key-1"
+  ],
+  "service": [
+    {
+      "id": "did:solid:alice.example#webid",
+      "type": "SolidWebID",
+      "serviceEndpoint": "https://alice.example/profile/card#me"
+    },
+    {
+      "id": "did:solid:alice.example#storage",
+      "type": "SolidStorage",
+      "serviceEndpoint": "https://storage.example/alice/"
+    },
+    {
+      "id": "did:solid:alice.example#issuer",
+      "type": "SolidOIDCIssuer",
+      "serviceEndpoint": "https://issuer.example/"
+    }
+  ]
+}
 ```
 
-Future policy work may support DID references only after:
+The exact service type names are project-local until stabilized. Runtime code must treat them as explicit project semantics, not generic DID Core semantics.
 
-- WAC/ACP DID reference semantics are documented;
-- parser fixtures exist;
-- evaluator fixtures exist;
-- CSS compatibility or project-specific divergence is explicitly documented;
-- enforcement gates understand DID identity assurance.
+## WebID binding
 
-Do not add DID matching to WAC/ACP evaluators as an implicit alias for WebID.
+Binding must be bidirectional.
 
-## Privacy considerations
+DID document to WebID:
 
-DID documents can make relationships more discoverable. This is useful for portability but risky for privacy.
+- DID document includes a WebID service endpoint.
+- The endpoint must be an absolute HTTPS URI.
+- Fragments are allowed for WebIDs.
+- Query strings should be rejected unless future compatibility evidence requires them.
 
-Risks:
+WebID to DID:
 
-- public correlation between DID, WebID, storage, issuer, and notification endpoint;
-- long-lived identifiers linking activity across services;
-- cache retention after DID rotation/deactivation;
-- resolver logs exposing user identity graphs.
+- WebID profile should link back to the DID using a documented predicate.
+- The predicate must be documented before implementation.
+- The profile fetch must be bounded and privacy-safe.
+- Missing backlink means DID binding is not trusted, but WebID-only identity can still remain valid if Solid-OIDC verification succeeded.
 
-Mitigations:
+Initial candidate predicate:
 
-- make public service endpoints minimal by default;
-- allow private or pairwise DID strategies in future docs;
-- keep resolver logs aggregate and privacy-safe;
-- avoid resource paths in DID service endpoints unless explicitly intended;
-- bound resolver cache TTLs;
-- document user-visible consequences of publishing a DID document.
+```turtle
+<#me> <https://solidproject.org/ns/did#controller> <did:solid:alice.example> .
+```
+
+This predicate is project-proposed until reviewed. Code must isolate it behind a constant and documentation.
+
+## Verification methods
+
+Preferred first key types:
+
+- Ed25519 through Multikey for DID-native signatures;
+- P-256 only if needed for browser/WebCrypto compatibility;
+- RSA only for legacy compatibility, not as the preferred DID key type.
+
+Rules:
+
+- verification methods must be controlled by the DID;
+- key material must be public only;
+- private key material must never be logged;
+- unsupported key types fail closed for DID binding;
+- key IDs must be fragment-only under the DID document where possible.
+
+## Resolution model
+
+The first resolver should be explicit and conservative.
+
+Resolver inputs:
+
+- DID string;
+- resolver configuration;
+- timeout;
+- maximum document size;
+- allowed source policy.
+
+Resolver outputs:
+
+- parsed DID;
+- normalized DID document;
+- service endpoints;
+- verification methods;
+- expiration/cache metadata;
+- validation warnings;
+- failure reason.
+
+Initial source policy options:
+
+```yaml
+did_solid:
+  enabled: false
+  allowed_resolvers:
+    - local
+    - https
+  max_document_bytes: 65536
+  cache_ttl_seconds: 300
+```
+
+The resolver must not perform arbitrary unbounded network fetches.
+
+## DID-to-document discovery
+
+The project must choose one of these before resolver implementation:
+
+1. explicit local registry mapping DID to DID document URL;
+2. HTTPS well-known mapping from method-specific ID;
+3. Solid storage description mapping;
+4. other reviewed deterministic mapping.
+
+Initial safest path:
+
+- local registry for tests;
+- explicit HTTPS resolver configuration for staging;
+- no global network discovery by default.
+
+## Update and rotation
+
+Key rotation must be explicit and auditable.
+
+Required behavior:
+
+- new DID document must preserve DID `id`;
+- old and new verification methods must be represented with enough metadata to validate transition where possible;
+- resolver cache must not hide rotation beyond bounded TTL;
+- stale keys must not remain valid for new assertions after revocation/deactivation metadata is observed;
+- rotation events must be logged without key material or private identity leakage.
+
+## Deactivation
+
+A deactivated `did:solid` must fail DID binding.
+
+Rules:
+
+- deactivation must not delete WebID identity;
+- WebID-only Solid-OIDC behavior may continue if independently valid;
+- deactivated DID must not be used to raise assurance;
+- cached active documents must be invalidated when deactivation is detected.
+
+## Runtime integration phases
+
+### Phase A: design only
+
+- Add this document.
+- Add syntax examples.
+- Add test vector plan.
+
+### Phase B: parser and test vectors
+
+- strict DID parser;
+- valid/invalid DID vectors;
+- method-specific-id normalization tests;
+- no network access.
+
+### Phase C: local resolver
+
+- local fixture registry;
+- DID document parser;
+- service endpoint validation;
+- verification method validation;
+- WebID service extraction.
+
+### Phase D: WebID backlink validation
+
+- bounded WebID profile fetch;
+- RDF parser boundary integration;
+- documented backlink predicate;
+- DID/WebID bidirectional validation.
+
+### Phase E: authn identity binding
+
+- optional DID binding on verified WebID identities;
+- assurance-level calculation;
+- no authz effect by default;
+- metrics for DID binding success/failure without identity labels.
+
+### Phase F: policy-aware DID references
+
+Only after explicit policy semantics exist:
+
+- WAC/ACP extension decision;
+- fixtures for DID-referenced policy;
+- CSS compatibility and fallback behavior;
+- no enforcement until mismatch rate is measured.
 
 ## Security considerations
 
 Threats:
 
-- DID document spoofing;
+- DID/WebID substitution;
 - resolver SSRF;
-- key substitution;
-- downgrade to weaker keys;
-- stale key acceptance;
-- WebID backlink spoofing;
-- conflicting DID/WebID bindings;
-- authorization confusion where DID is mistaken for access grant.
+- cache poisoning;
+- malicious DID documents;
+- key confusion;
+- downgrade from strong WebID/OIDC verification to weak DID assertion;
+- unauthorized identity correlation;
+- stale key use after rotation;
+- deactivation bypass.
 
-Required mitigations:
+Controls:
 
-- strict resolver allowlist/config;
-- bounded fetches;
-- exact DID `id` match;
-- supported key type validation;
-- minimum key strength;
-- backlink verification;
-- cache invalidation;
-- no authorization shortcut;
-- privacy-safe audit hashes.
+- explicit resolver allowlist;
+- strict DID syntax parser;
+- HTTPS-only remote endpoints unless local fixtures are used;
+- bounded document size;
+- bounded fetch timeout;
+- safe content-type handling;
+- copy-safe caches;
+- bidirectional DID/WebID binding;
+- no DID-only authorization;
+- privacy-safe metrics and logs.
 
-## Implementation phases
+## Privacy considerations
 
-### Phase D1: design finalization
+`did:solid` can increase correlation risk because a persistent DID may link identities, storage locations, issuers, and keys.
 
-- finalize method grammar;
-- finalize service endpoint vocabulary;
-- finalize WebID backlink predicate;
-- define resolver source policy;
-- define update/rotation/deactivation semantics;
-- add test vectors.
+Initial privacy rules:
 
-### Phase D2: parser and test vectors
+- do not include raw DIDs in aggregate metrics labels;
+- hash or omit DID values in logs unless debug mode is explicitly enabled in local development;
+- do not expose DID binding status to unauthorized parties;
+- do not fetch DID documents or WebID backlinks for arbitrary attacker-supplied DIDs unless resolver policy permits it;
+- document correlation risk before enabling DID binding by default.
 
-- implement DID syntax parser in Go;
-- add negative parser tests;
-- add positive parser tests;
-- add canonical string normalization tests.
+## Interoperability limits
 
-### Phase D3: local/test resolver
+Until reviewed and adopted beyond this repository, `did:solid` is project-defined.
 
-- implement static resolver map for tests;
-- validate DID document shape;
-- validate verification methods;
-- validate service endpoints;
-- expose copy-safe resolved document objects.
+Therefore:
 
-### Phase D4: configured HTTPS resolver
+- external clients must not be required to use it;
+- WebID-only clients must keep working;
+- CSS compatibility must remain intact;
+- Solid protocol conformance must not depend on DID support;
+- deployments must be able to disable DID support entirely.
 
-- add resolver config;
-- add bounded HTTP fetches;
-- add content-type checks;
-- add response-size limits;
-- add resolver cache;
-- add SSRF protections.
+## Acceptance criteria before implementation proceeds
 
-### Phase D5: WebID backlink validation
-
-- fetch WebID profile through bounded policy;
-- parse backlink predicate;
-- verify DID/WebID agreement;
-- handle conflicts;
-- preserve privacy-safe logs.
-
-### Phase D6: AgentIdentity integration
-
-- attach verified DID to trusted identity only after WebID binding succeeds;
-- add assurance-level annotation;
-- ensure authz request builder can carry DID without using it for access decisions.
-
-### Phase D7: future policy integration decision
-
-- decide whether WAC/ACP/SAI should support DID references;
-- document semantics;
-- add parser/evaluator fixtures before any implementation;
-- keep enforcement gated.
-
-## Stop conditions
-
-Pause `did:solid` implementation if:
-
-- method syntax is ambiguous;
-- resolver can be tricked into arbitrary network fetches;
-- WebID backlink predicate is not finalized;
-- DID binding would grant access without explicit policy;
-- key rotation semantics are unclear;
-- public DID documents would leak private storage topology by default;
-- existing WebID/Solid-OIDC clients would break.
+- DID syntax and test vectors are documented.
+- WebID backlink predicate is reviewed and documented.
+- resolver source policy is explicit.
+- security and privacy risks are added to the threat model.
+- runtime integration plan states clearly that DID binding does not grant access by itself.
