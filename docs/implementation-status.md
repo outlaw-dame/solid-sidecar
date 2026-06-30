@@ -86,7 +86,6 @@ Implemented:
 
 Still missing before authorization can enforce:
 - RDF parser/canonicalization boundary;
-- WAC parser;
 - ACP parser;
 - SAI parser or explicit decision to defer SAI;
 - real WAC/ACP/SAI evaluator;
@@ -134,14 +133,30 @@ Still missing:
 - operational metrics endpoint or OpenTelemetry export;
 - alerting guidance.
 
+## Phase 6 work completed
+
+Implemented:
+
+- WAC parser with RDFParser interface integration for seamless use with existing RDF infrastructure;
+- WAC-specific data model: WACRule, WACPolicy, WACParseResult structures;
+- Security hardening: input size limits (inherits 10MB max from RDF), timeouts (30s default), URI validation with fragment support for WebIDs;
+- Rule count limits (100 default) for DoS protection;
+- Shadow mode: non-enforcing parser that returns parsed rules without affecting authorization decisions;
+- Automatic access mode parsing from various WAC URI formats (full URIs, namespace prefixes, angle-bracket wrapped);
+- WebID fragment URI support for agent identifiers;
+- Comprehensive test suite with 15+ tests covering parsing, validation, timeout, and error handling;
+- Interface compliance verification with RDFParser.
+
+**Phase 6 is complete.**
+
 ## Current priority order
 
 Continue in this order:
 
-1. WAC parser in shadow mode.
-5. WAC evaluator in shadow mode.
-6. CSS behavior comparison harness.
-7. Enforcement gate design.
+1. WAC evaluator in shadow mode.
+2. CSS behavior comparison harness.
+3. Enforcement gate design.
+4. ACP parser.
 
 ## Current safety boundary
 
@@ -151,6 +166,7 @@ The sidecar must remain CSS-authoritative and non-enforcing until all of the fol
 - authn middleware accepts only verified and key-bound identity;
 - live policy discovery and loading/cache works in shadow mode without request-path hangs;
 - RDF parser boundary with content type detection, parser registry, security hardening, input validation, and timeout protection;
+- WAC parser in shadow mode for parsing WAC policies;
 - WAC/ACP parser/evaluator output can be compared against CSS behavior;
 - mismatch rate is measured;
 - enforcement gates and emergency bypass exist;
