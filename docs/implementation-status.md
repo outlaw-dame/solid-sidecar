@@ -105,6 +105,22 @@ Implemented:
 - local runbook;
 - staging runbook.
 
+## Phase 2 work completed
+
+Implemented:
+
+- method/media-type validation for write requests;
+- GET, HEAD, OPTIONS, PUT, POST, PATCH, and DELETE compatibility fixtures;
+- storage-root discovery handling and validation;
+- container slash and redirect behavior middleware;
+- description-resource link handling and parsing;
+- CORS behavior tests for browser Solid apps.
+
+Still missing for Phase 2:
+
+- direct CSS vs sidecar pass-through comparison for common request shapes;
+- compatibility matrix for CSS behavior that is intentionally proxied unchanged.
+
 Still missing:
 
 - observed green GitHub Actions runs through the connector;
