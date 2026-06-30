@@ -3,7 +3,7 @@ services:
     image: solidproject/community-server:latest
     command:
       - -c
-      - config/file-no-setup.json
+      - /config/file-no-setup.json
       - -f
       - /data
       - -b
@@ -12,6 +12,7 @@ services:
       - "3000:3000"
     volumes:
       - css-data:/data
+      - ./config:/config:ro
 
   sidecar:
     build:
