@@ -34,19 +34,12 @@ type ProofClaims struct {
 	JTI string `json:"jti"`
 	IAT int64  `json:"iat"`
 	ATH string `json:"ath,omitempty"`
-	CNF string `json:"cnf,omitempty"` // JWK thumbprint for key binding
 }
 
 type proofHeader struct {
 	Typ string          `json:"typ"`
 	Alg string          `json:"alg"`
 	JWK json.RawMessage `json:"jwk"`
-}
-
-// CNFClaim represents the confirmation claim as defined in RFC 7800
-// For DPoP, it typically contains a JWK thumbprint
-type CNFClaim struct {
-	JWK string `json:"jwk"` // Base64url-encoded SHA-256 thumbprint of the JWK
 }
 
 type jwk struct {
@@ -115,25 +108,6 @@ func (v *DPoPVerifier) VerifyRequest(r *http.Request, accessToken string, proof 
 		}
 	}
 
-	// Validate key confirmation (cnf) binding if required
-	if v.cfg.RequireDPoPKeyConfirmation && accessToken != "" {
-		// Calculate thumbprint of the DPoP proof's JWK
-		proofJWKThumbprint := CalculateJWKThumbprint(header.JWK)
-
-		// Extract cnf.jwk from access token
-		accessTokenCNFThumbprint, err := ExtractCNFFromAccessToken(accessToken)
-		if err != nil {
-			return fmt.Errorf("failed to extract cnf from access token: %w", err)
-		}
-
-		if accessTokenCNFThumbprint != "" {
-			// Access token has a cnf claim - verify it matches the DPoP proof key
-			if subtle.ConstantTimeCompare([]byte(proofJWKThumbprint), []byte(accessTokenCNFThumbprint)) != 1 {
-				return errors.New("DPoP proof key thumbprint does not match access token cnf claim")
-			}
-		}
-	}
-
 	cacheKey := replayKey(header, claims)
 	if ok := v.cache.Store(cacheKey, issuedAt.Add(v.cfg.ReplayWindow)); !ok {
 		return errors.New("DPoP proof replay detected")
@@ -166,7 +140,7 @@ func parseProof(proof string) (proofHeader, ProofClaims, []byte, []byte, error) 
 	if err := json.Unmarshal(claimsBytes, &claims); err != nil {
 		return proofHeader{}, ProofClaims{}, nil, nil, errors.New("DPoP claims are not valid JSON")
 	}
-	return header, claims, []byte(parts[0]+"."+parts[1]), signature, nil
+	return header, claims, []byte(parts[0] + "." + parts[1]), signature, nil
 }
 
 func verifySignature(header proofHeader, signingInput, signature []byte) error {
@@ -253,36 +227,6 @@ func accessTokenHash(accessToken string) string {
 	return base64RawURL.EncodeToString(digest[:])
 }
 
-// ExtractCNFFromAccessToken extracts the cnf claim from an access token JWT payload
-// without verifying the token signature. Returns the JWK thumbprint if present.
-func ExtractCNFFromAccessToken(accessToken string) (string, error) {
-	if accessToken == "" {
-		return "", nil
-	}
-	parts := strings.Split(accessToken, ".")
-	if len(parts) != 3 {
-		return "", nil // Not a JWT, no cnf
-	}
-	claimsBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", nil // Invalid base64, no cnf
-	}
-	var claims struct {
-		CNF json.RawMessage `json:"cnf"`
-	}
-	if err := json.Unmarshal(claimsBytes, &claims); err != nil {
-		return "", nil // Invalid JSON, no cnf
-	}
-	if len(claims.CNF) == 0 {
-		return "", nil // No cnf claim
-	}
-	var cnf CNFClaim
-	if err := json.Unmarshal(claims.CNF, &cnf); err != nil {
-		return "", nil // Invalid cnf, no thumbprint
-	}
-	return cnf.JWK, nil
-}
-
 func replayKey(header proofHeader, claims ProofClaims) string {
 	digest := sha256.Sum256(header.JWK)
 	return base64RawURL.EncodeToString(digest[:]) + ":" + claims.JTI
@@ -317,11 +261,4 @@ func normalizeHTU(value string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
-}
-
-// CalculateJWKThumbprint calculates the SHA-256 thumbprint of a JWK as defined in RFC 7638
-// The thumbprint is the base64url-encoded SHA-256 hash of the canonicalized JWK
-func CalculateJWKThumbprint(jwkJSON []byte) string {
-	digest := sha256.Sum256(jwkJSON)
-	return base64RawURL.EncodeToString(digest[:])
 }
