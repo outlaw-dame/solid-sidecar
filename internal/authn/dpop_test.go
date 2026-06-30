@@ -63,6 +63,85 @@ func TestDPoPVerifierRejectsWrongATH(t *testing.T) {
 	}
 }
 
+func TestDPoPVerifierRejectsMismatchedConfirmationJKT(t *testing.T) {
+	proofKey := mustP256Key(t)
+	otherKey := mustP256Key(t)
+	now := time.Unix(1_700_000_000, 0)
+	proof := mustDPoPProof(t, proofKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-mismatch",
+		IAT: now.Unix(),
+	})
+	proof = mustDPoPProof(t, proofKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-mismatch",
+		IAT: now.Unix(),
+	})
+	mismatchedProof := mustDPoPProof(t, otherKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-token-source",
+		IAT: now.Unix(),
+	})
+	accessToken := mustCompactJWT(t, map[string]any{
+		"cnf": map[string]string{"jkt": mustProofThumbprint(t, mismatchedProof)},
+	})
+	proof = mustDPoPProof(t, proofKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-mismatch",
+		IAT: now.Unix(),
+		ATH: accessTokenHash(accessToken),
+	})
+	verifier := NewDPoPVerifier(config.AuthConfig{
+		PreflightEnabled:      true,
+		ValidateDPoPSignature: true,
+		MaxClockSkew:          time.Minute,
+		ReplayWindow:          10 * time.Minute,
+		PublicBaseURL:         "https://pod.example",
+	}, NewReplayCache())
+	verifier.now = func() time.Time { return now }
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	if err := verifier.VerifyRequest(req, accessToken, proof); err == nil {
+		t.Fatal("expected cnf.jkt mismatch to be rejected")
+	}
+}
+
+func TestDPoPVerifierAcceptsMatchingConfirmationJKT(t *testing.T) {
+	privateKey := mustP256Key(t)
+	now := time.Unix(1_700_000_000, 0)
+	thumbprintSourceProof := mustDPoPProof(t, privateKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-token-source",
+		IAT: now.Unix(),
+	})
+	accessToken := mustCompactJWT(t, map[string]any{
+		"cnf": map[string]string{"jkt": mustProofThumbprint(t, thumbprintSourceProof)},
+	})
+	proof := mustDPoPProof(t, privateKey, ProofClaims{
+		HTM: "GET",
+		HTU: "https://pod.example/alice/card",
+		JTI: "proof-jkt-match",
+		IAT: now.Unix(),
+		ATH: accessTokenHash(accessToken),
+	})
+	verifier := NewDPoPVerifier(config.AuthConfig{
+		PreflightEnabled:      true,
+		ValidateDPoPSignature: true,
+		MaxClockSkew:          time.Minute,
+		ReplayWindow:          10 * time.Minute,
+		PublicBaseURL:         "https://pod.example",
+	}, NewReplayCache())
+	verifier.now = func() time.Time { return now }
+	req := httptest.NewRequest(http.MethodGet, "http://internal/alice/card", nil)
+	if err := verifier.VerifyRequest(req, accessToken, proof); err != nil {
+		t.Fatalf("expected matching cnf.jkt to verify: %v", err)
+	}
+}
+
 func TestDPoPVerifierRejectsReplay(t *testing.T) {
 	privateKey := mustP256Key(t)
 	accessToken := "access-token"
