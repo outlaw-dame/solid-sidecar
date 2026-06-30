@@ -478,4 +478,3 @@ func alreadyLoaded(loaded []LoadedPolicySource, uri string) bool {
 	}
 	return false
 }
-

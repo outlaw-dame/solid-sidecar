@@ -57,13 +57,13 @@ func TestNewPolicyHTTPLoaderWithOptions(t *testing.T) {
 	customSchemes := []string{"https"}
 
 	loader := NewPolicyHTTPLoaderWithOptions(PolicyHTTPLoaderOptions{
-		Timeout:           customTimeout,
-		MaxRetries:        customRetries,
-		RetryDelay:        customDelay,
-		MaxBodySize:       customMaxSize,
-		UserAgent:         customUserAgent,
-		Accept:            customAccept,
-		AllowedSchemes:    customSchemes,
+		Timeout:                customTimeout,
+		MaxRetries:             customRetries,
+		RetryDelay:             customDelay,
+		MaxBodySize:            customMaxSize,
+		UserAgent:              customUserAgent,
+		Accept:                 customAccept,
+		AllowedSchemes:         customSchemes,
 		DisallowedContentTypes: []string{"text/html"},
 	})
 
@@ -302,7 +302,6 @@ func TestLoadPolicySourceContentTypeDetection(t *testing.T) {
 		{"Turtle with base", `@base <http://example.org/> . <Resource> a owl:Class .`, "text/turtle"},
 		{"RDF/XML", `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"></rdf:RDF>`, "application/rdf+xml"},
 		{"N-Triples", `<http://example.org/resource> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://xmlns.com/foaf/0.1/Person> .`, "application/n-triples"},
-
 	}
 
 	for _, tc := range testCases {
@@ -399,7 +398,7 @@ func TestIsAllowedScheme(t *testing.T) {
 // TestContentTypeValidation tests content type validation
 func TestContentTypeValidation(t *testing.T) {
 	loader := NewPolicyHTTPLoaderWithOptions(PolicyHTTPLoaderOptions{
-		AllowedContentTypes:   []string{"text/turtle", "application/ld+json"},
+		AllowedContentTypes:    []string{"text/turtle", "application/ld+json"},
 		DisallowedContentTypes: []string{"text/html"},
 	})
 
@@ -535,7 +534,7 @@ func TestAncestorPolicyWalkSkipsFailedLoads(t *testing.T) {
 func TestCreateRequest(t *testing.T) {
 	loader := NewPolicyHTTPLoaderWithOptions(PolicyHTTPLoaderOptions{
 		UserAgent: "Test-Agent/1.0",
-		Accept:   "application/json",
+		Accept:    "application/json",
 	})
 
 	parsedURL, _ := url.Parse("https://example.com/policy.ttl")
@@ -632,7 +631,7 @@ func TestRetryOnFailure(t *testing.T) {
 	defer server.Close()
 
 	loader := NewPolicyHTTPLoaderWithOptions(PolicyHTTPLoaderOptions{
-		MaxRetries:   2,
+		MaxRetries:  2,
 		RetryDelay:  1 * time.Millisecond,
 		MaxBodySize: 1 << 20,
 	})
@@ -658,7 +657,7 @@ func TestMaxRetriesExceeded(t *testing.T) {
 	defer server.Close()
 
 	loader := NewPolicyHTTPLoaderWithOptions(PolicyHTTPLoaderOptions{
-		MaxRetries:   2,
+		MaxRetries:  2,
 		RetryDelay:  1 * time.Millisecond,
 		MaxBodySize: 1 << 20,
 	})
