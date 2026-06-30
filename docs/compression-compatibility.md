@@ -60,7 +60,7 @@ compression:
       - application/gzip
       - application/zstd
       - application/octet-stream
-    skip_when_authorization_present: false
+    skip_sensitive_responses: true # Skip when Authorization/Cookie request headers, Set-Cookie, or Cache-Control: private/no-store are present.
     skip_error_responses: true
     skip_ranges: true
   requests:
@@ -77,6 +77,7 @@ Notes:
 - `zstd.enabled` must default to `false` even after Gzip support lands.
 - request decompression must default to `false`.
 - response compression can be enabled independently from request decompression.
+- `skip_sensitive_responses` must default to `true` and remain enabled unless a threat model explicitly approves a narrower policy.
 
 ## Response compression rules
 
@@ -90,7 +91,8 @@ The sidecar may compress a response only when all of the following are true:
 6. the response body is above the configured minimum size when size is known;
 7. the content type is not skipped;
 8. the request is not a range request when `skip_ranges` is enabled;
-9. compression will not make response metadata incorrect.
+9. the response is not sensitive when `skip_sensitive_responses` is enabled;
+10. compression will not make response metadata incorrect.
 
 Eligible methods:
 
@@ -119,6 +121,26 @@ When the sidecar compresses a response, it must:
 - avoid compressing if the response already has `Content-Encoding`.
 
 When the sidecar does not compress a response, it should preserve CSS headers unchanged except for existing sidecar safety headers.
+
+## Sensitive response handling
+
+Compression over HTTPS can create side-channel risk when secrets and attacker-controlled bytes share the same compressed response context. The initial implementation must treat sensitive-response skipping as a safety gate, not as a performance preference.
+
+When `skip_sensitive_responses` is enabled, the sidecar must skip dynamic compression if any of the following are true:
+
+- the request includes an `Authorization` header;
+- the request includes a `Cookie` header;
+- the response includes `Set-Cookie`;
+- the response includes `WWW-Authenticate`;
+- `Cache-Control` includes `private`, `no-store`, or another configured sensitive directive;
+- the status is an authn/authz failure such as `401` or `403`;
+- the response is an authn/authz diagnostic, token exchange response, DPoP-related failure, policy diagnostic, or identity binding diagnostic;
+- the response body is known to include token material, proof material, session identifiers, private policy content, or reflected secret-bearing request data;
+- deployment config marks the path, content type, or upstream service as sensitive.
+
+The sidecar must not inspect or log response bodies to decide whether they are sensitive. Sensitivity decisions must come from request headers, response headers, status/method, route/config metadata, and known middleware context.
+
+If the implementation cannot determine whether a response is sensitive, it must prefer identity/no compression.
 
 ## ETag handling
 
@@ -221,6 +243,7 @@ Compression can interact with secrets and attacker-controlled reflection.
 Initial policy:
 
 - do not compress responses that intentionally include token material;
+- do not compress sensitive responses as defined above while `skip_sensitive_responses` is enabled;
 - do not log compressed or decompressed bodies;
 - keep authn/authz error responses uncompressed while error body shape is under review;
 - allow operators to disable compression instantly;
@@ -237,6 +260,7 @@ Expose aggregate counters only:
 - skipped because client did not accept encoding;
 - skipped because already encoded;
 - skipped because range request;
+- skipped because sensitive response;
 - skipped because content type;
 - skipped because too small;
 - skipped because status/method;
@@ -260,6 +284,11 @@ Required before enabling Gzip:
 - existing `Content-Encoding` from CSS is not double-compressed;
 - small bodies are skipped;
 - skipped content types are skipped;
+- requests with `Authorization` skip compression while `skip_sensitive_responses` is enabled;
+- requests with `Cookie` skip compression while `skip_sensitive_responses` is enabled;
+- responses with `Set-Cookie` skip compression while `skip_sensitive_responses` is enabled;
+- responses with `Cache-Control: private` or `Cache-Control: no-store` skip compression while `skip_sensitive_responses` is enabled;
+- authn/authz failure responses skip compression;
 - `Range` requests pass through unchanged;
 - `HEAD` never emits a body;
 - `304`, `204`, and `206` are not dynamically compressed;
@@ -289,14 +318,15 @@ Required before request decompression:
 
 1. Add config schema with all compression disabled by default.
 2. Add response negotiation parser tests.
-3. Add Gzip response compression for eligible `GET` only.
-4. Add CSS comparison tests for identity vs Gzip.
-5. Add metrics and skip reasons.
-6. Enable Gzip in local/staging only.
-7. Add Zstd implementation behind disabled config.
-8. Add Zstd e2e tests.
-9. Enable Zstd only in controlled staging.
-10. Consider request decompression only after response compression is stable.
+3. Add sensitive-response classification and skip-reason tests.
+4. Add Gzip response compression for eligible `GET` only.
+5. Add CSS comparison tests for identity vs Gzip.
+6. Add metrics and skip reasons.
+7. Enable Gzip in local/staging only.
+8. Add Zstd implementation behind disabled config.
+9. Add Zstd e2e tests.
+10. Enable Zstd only in controlled staging.
+11. Consider request decompression only after response compression is stable.
 
 ## Stop conditions
 
@@ -309,4 +339,5 @@ Disable or pause compression work if:
 - caches mix identity/Gzip/Zstd variants;
 - clients or intermediaries mishandle Zstd;
 - compression interacts with authn/authz error bodies in a way that could leak sensitive information;
+- sensitive-response detection is ambiguous or cannot be tested;
 - operators cannot immediately disable compression.
