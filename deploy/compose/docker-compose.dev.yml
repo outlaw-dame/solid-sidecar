@@ -31,14 +31,7 @@ services:
     volumes:
       - ../../configs/sidecar.example.yaml:/etc/solid-sidecar/sidecar.yaml:ro
     depends_on:
-      css:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8443/healthz"]
-      interval: 5s
-      timeout: 10s
-      retries: 12
-      start_period: 10s
+      - css
 
 volumes:
   css-data:
