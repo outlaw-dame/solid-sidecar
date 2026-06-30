@@ -61,5 +61,5 @@ func ValidateRequest(r *http.Request) error {
 			}
 		}
 	}
-	return nil
+	return ValidateWriteRequest(r)
 }
