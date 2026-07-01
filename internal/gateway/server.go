@@ -15,6 +15,7 @@ import (
 	"github.com/outlaw-dame/solid-sidecar/internal/proxy"
 	"github.com/outlaw-dame/solid-sidecar/internal/ratelimit"
 	"github.com/outlaw-dame/solid-sidecar/internal/safety"
+	"github.com/outlaw-dame/solid-sidecar/internal/sai"
 )
 
 type Server struct {
@@ -37,6 +38,18 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", health.LivenessHandler())
 	mux.Handle("GET /readyz", health.ReadinessHandler(probe))
+
+	// Add SAI routes if SAI is enabled
+	if cfg.SAI.Enabled {
+		saiService, err := createSAIService(cfg, logger)
+		if err != nil {
+			return nil, fmt.Errorf("create SAI service: %w", err)
+		}
+		saiHandler := sai.NewHandler(saiService)
+		saiHandler.RegisterRoutes(mux)
+		logger.Info("SAI support enabled with authorization agent", "url", cfg.SAI.AuthorizationAgentURL)
+	}
+
 	mux.Handle("/", proxyHandler)
 
 	var limiter *ratelimit.Limiter
@@ -110,6 +123,18 @@ func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
 	default:
 		return nil, fmt.Errorf("unsupported authz evaluator %q", cfg.Evaluator)
 	}
+}
+
+func createSAIService(cfg config.Config, logger *slog.Logger) (*sai.SAIService, error) {
+	saiOptions := sai.SAIServiceOptions{
+		Logger:                logger,
+		Timeout:               cfg.SAI.Timeout,
+		MaxRetries:            cfg.SAI.MaxRetries,
+		AuthorizationAgentURL: cfg.SAI.AuthorizationAgentURL,
+		BaseURL:               cfg.Backend.URL,
+		Storage:               sai.NewInMemorySAIStorage(), // In-memory storage for now
+	}
+	return sai.NewSAIService(saiOptions)
 }
 
 func newAuthzFallbackEvaluator(cfg config.AuthzConfig) authz.Evaluator {

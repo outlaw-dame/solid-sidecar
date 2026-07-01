@@ -42,6 +42,7 @@ type Config struct {
 	Security  SecurityConfig
 	Auth      AuthConfig
 	Authz     AuthzConfig
+	SAI       SAIConfig
 	Log       LogConfig
 }
 
@@ -105,6 +106,18 @@ type LogConfig struct {
 	Level string
 }
 
+// SAIConfig contains configuration for Solid Application Interoperability
+type SAIConfig struct {
+	// Enabled controls whether SAI support is active
+	Enabled bool
+	// AuthorizationAgentURL is the URL of the default authorization agent
+	AuthorizationAgentURL string
+	// Timeout for SAI operations
+	Timeout time.Duration
+	// MaxRetries for failed SAI operations
+	MaxRetries int
+}
+
 // Defaults returns a safe local-development configuration.
 func Defaults() Config {
 	return Config{
@@ -144,6 +157,11 @@ func Defaults() Config {
 			ExternalMaxOutputBytes:   DefaultAuthzExternalMaxOutputBytes,
 			ExternalBackoffBaseDelay: DefaultAuthzExternalBackoffBaseDelay,
 			ExternalBackoffMaxDelay:  DefaultAuthzExternalBackoffMaxDelay,
+		},
+		SAI: SAIConfig{
+			Enabled:    false,
+			MaxRetries: 3,
+			Timeout:    30 * time.Second,
 		},
 		Log: LogConfig{Level: "info"},
 	}

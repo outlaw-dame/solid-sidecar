@@ -814,15 +814,99 @@ func (s *SAIService) ListDataRegistrationsForUser(ctx context.Context, userID st
 	return s.storage.ListDataRegistrations(ctx, userID)
 }
 
-// HTTPHandler creates an HTTP handler for the SAI service
-// Note: HTTP endpoint implementations are not included in this initial implementation
-// func (s *SAIService) HTTPHandler() http.Handler {
-// 	mux := http.NewServeMux()
-// 	// Application endpoints
-// 	mux.HandleFunc("POST /applications", s.handleRegisterApplication)
-// 	// ... other endpoints
-// 	return mux
-// }
+// =============================================================================
+// Application Service Methods
+// =============================================================================
 
-// Note: HTTP handler implementations would be added next
-// This provides the core service logic for Solid Application Interoperability
+// GetApplication retrieves an application by ID
+func (s *SAIService) GetApplication(ctx context.Context, id string) (*Application, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	if err := ValidateIRI(id); err != nil {
+		return nil, fmt.Errorf("%w: invalid application ID: %v", ErrSAIService, err)
+	}
+
+	return s.storage.GetApplication(ctx, id)
+}
+
+// ListApplications lists all applications for a specific owner
+func (s *SAIService) ListApplications(ctx context.Context, owner string) ([]*Application, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	if err := ValidateWebID(owner); err != nil {
+		return nil, fmt.Errorf("%w: invalid owner ID: %v", ErrSAIService, err)
+	}
+
+	return s.storage.ListApplications(ctx, owner)
+}
+
+// =============================================================================
+// Shape Tree Service Methods
+// =============================================================================
+
+// StoreShapeTree stores a shape tree definition
+func (s *SAIService) StoreShapeTree(ctx context.Context, tree *ShapeTree) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	if tree == nil {
+		return fmt.Errorf("%w: shape tree cannot be nil", ErrSAIService)
+	}
+
+	if err := ValidateIRI(tree.ID); err != nil {
+		return fmt.Errorf("%w: invalid shape tree ID: %v", ErrSAIService, err)
+	}
+
+	return s.storage.StoreShapeTree(ctx, tree)
+}
+
+// GetShapeTree retrieves a shape tree by ID
+func (s *SAIService) GetShapeTree(ctx context.Context, id string) (*ShapeTree, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	if err := ValidateIRI(id); err != nil {
+		return nil, fmt.Errorf("%w: invalid shape tree ID: %v", ErrSAIService, err)
+	}
+
+	return s.storage.GetShapeTree(ctx, id)
+}
+
+// ListShapeTrees lists all available shape trees
+func (s *SAIService) ListShapeTrees(ctx context.Context) ([]*ShapeTree, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	return s.storage.ListShapeTrees(ctx)
+}
+
+// =============================================================================
+// Data Registration Service Methods
+// =============================================================================
+
+// GetDataRegistration retrieves a data registration by ID
+func (s *SAIService) GetDataRegistration(ctx context.Context, id string) (*DataRegistration, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: context cancelled: %v", ErrSAIService, err)
+	}
+
+	if err := ValidateIRI(id); err != nil {
+		return nil, fmt.Errorf("%w: invalid data registration ID: %v", ErrSAIService, err)
+	}
+
+	return s.storage.GetDataRegistration(ctx, id)
+}
+
+// =============================================================================
+// HTTP Handler Integration
+// =============================================================================
+
+// HTTPHandler creates an HTTP handler for the SAI service
+// Note: HTTP endpoint implementations are provided in handler.go
