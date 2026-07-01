@@ -45,7 +45,13 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create SAI service: %w", err)
 		}
-		saiHandler := sai.NewHandler(saiService)
+
+		// Create SAI handler with security middleware
+		saiHandler := sai.NewHandler(saiService, sai.HandlerOptions{
+			Logger:        logger,
+			RateLimiter:   nil, // Use default rate limiter
+			Authenticator: nil, // Use default authenticator (denies all until integrated)
+		})
 		saiHandler.RegisterRoutes(mux)
 		logger.Info("SAI support enabled with authorization agent", "url", cfg.SAI.AuthorizationAgentURL)
 	}

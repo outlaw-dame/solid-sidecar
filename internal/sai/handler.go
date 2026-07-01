@@ -2,47 +2,140 @@
 package sai
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
 )
 
 // Handler provides HTTP endpoints for SAI operations
 type Handler struct {
-	service *SAIService
+	service       *SAIService
+	logger        *slog.Logger
+	rateLimiter   *RateLimiter
+	authenticator Authenticator
 }
 
-// NewHandler creates a new SAI HTTP handler
-func NewHandler(service *SAIService) *Handler {
+// HandlerOptions configures the SAI handler
+type HandlerOptions struct {
+	Logger        *slog.Logger
+	RateLimiter   *RateLimiter
+	Authenticator Authenticator
+}
+
+// NewHandler creates a new SAI HTTP handler with optional configuration
+func NewHandler(service *SAIService, options HandlerOptions) *Handler {
+	// Use defaults if not provided
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	if options.RateLimiter == nil {
+		// Default: 100 requests per minute
+		options.RateLimiter = NewRateLimiter(100, 1*time.Minute)
+	}
+	if options.Authenticator == nil {
+		// Default: deny all (fail-secure)
+		options.Authenticator = NewDefaultAuthenticator(options.Logger)
+	}
+
 	return &Handler{
-		service: service,
+		service:       service,
+		logger:        options.Logger,
+		rateLimiter:   options.RateLimiter,
+		authenticator: options.Authenticator,
 	}
 }
 
 // RegisterRoutes registers SAI routes with the provided ServeMux
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Application Registration endpoints
-	mux.Handle("POST /sai/applications", http.HandlerFunc(h.handleRegisterApplication))
-	mux.Handle("GET /sai/applications/{id}", http.HandlerFunc(h.handleGetApplication))
-	mux.Handle("GET /sai/users/{userId}/applications", http.HandlerFunc(h.handleListUserApplications))
+	mux.Handle("POST /sai/applications", withSAISecurityMiddleware(h, h.handleRegisterApplication))
+	mux.Handle("GET /sai/applications/{id}", withSAISecurityMiddleware(h, h.handleGetApplication))
+	mux.Handle("GET /sai/users/{userId}/applications", withSAISecurityMiddleware(h, h.handleListUserApplications))
 
 	// Authorization Agent discovery
-	mux.Handle("POST /sai/discover", http.HandlerFunc(h.handleDiscoverAuthorizationAgent))
+	mux.Handle("POST /sai/discover", withSAISecurityMiddleware(h, h.handleDiscoverAuthorizationAgent))
 
 	// Authorization Flow endpoints
-	mux.Handle("POST /sai/authorize", http.HandlerFunc(h.handleInitiateAuthorizationFlow))
+	mux.Handle("POST /sai/authorize", withSAISecurityMiddleware(h, h.handleInitiateAuthorizationFlow))
 
 	// Access Grant endpoints
-	mux.Handle("POST /sai/grants", http.HandlerFunc(h.handleCreateAccessGrant))
-	mux.Handle("GET /sai/grants/{id}", http.HandlerFunc(h.handleGetAccessGrant))
+	mux.Handle("POST /sai/grants", withSAISecurityMiddleware(h, h.handleCreateAccessGrant))
+	mux.Handle("GET /sai/grants/{id}", withSAISecurityMiddleware(h, h.handleGetAccessGrant))
 
 	// Data Registration endpoints
-	mux.Handle("POST /sai/data-registrations", http.HandlerFunc(h.handleRegisterData))
-	mux.Handle("GET /sai/data-registrations/{id}", http.HandlerFunc(h.handleGetDataRegistration))
+	mux.Handle("POST /sai/data-registrations", withSAISecurityMiddleware(h, h.handleRegisterData))
+	mux.Handle("GET /sai/data-registrations/{id}", withSAISecurityMiddleware(h, h.handleGetDataRegistration))
 
 	// Shape Tree endpoints
-	mux.Handle("POST /sai/shape-trees", http.HandlerFunc(h.handleStoreShapeTree))
-	mux.Handle("GET /sai/shape-trees/{id}", http.HandlerFunc(h.handleGetShapeTree))
-	mux.Handle("GET /sai/shape-trees", http.HandlerFunc(h.handleListShapeTrees))
+	mux.Handle("POST /sai/shape-trees", withSAISecurityMiddleware(h, h.handleStoreShapeTree))
+	mux.Handle("GET /sai/shape-trees/{id}", withSAISecurityMiddleware(h, h.handleGetShapeTree))
+	mux.Handle("GET /sai/shape-trees", withSAISecurityMiddleware(h, h.handleListShapeTrees))
+}
+
+// withSAISecurityMiddleware creates a middleware chain for SAI handlers
+func withSAISecurityMiddleware(h *Handler, next http.HandlerFunc) http.HandlerFunc {
+	// Build the middleware chain from outer to inner:
+	// 1. Rate Limiting -> 2. Security Headers -> 3. Resource Validation -> 4. Authentication
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Apply rate limiting
+		if !h.rateLimiter.Allow() {
+			writeSAIError(w, http.StatusTooManyRequests, SAIError{
+				Code:    ErrCodeRateLimitExceeded,
+				Message: "Rate limit exceeded. Please try again later.",
+			})
+			return
+		}
+
+		// Apply resource validation
+		id := r.PathValue("id")
+		if id != "" {
+			if err := sanitizeID(id); err != nil {
+				writeSAIError(w, http.StatusBadRequest, SAIError{
+					Code:    ErrCodeInvalidRequest,
+					Message: "Invalid resource ID",
+				})
+				return
+			}
+		}
+
+		userID := r.PathValue("userId")
+		if userID != "" {
+			if err := sanitizeWebID(userID); err != nil {
+				writeSAIError(w, http.StatusBadRequest, SAIError{
+					Code:    ErrCodeInvalidRequest,
+					Message: "Invalid user ID",
+				})
+				return
+			}
+		}
+
+		// Apply authentication
+		if r.Method != http.MethodOptions {
+			userID, err := h.authenticator.Authenticate(r)
+			if err != nil {
+				writeSAIError(w, http.StatusUnauthorized, SAIError{
+					Code:    ErrCodeUnauthorized,
+					Message: "Authentication required",
+				})
+				return
+			}
+
+			// Add user to context
+			ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
+			r = r.WithContext(ctx)
+		}
+
+		// Add security headers to response
+		for k, v := range securityHeaders {
+			w.Header().Set(k, v)
+		}
+
+		// Call the next handler
+		next(w, r)
+	}
 }
 
 // Application Registration Handlers
