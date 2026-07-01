@@ -86,9 +86,7 @@ Implemented:
 
 Still missing before authorization can enforce:
 - RDF parser/canonicalization boundary;
-- ACP parser;
 - SAI parser or explicit decision to defer SAI;
-- real WAC/ACP/SAI evaluator;
 - CSS behavior comparison harness;
 - enforcement mode config;
 - decision cache for enforcement;
@@ -209,6 +207,24 @@ Implemented:
 
 **ACP Parser is complete.**
 
+### ACP Evaluator
+
+Implemented:
+- ACPEvaluator with Evaluator interface integration for use with existing authorization middleware;
+- ACP-specific evaluation: policy document parsing, content type detection, rule evaluation;
+- Security hardening: policy count limits (10 default), timeout protection (30s default);
+- Shadow mode: non-enforcing evaluation that abstains from making decisions (default: true);
+- Request validation: schema version, request ID, method, resource URI, modes, policy documents;
+- Content type detection for ACP policies (Turtle, JSON-LD, N-Triples, RDF/XML, SPARQL Results);
+- Rule matching logic: ruleMatchesRequest and ruleAllowsModes methods;
+- Agent matching with exact WebID and AgentClass comparison;
+- Resource URI matching with exact comparison and inheritance support;
+- Access mode validation against rule permissions;
+- Graceful degradation: abstains on parse errors or when no matching rules found;
+- Comprehensive test suite with 12+ tests covering creation, configuration, evaluation scenarios, timeout, max policies, and shadow mode.
+
+**ACP Evaluator is complete.**
+
 ### WAC Evaluator Enhancements
 
 Implemented:
@@ -232,6 +248,7 @@ Continue in this order:
 2. Enforcement gate design - COMPLETED.
 3. ACP parser - COMPLETED.
 4. WAC evaluator with actual rule matching logic - COMPLETED.
+5. ACP evaluator with actual rule matching logic - COMPLETED.
 
 ## Current safety boundary
 
