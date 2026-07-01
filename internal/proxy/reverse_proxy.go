@@ -63,7 +63,7 @@ func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 			// CSS is configured with --baseUrl http://localhost:3000
 			// This ensures identifier space validation passes while still
 			// connecting to the correct backend service
-			proxyRequest.Out.Host = "localhost" + backend.Port()
+			proxyRequest.Out.Host = "localhost:" + backend.Port()
 			stripHopByHopHeaders(proxyRequest.Out.Header)
 			stripSpoofableForwardedHeaders(proxyRequest.Out.Header)
 			proxyRequest.Out.Header.Set("X-Forwarded-For", clientIP)
