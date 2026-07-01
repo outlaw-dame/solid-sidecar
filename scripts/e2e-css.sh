@@ -113,6 +113,10 @@ main() {
   docker compose -p "${project_name}" -f "${compose_file}" ps >&2
   echo "" >&2
 
+  echo "=== Waiting for CSS to be ready ===" >&2
+  wait_for "${css_url}/"
+  echo "=== CSS is ready ===" >&2
+
   echo "=== Waiting for healthz endpoint ===" >&2
   wait_for "${sidecar_url}/healthz"
   echo "=== healthz is ready ===" >&2
