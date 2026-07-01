@@ -491,7 +491,8 @@ func TestShouldSkipResponseCompression(t *testing.T) {
 				respHeaders.Set(k, v)
 			}
 
-			got := shouldSkipResponseCompression(req, tt.cfg, tt.statusCode, respHeaders, tt.bodySize)
+			// Call with nil metrics since we're just testing the logic
+			got, _ := shouldSkipResponseCompression(req, tt.cfg, tt.statusCode, respHeaders, tt.bodySize, nil)
 			if got != tt.want {
 				t.Errorf("shouldSkipResponseCompression() = %v, want %v", got, tt.want)
 			}

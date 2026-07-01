@@ -67,6 +67,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	authzMetrics := authz.NewShadowMetrics()
 
 	// Create compression middleware config from the main config
+	// Initialize metrics for compression observation
+	compressionMetrics := compression.NewMetrics()
 	compressionConfig := compression.Config{
 		Responses: compression.ResponsesConfig{
 			Enabled:                cfg.Compression.Responses.Enabled,
@@ -85,6 +87,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			MaxDecompressedBytes: cfg.Compression.Requests.MaxDecompressedBytes,
 			ZstdEnabled:          cfg.Compression.Requests.ZstdEnabled,
 		},
+		Metrics: compressionMetrics,
 	}
 
 	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)

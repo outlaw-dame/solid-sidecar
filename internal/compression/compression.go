@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // Response compression constants
@@ -68,10 +69,20 @@ var errorResponseStatuses = map[int]bool{
 	504: true, // Gateway Timeout
 }
 
-// skippedMethods contains HTTP methods that should skip compression
+// eligibleMethods contains HTTP methods that may be compressed.
+// Following the spec: GET may be compressed, write responses should remain uncompressed initially.
+var eligibleMethods = map[string]bool{
+	"GET": true,
+}
+
+// skippedMethods contains HTTP methods that should always skip compression
 var skippedMethods = map[string]bool{
 	"HEAD":    true,
 	"OPTIONS": true,
+	"POST":    true,
+	"PUT":     true,
+	"DELETE":  true,
+	"PATCH":   true,
 	"CONNECT": true,
 	"TRACE":   true,
 }
@@ -82,6 +93,8 @@ type Config struct {
 	Responses ResponsesConfig
 	// Requests configuration
 	Requests RequestsConfig
+	// Metrics for observing compression behavior (optional)
+	Metrics *Metrics
 }
 
 // ResponsesConfig holds response compression configuration
@@ -211,54 +224,63 @@ func (crw *compressionResponseWriter) Write(b []byte) (int, error) {
 }
 
 // shouldSkipResponseCompression determines if response compression should be skipped
-func shouldSkipResponseCompression(req *http.Request, cfg ResponsesConfig, statusCode int, headers http.Header, bodySize int64) bool {
+// Returns (shouldSkip, skipReason) for metrics recording
+func shouldSkipResponseCompression(req *http.Request, cfg ResponsesConfig, statusCode int, headers http.Header, bodySize int64, metrics *Metrics) (bool, string) {
 	// Skip if compression is not enabled
 	if !cfg.Enabled {
-		return true
+		return true, "compression_disabled"
 	}
 
-	// Skip for HEAD, OPTIONS, CONNECT, TRACE methods
-	if skippedMethods[strings.ToUpper(req.Method)] {
-		return true
+	method := strings.ToUpper(req.Method)
+
+	// Check if method is eligible for compression
+	// Following spec: GET may be compressed, write responses remain uncompressed initially
+	if !eligibleMethods[method] {
+		return true, "method_not_eligible"
+	}
+
+	// Skip for methods that should always skip
+	if skippedMethods[method] {
+		return true, "method_skipped"
 	}
 
 	// Skip for error responses if configured
 	if cfg.SkipErrorResponses {
 		// Check for error status codes (4xx and 5xx)
 		if statusCode >= 400 || errorResponseStatuses[statusCode] {
-			return true
+			return true, "error_response"
 		}
 	}
 
 	// Skip for sensitive responses if configured
 	if cfg.SkipSensitiveResponses && isSensitiveResponse(req, headers) {
-		return true
+		return true, "sensitive_response"
 	}
 
 	// Skip for range requests if configured
 	if cfg.SkipRanges && req.Header.Get("Range") != "" {
-		return true
+		return true, "range_request"
 	}
 
 	// Skip if response already has Content-Encoding
 	if headers.Get("Content-Encoding") != "" {
-		return true
+		return true, "already_encoded"
 	}
 
 	// Skip if body is too small
 	if bodySize < cfg.MinBytes {
-		return true
+		return true, "too_small"
 	}
 
 	// Skip if content type matches skip list
 	contentType := headers.Get("Content-Type")
 	for _, prefix := range cfg.SkipContentTypes {
 		if strings.HasPrefix(contentType, prefix) {
-			return true
+			return true, "content_type_skipped"
 		}
 	}
 
-	return false
+	return false, ""
 }
 
 // isSensitiveResponse determines if a response is sensitive based on request/response headers
@@ -580,6 +602,184 @@ func ValidateConfig(cfg Config) error {
 	return nil
 }
 
+// Metrics holds aggregate counters for compression operations.
+// All metrics are privacy-safe: no WebIDs, resource URLs, query strings,
+// request bodies, response bodies, or policy bodies are included in metrics labels.
+type Metrics struct {
+	mu sync.RWMutex
+
+	// Response compression metrics
+	ResponseCandidates    int64 // Total candidates for response compression
+	CompressedGzip        int64 // Responses compressed with gzip
+	CompressedZstd        int64 // Responses compressed with zstd
+	SkippedNoClientAccept int64 // Skipped: client did not accept encoding
+	SkippedAlreadyEncoded int64 // Skipped: already encoded
+	SkippedRangeRequest   int64 // Skipped: range request
+	SkippedSensitive      int64 // Skipped: sensitive response
+	SkippedContentType    int64 // Skipped: content type
+	SkippedTooSmall       int64 // Skipped: body too small
+	SkippedStatusMethod   int64 // Skipped: status code or HTTP method
+	SkippedMethod         int64 // Skipped: HTTP method not eligible
+	CompressionErrors     int64 // Errors during compression
+
+	// Request decompression metrics
+	RequestDecompressionAttempts  int64 // Request decompression attempts
+	RequestDecompressionRejected  int64 // Request decompression rejected
+	DecompressedByteLimitFailures int64 // Decompression byte limit failures
+}
+
+// NewMetrics creates a new Metrics instance with all counters initialized to zero.
+func NewMetrics() *Metrics {
+	return &Metrics{}
+}
+
+// RecordResponseCandidate increments the response candidate counter.
+func (m *Metrics) RecordResponseCandidate() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ResponseCandidates++
+}
+
+// RecordCompressedGzip increments the gzip compression counter.
+func (m *Metrics) RecordCompressedGzip() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CompressedGzip++
+}
+
+// RecordCompressedZstd increments the zstd compression counter.
+func (m *Metrics) RecordCompressedZstd() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CompressedZstd++
+}
+
+// RecordSkipNoClientAccept increments the skip counter for no client accept.
+func (m *Metrics) RecordSkipNoClientAccept() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedNoClientAccept++
+}
+
+// RecordSkipAlreadyEncoded increments the skip counter for already encoded.
+func (m *Metrics) RecordSkipAlreadyEncoded() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedAlreadyEncoded++
+}
+
+// RecordSkipRangeRequest increments the skip counter for range requests.
+func (m *Metrics) RecordSkipRangeRequest() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedRangeRequest++
+}
+
+// RecordSkipSensitive increments the skip counter for sensitive responses.
+func (m *Metrics) RecordSkipSensitive() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedSensitive++
+}
+
+// RecordSkipContentType increments the skip counter for content types.
+func (m *Metrics) RecordSkipContentType() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedContentType++
+}
+
+// RecordSkipTooSmall increments the skip counter for small bodies.
+func (m *Metrics) RecordSkipTooSmall() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedTooSmall++
+}
+
+// RecordSkipStatusMethod increments the skip counter for status/method.
+func (m *Metrics) RecordSkipStatusMethod() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedStatusMethod++
+}
+
+// RecordSkipMethod increments the skip counter for ineligible methods.
+func (m *Metrics) RecordSkipMethod() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SkippedMethod++
+}
+
+// RecordCompressionError increments the compression error counter.
+func (m *Metrics) RecordCompressionError() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CompressionErrors++
+}
+
+// RecordRequestDecompressionAttempt increments the request decompression attempt counter.
+func (m *Metrics) RecordRequestDecompressionAttempt() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.RequestDecompressionAttempts++
+}
+
+// RecordRequestDecompressionRejected increments the request decompression rejected counter.
+func (m *Metrics) RecordRequestDecompressionRejected() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.RequestDecompressionRejected++
+}
+
+// RecordDecompressedByteLimitFailure increments the byte limit failure counter.
+func (m *Metrics) RecordDecompressedByteLimitFailure() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.DecompressedByteLimitFailures++
+}
+
+// Snapshot returns a copy of the current metrics values for testing.
+type MetricsSnapshot struct {
+	ResponseCandidates            int64
+	CompressedGzip                int64
+	CompressedZstd                int64
+	SkippedNoClientAccept         int64
+	SkippedAlreadyEncoded         int64
+	SkippedRangeRequest           int64
+	SkippedSensitive              int64
+	SkippedContentType            int64
+	SkippedTooSmall               int64
+	SkippedStatusMethod           int64
+	SkippedMethod                 int64
+	CompressionErrors             int64
+	RequestDecompressionAttempts  int64
+	RequestDecompressionRejected  int64
+	DecompressedByteLimitFailures int64
+}
+
+// Snapshot returns a snapshot of the current metrics.
+func (m *Metrics) Snapshot() MetricsSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return MetricsSnapshot{
+		ResponseCandidates:            m.ResponseCandidates,
+		CompressedGzip:                m.CompressedGzip,
+		CompressedZstd:                m.CompressedZstd,
+		SkippedNoClientAccept:         m.SkippedNoClientAccept,
+		SkippedAlreadyEncoded:         m.SkippedAlreadyEncoded,
+		SkippedRangeRequest:           m.SkippedRangeRequest,
+		SkippedSensitive:              m.SkippedSensitive,
+		SkippedContentType:            m.SkippedContentType,
+		SkippedTooSmall:               m.SkippedTooSmall,
+		SkippedStatusMethod:           m.SkippedStatusMethod,
+		SkippedMethod:                 m.SkippedMethod,
+		CompressionErrors:             m.CompressionErrors,
+		RequestDecompressionAttempts:  m.RequestDecompressionAttempts,
+		RequestDecompressionRejected:  m.RequestDecompressionRejected,
+		DecompressedByteLimitFailures: m.DecompressedByteLimitFailures,
+	}
+}
+
 // Middleware creates a compression middleware with the given configuration
 func Middleware(cfg Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -591,8 +791,15 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				if err != nil {
 					// In production, this would use proper logging
 					// For now, just pass through to next handler
+					if cfg.Metrics != nil {
+						cfg.Metrics.RecordDecompressedByteLimitFailure()
+					}
 					next.ServeHTTP(w, r)
 					return
+				}
+				// Record request decompression attempt
+				if cfg.Metrics != nil {
+					cfg.Metrics.RecordRequestDecompressionAttempt()
 				}
 			}
 
@@ -614,8 +821,17 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 
 			// After the handler has completed, decide whether to compress
 			if crw.body != nil && crw.body.Len() > 0 {
+				// Record that this is a compression candidate
+				if cfg.Metrics != nil {
+					cfg.Metrics.RecordResponseCandidate()
+				}
+
 				// Check if we should compress
-				if !shouldSkipResponseCompression(r, cfg.Responses, crw.status, crw.headers, int64(crw.body.Len())) {
+				shouldSkip, skipReason := shouldSkipResponseCompression(
+					r, cfg.Responses, crw.status, crw.headers, int64(crw.body.Len()), cfg.Metrics,
+				)
+
+				if !shouldSkip {
 					// Get accepted encodings
 					accepted := getAcceptedEncodings(r)
 					encoding := selectEncoding(accepted, cfg.Responses)
@@ -624,6 +840,15 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 						// Compress the response
 						compressed, err := CompressResponse(crw.body.Bytes(), encoding, cfg.Responses)
 						if err == nil {
+							// Record successful compression
+							if cfg.Metrics != nil {
+								if encoding == EncodingGzip {
+									cfg.Metrics.RecordCompressedGzip()
+								} else if encoding == EncodingZstd {
+									cfg.Metrics.RecordCompressedZstd()
+								}
+							}
+
 							// Set compression headers
 							w.Header().Set("Content-Encoding", encoding)
 							addVaryHeader(w.Header())
@@ -645,7 +870,28 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 							w.Write(compressed)
 							return
 						}
-						// If compression failed, fall back to original response
+						// If compression failed, record error and fall back to original response
+						if cfg.Metrics != nil {
+							cfg.Metrics.RecordCompressionError()
+						}
+					}
+				} else if cfg.Metrics != nil && skipReason != "" {
+					// Record the skip reason
+					switch skipReason {
+					case "no_client_accept":
+						cfg.Metrics.RecordSkipNoClientAccept()
+					case "already_encoded":
+						cfg.Metrics.RecordSkipAlreadyEncoded()
+					case "range_request":
+						cfg.Metrics.RecordSkipRangeRequest()
+					case "sensitive_response":
+						cfg.Metrics.RecordSkipSensitive()
+					case "content_type_skipped":
+						cfg.Metrics.RecordSkipContentType()
+					case "too_small":
+						cfg.Metrics.RecordSkipTooSmall()
+					case "error_response", "method_not_eligible", "method_skipped", "compression_disabled":
+						cfg.Metrics.RecordSkipStatusMethod()
 					}
 				}
 
