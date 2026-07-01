@@ -11,6 +11,23 @@ const (
 	AccessModeControl AccessMode = "control"
 )
 
+// ModesMatch checks if the granted modes satisfy all requested modes
+func ModesMatch(granted []AccessMode, requested []AccessMode) bool {
+	if len(requested) == 0 {
+		return true
+	}
+	grantedSet := make(map[AccessMode]bool)
+	for _, m := range granted {
+		grantedSet[m] = true
+	}
+	for _, m := range requested {
+		if !grantedSet[m] {
+			return false
+		}
+	}
+	return true
+}
+
 type DecisionValue string
 
 const (
@@ -37,6 +54,7 @@ type PolicyDocument struct {
 	URI         string `json:"uri"`
 	SHA256      string `json:"sha256"`
 	ContentType string `json:"content_type"`
+	Content     []byte `json:"content,omitempty"` // Optional: actual policy content
 }
 
 type Request struct {
