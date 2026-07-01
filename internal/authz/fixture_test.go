@@ -184,5 +184,19 @@ func readFixture[T any](t *testing.T, name string) T {
 }
 
 func fixtureDir() string {
+	// Use absolute path from the test binary's location or relative path
+	// This works both when running from the package directory and from other locations
+	if dir, err := filepath.Abs(filepath.Join("..", "..", "contracts", "fixtures")); err == nil {
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	// Fallback to searching from the current working directory
+	if dir, err := filepath.Abs("contracts/fixtures"); err == nil {
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	// Last resort - use relative path
 	return filepath.Join("..", "..", "contracts", "fixtures")
 }
