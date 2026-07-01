@@ -11,7 +11,7 @@ root="$(repo_root)"
 compose_file="${root}/deploy/compose/docker-compose.dev.yml"
 project_name="solid-sidecar-e2e"
 sidecar_url="${SOLID_SIDECAR_E2E_URL:-http://127.0.0.1:8443}"
-css_url="${SOLID_SIDECAR_E2E_CSS_URL:-http://127.0.0.1:3000}"
+css_url="${SOLID_SIDECAR_E2E_CSS_URL:-http://localhost:3000}"
 wait_seconds="${SOLID_SIDECAR_E2E_WAIT_SECONDS:-300}"
 
 dump_logs() {
