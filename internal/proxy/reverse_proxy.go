@@ -59,7 +59,11 @@ func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 			originalScheme := schemeFor(proxyRequest.In)
 			clientIP := audit.RemoteIP(proxyRequest.In)
 			proxyRequest.SetURL(backend)
-			proxyRequest.Out.Host = backend.Host
+			// Use localhost as the host to match CSS baseUrl configuration
+			// CSS is configured with --baseUrl http://localhost:3000
+			// This ensures identifier space validation passes while still
+			// connecting to the correct backend service
+			proxyRequest.Out.Host = "localhost" + backend.Port()
 			stripHopByHopHeaders(proxyRequest.Out.Header)
 			stripSpoofableForwardedHeaders(proxyRequest.Out.Header)
 			proxyRequest.Out.Header.Set("X-Forwarded-For", clientIP)
