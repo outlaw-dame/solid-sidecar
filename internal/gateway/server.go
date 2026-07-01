@@ -9,6 +9,7 @@ import (
 
 	"github.com/outlaw-dame/solid-sidecar/internal/authn"
 	"github.com/outlaw-dame/solid-sidecar/internal/authz"
+	"github.com/outlaw-dame/solid-sidecar/internal/compression"
 	"github.com/outlaw-dame/solid-sidecar/internal/config"
 	"github.com/outlaw-dame/solid-sidecar/internal/health"
 	"github.com/outlaw-dame/solid-sidecar/internal/observability"
@@ -65,6 +66,27 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	authCache := authn.NewReplayCache()
 	authzMetrics := authz.NewShadowMetrics()
 
+	// Create compression middleware config from the main config
+	compressionConfig := compression.Config{
+		Responses: compression.ResponsesConfig{
+			Enabled:                cfg.Compression.Responses.Enabled,
+			Gzip:                   compression.GzipConfig(cfg.Compression.Responses.Gzip),
+			Zstd:                   compression.ZstdConfig(cfg.Compression.Responses.Zstd),
+			Prefer:                 cfg.Compression.Responses.Prefer,
+			SkipContentTypes:       cfg.Compression.Responses.SkipContentTypes,
+			SkipSensitiveResponses: cfg.Compression.Responses.SkipSensitiveResponses,
+			SkipErrorResponses:     cfg.Compression.Responses.SkipErrorResponses,
+			SkipRanges:             cfg.Compression.Responses.SkipRanges,
+			MinBytes:               cfg.Compression.Responses.MinBytes,
+		},
+		Requests: compression.RequestsConfig{
+			Enabled:              cfg.Compression.Requests.Enabled,
+			AllowedEncodings:     cfg.Compression.Requests.AllowedEncodings,
+			MaxDecompressedBytes: cfg.Compression.Requests.MaxDecompressedBytes,
+			ZstdEnabled:          cfg.Compression.Requests.ZstdEnabled,
+		},
+	}
+
 	inner := authn.Middleware(cfg.Auth, logger, authCache, mux)
 	if cfg.Authz.ShadowEnabled {
 		evaluator, err := newAuthzEvaluator(cfg.Authz)
@@ -78,6 +100,11 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			Logger:            logger,
 			Metrics:           authzMetrics,
 		}, inner)
+	}
+
+	// Add compression middleware if enabled
+	if cfg.Compression.Responses.Enabled || cfg.Compression.Requests.Enabled {
+		inner = compression.Middleware(compressionConfig)(inner)
 	}
 
 	handler := observability.RequestID(

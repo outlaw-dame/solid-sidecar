@@ -35,15 +35,16 @@ const (
 // Config is the complete sidecar configuration for the current Go gateway.
 // Auth is limited to Phase 3 preflight checks; CSS remains the Solid authority.
 type Config struct {
-	Server    ServerConfig
-	Backend   BackendConfig
-	Limits    LimitsConfig
-	RateLimit RateLimitConfig
-	Security  SecurityConfig
-	Auth      AuthConfig
-	Authz     AuthzConfig
-	SAI       SAIConfig
-	Log       LogConfig
+	Server      ServerConfig
+	Backend     BackendConfig
+	Limits      LimitsConfig
+	RateLimit   RateLimitConfig
+	Security    SecurityConfig
+	Auth        AuthConfig
+	Authz       AuthzConfig
+	SAI         SAIConfig
+	Compression CompressionConfig
+	Log         LogConfig
 }
 
 type ServerConfig struct {
@@ -118,6 +119,70 @@ type SAIConfig struct {
 	MaxRetries int
 }
 
+// CompressionConfig contains configuration for HTTP compression
+type CompressionConfig struct {
+	// Responses controls response compression
+	Responses CompressionResponsesConfig
+	// Requests controls request decompression
+	Requests CompressionRequestsConfig
+}
+
+// CompressionResponsesConfig contains configuration for response compression
+type CompressionResponsesConfig struct {
+	// Enabled controls whether response compression is active
+	// Must default to false until e2e compatibility tests exist
+	Enabled bool
+	// Gzip configuration
+	Gzip CompressionGzipConfig
+	// Zstd configuration (behind explicit feature flag)
+	Zstd CompressionZstdConfig
+	// Prefer indicates which compression to prefer when both are acceptable
+	// Must default to gzip until deployment evidence proves Zstd is safe
+	Prefer string
+	// SkipContentTypes is a list of content type prefixes to skip
+	// e.g., image/, audio/, video/, application/zip, etc.
+	SkipContentTypes []string
+	// SkipSensitiveResponses controls whether to skip compression for sensitive responses
+	// Must default to true for security
+	SkipSensitiveResponses bool
+	// SkipErrorResponses controls whether to skip compression for error responses
+	SkipErrorResponses bool
+	// SkipRanges controls whether to skip compression for range requests
+	SkipRanges bool
+	// MinBytes is the minimum response size to compress
+	MinBytes int64
+}
+
+// CompressionGzipConfig contains configuration for Gzip compression
+type CompressionGzipConfig struct {
+	// Enabled controls whether Gzip compression is active
+	Enabled bool
+	// Level controls the compression level (1-9, or 0 for default)
+	Level int
+}
+
+// CompressionZstdConfig contains configuration for Zstd compression
+type CompressionZstdConfig struct {
+	// Enabled controls whether Zstd compression is active
+	// Must default to false even after Gzip support lands
+	Enabled bool
+	// Level controls the compression level (1-22, or 0 for default)
+	Level int
+}
+
+// CompressionRequestsConfig contains configuration for request decompression
+type CompressionRequestsConfig struct {
+	// Enabled controls whether request decompression is active
+	// Must default to false until limits, threat model, and CSS compatibility are proven
+	Enabled bool
+	// AllowedEncodings is a list of allowed encodings for decompression
+	AllowedEncodings []string
+	// MaxDecompressedBytes is the maximum size of decompressed request body
+	MaxDecompressedBytes int64
+	// ZstdEnabled controls whether Zstd decompression is active
+	ZstdEnabled bool
+}
+
 // Defaults returns a safe local-development configuration.
 func Defaults() Config {
 	return Config{
@@ -162,6 +227,34 @@ func Defaults() Config {
 			Enabled:    false,
 			MaxRetries: 3,
 			Timeout:    30 * time.Second,
+		},
+		Compression: CompressionConfig{
+			Responses: CompressionResponsesConfig{
+				// Must default to false until e2e compatibility tests exist
+				Enabled: false,
+				Gzip: CompressionGzipConfig{
+					Enabled: true,
+					Level:   0, // default
+				},
+				Zstd: CompressionZstdConfig{
+					// Must default to false even after Gzip support lands
+					Enabled: false,
+					Level:   0, // default
+				},
+				Prefer:                 "gzip",
+				SkipContentTypes:       []string{"image/", "audio/", "video/", "application/zip", "application/gzip", "application/zstd", "application/octet-stream"},
+				SkipSensitiveResponses: true,
+				SkipErrorResponses:     true,
+				SkipRanges:             true,
+				MinBytes:               1024,
+			},
+			Requests: CompressionRequestsConfig{
+				// Must default to false until limits, threat model, and CSS compatibility are proven
+				Enabled:              false,
+				AllowedEncodings:     []string{"gzip"},
+				MaxDecompressedBytes: 10485760, // 10 MiB
+				ZstdEnabled:          false,
+			},
 		},
 		Log: LogConfig{Level: "info"},
 	}
@@ -344,6 +437,53 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.Authz.ExternalBackoffMaxDelay)
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
+	// Compression configuration
+	case "compression.responses.enabled":
+		return parseBool(value, &cfg.Compression.Responses.Enabled, "compression.responses.enabled")
+	case "compression.responses.gzip.enabled":
+		return parseBool(value, &cfg.Compression.Responses.Gzip.Enabled, "compression.responses.gzip.enabled")
+	case "compression.responses.gzip.level":
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("compression.responses.gzip.level must be an integer: %w", err)
+		}
+		cfg.Compression.Responses.Gzip.Level = parsed
+	case "compression.responses.zstd.enabled":
+		return parseBool(value, &cfg.Compression.Responses.Zstd.Enabled, "compression.responses.zstd.enabled")
+	case "compression.responses.zstd.level":
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("compression.responses.zstd.level must be an integer: %w", err)
+		}
+		cfg.Compression.Responses.Zstd.Level = parsed
+	case "compression.responses.prefer":
+		cfg.Compression.Responses.Prefer = value
+	case "compression.responses.skip_content_types":
+		cfg.Compression.Responses.SkipContentTypes = splitCSV(value)
+	case "compression.responses.skip_sensitive_responses":
+		return parseBool(value, &cfg.Compression.Responses.SkipSensitiveResponses, "compression.responses.skip_sensitive_responses")
+	case "compression.responses.skip_error_responses":
+		return parseBool(value, &cfg.Compression.Responses.SkipErrorResponses, "compression.responses.skip_error_responses")
+	case "compression.responses.skip_ranges":
+		return parseBool(value, &cfg.Compression.Responses.SkipRanges, "compression.responses.skip_ranges")
+	case "compression.responses.min_bytes":
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("compression.responses.min_bytes must be an integer: %w", err)
+		}
+		cfg.Compression.Responses.MinBytes = parsed
+	case "compression.requests.enabled":
+		return parseBool(value, &cfg.Compression.Requests.Enabled, "compression.requests.enabled")
+	case "compression.requests.allowed_encodings":
+		cfg.Compression.Requests.AllowedEncodings = splitCSV(value)
+	case "compression.requests.max_decompressed_bytes":
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("compression.requests.max_decompressed_bytes must be an integer: %w", err)
+		}
+		cfg.Compression.Requests.MaxDecompressedBytes = parsed
+	case "compression.requests.zstd_enabled":
+		return parseBool(value, &cfg.Compression.Requests.ZstdEnabled, "compression.requests.zstd_enabled")
 	default:
 		return fmt.Errorf("unknown setting %q", section+"."+key)
 	}
@@ -480,6 +620,17 @@ func applyEnv(cfg *Config) {
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
+	// Compression environment variables
+	if value := os.Getenv("SOLID_SIDECAR_COMPRESSION_RESPONSES_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Compression.Responses.Enabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_COMPRESSION_REQUESTS_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Compression.Requests.Enabled = parsed
+		}
+	}
 }
 
 func Validate(cfg Config) error {
@@ -539,6 +690,11 @@ func Validate(cfg Config) error {
 	if err := validateAuthzConfig(cfg.Authz); err != nil {
 		return err
 	}
+	// Validate compression configuration
+	if err := validateCompressionConfig(cfg.Compression); err != nil {
+		return err
+	}
+
 	switch cfg.Log.Level {
 	case "debug", "info", "warn", "error":
 		return nil
@@ -613,6 +769,45 @@ func containsControlCharacter(value string) bool {
 		}
 	}
 	return false
+}
+
+// validateCompressionConfig validates the compression configuration
+func validateCompressionConfig(cfg CompressionConfig) error {
+	// Validate response compression
+	if cfg.Responses.Enabled {
+		// Validate Gzip config
+		if cfg.Responses.Gzip.Enabled {
+			if cfg.Responses.Gzip.Level < 0 || cfg.Responses.Gzip.Level > 9 {
+				return errors.New("compression.responses.gzip.level must be between 0 and 9")
+			}
+		}
+
+		// Validate Zstd config
+		if cfg.Responses.Zstd.Enabled {
+			if cfg.Responses.Zstd.Level < 0 || cfg.Responses.Zstd.Level > 22 {
+				return errors.New("compression.responses.zstd.level must be between 0 and 22")
+			}
+		}
+
+		// Validate prefer value
+		if cfg.Responses.Prefer != "" && cfg.Responses.Prefer != "gzip" && cfg.Responses.Prefer != "zstd" {
+			return errors.New("compression.responses.prefer must be empty, 'gzip', or 'zstd'")
+		}
+
+		// Validate min_bytes
+		if cfg.Responses.MinBytes < 0 {
+			return errors.New("compression.responses.min_bytes must be non-negative")
+		}
+	}
+
+	// Validate request decompression
+	if cfg.Requests.Enabled {
+		if cfg.Requests.MaxDecompressedBytes <= 0 {
+			return errors.New("compression.requests.max_decompressed_bytes must be positive when decompression is enabled")
+		}
+	}
+
+	return nil
 }
 
 func splitCSV(value string) []string {
