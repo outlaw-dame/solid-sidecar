@@ -86,7 +86,6 @@ Implemented:
 
 Still missing before authorization can enforce:
 - RDF parser/canonicalization boundary;
-- SAI parser or explicit decision to defer SAI;
 - CSS behavior comparison harness;
 - enforcement mode config;
 - decision cache for enforcement;
@@ -225,6 +224,35 @@ Implemented:
 
 **ACP Evaluator is complete.**
 
+### DID Resolver
+
+Implemented:
+- DID parser with strict `did:solid` identifier parsing and validation;
+- DID types: DID, DIDURL, VerificationMethod, Service, DIDDocument;
+- DID document parser and validator;
+- DID resolver with local registry and HTTPS resolution;
+- DID document cache with bounded TTL (5 minutes default);
+- Bidirectional DID-WebID binding validation;
+- WebID backlink validation with project-defined predicate (`https://solidproject.org/ns/did#controller`);
+- Security hardening: disabled by default, default mapping disabled, HTTPS-only, size limits, timeout protection, SSRF protection;
+- Shadow mode: DID ownership alone does not grant resource access;
+- Comprehensive test suite with 119+ tests covering parsing, validation, resolution, binding, caching, and error handling.
+
+**DID Resolver is complete.**
+
+### SAI Support Decision
+
+Implemented:
+- SAI support decision document (`docs/sai-support-decision.md`);
+- Explicit deferral of SAI implementation until conditions are met;
+- Prepared boundary for future SAI parser and evaluator;
+- Feature flag design for SAI support;
+- Interface design (SAIParser, SAIEvaluator) for future implementation;
+- Type hierarchy design (SAIPolicy, SAIRule, SAIPremise, SAIConclusion);
+- Acceptance criteria for future SAI implementation.
+
+**SAI Support Decision is complete.**
+
 ### WAC Evaluator Enhancements
 
 Implemented:
@@ -249,6 +277,8 @@ Continue in this order:
 3. ACP parser - COMPLETED.
 4. WAC evaluator with actual rule matching logic - COMPLETED.
 5. ACP evaluator with actual rule matching logic - COMPLETED.
+6. DID resolver with identity binding - COMPLETED.
+7. SAI decision and deferral - COMPLETED.
 
 ## Current safety boundary
 
