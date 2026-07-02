@@ -81,13 +81,13 @@ type ResourceIndexConfig struct {
 // DefaultResourceIndexConfig returns a safe default configuration
 func DefaultResourceIndexConfig() ResourceIndexConfig {
 	return ResourceIndexConfig{
-		MaxIndexSize:          100000, // 100K resources max
-		EnableFullTextIndex:   true,
-		MaxFullTextTerms:      100,    // 100 terms per resource max
-		EnableAgentIndex:      true,
-		IndexRetentionTime:    24 * time.Hour * 30, // 30 days retention
-		EnableObservability:   true,
-		Logger:               nil,
+		MaxIndexSize:        100000, // 100K resources max
+		EnableFullTextIndex: true,
+		MaxFullTextTerms:    100, // 100 terms per resource max
+		EnableAgentIndex:    true,
+		IndexRetentionTime:  24 * time.Hour * 30, // 30 days retention
+		EnableObservability: true,
+		Logger:              nil,
 	}
 }
 
@@ -97,14 +97,14 @@ type ResourceIndexMetrics struct {
 
 	// Index statistics
 	TotalResourcesIndexed int64
-	TotalIndexOperations int64
-	IndexHits           int64
-	IndexMisses         int64
+	TotalIndexOperations  int64
+	IndexHits             int64
+	IndexMisses           int64
 
 	// Search statistics
-	TotalSearches       int64
-	SuccessfulSearches  int64
-	SearchErrors        int64
+	TotalSearches      int64
+	SuccessfulSearches int64
+	SearchErrors       int64
 
 	// Memory statistics
 	EstimatedMemoryUsage int64
@@ -225,15 +225,15 @@ type ResourceAccessInfo struct {
 
 // IndexedResource represents a resource in the index
 type IndexedResource struct {
-	URI            string
-	ContainerURI   string
-	ResourceType   string
-	ContentType    string
-	Size           int64
-	LastModified   time.Time
-	OwnerWebID     string
-	PrivacyLevel   PrivacyLevel
-	AccessInfo     *ResourceAccessInfo
+	URI          string
+	ContainerURI string
+	ResourceType string
+	ContentType  string
+	Size         int64
+	LastModified time.Time
+	OwnerWebID   string
+	PrivacyLevel PrivacyLevel
+	AccessInfo   *ResourceAccessInfo
 }
 
 // IndexQuery represents a query to the index
@@ -312,16 +312,16 @@ func NewResourceIndexLayer(config ResourceIndexConfig) *ResourceIndexLayer {
 	}
 
 	layer := &ResourceIndexLayer{
-		config:          config,
-		resourceIndex:   make(map[string]*ResourceMetadata),
-		containerIndex:  make(map[string][]string),
-		agentIndex:      make(map[string][]string),
-		typeIndex:       make(map[string][]string),
-		accessIndex:     make(map[string]*ResourceAccessInfo),
-		logger:          config.Logger,
-		closeChan:       make(chan struct{}),
-		closed:          false,
-		indexMetrics:    ResourceIndexMetrics{},
+		config:         config,
+		resourceIndex:  make(map[string]*ResourceMetadata),
+		containerIndex: make(map[string][]string),
+		agentIndex:     make(map[string][]string),
+		typeIndex:      make(map[string][]string),
+		accessIndex:    make(map[string]*ResourceAccessInfo),
+		logger:         config.Logger,
+		closeChan:      make(chan struct{}),
+		closed:         false,
+		indexMetrics:   ResourceIndexMetrics{},
 	}
 
 	// Initialize full-text index if enabled
@@ -371,7 +371,7 @@ func (i *ResourceIndexLayer) cleanOldIndexEntries(retentionTime time.Duration) {
 	}
 
 	cutoff := time.Now().Add(-retentionTime)
-	
+
 	// Clean up resource index
 	for uri, metadata := range i.resourceIndex {
 		if metadata.LastIndexed.Before(cutoff) {
@@ -420,7 +420,7 @@ func (i *ResourceIndexLayer) removeFromOtherIndexes(uri string, metadata *Resour
 				}
 			}
 		}
-		
+
 		// Remove from contributor indexes
 		for _, contributor := range metadata.Contributors {
 			if uris, exists := i.agentIndex[contributor]; exists {
@@ -502,7 +502,7 @@ func (i *ResourceIndexLayer) IndexResource(metadata *ResourceMetadata, accessInf
 		if metadata.OwnerWebID != "" {
 			i.agentIndex[metadata.OwnerWebID] = append(i.agentIndex[metadata.OwnerWebID], metadata.URI)
 		}
-		
+
 		for _, contributor := range metadata.Contributors {
 			i.agentIndex[contributor] = append(i.agentIndex[contributor], metadata.URI)
 		}
@@ -621,7 +621,7 @@ func (i *ResourceIndexLayer) UpdateResource(metadata *ResourceMetadata, accessIn
 
 	// Update metadata
 	metadata.LastIndexed = time.Now().UTC()
-	
+
 	// Preserve some existing values if not provided
 	if metadata.ContainerURI == "" {
 		metadata.ContainerURI = existing.ContainerURI
@@ -707,7 +707,7 @@ func (i *ResourceIndexLayer) Search(query IndexQuery) (*IndexResult, error) {
 	}
 
 	startTime := time.Now()
-	
+
 	// Collect candidate URIs
 	candidateURIs := i.getCandidateURIs(&query)
 
@@ -1088,15 +1088,15 @@ func (i *ResourceIndexLayer) convertToIndexedResources(metadataList []*ResourceM
 	for _, metadata := range metadataList {
 		accessInfo := i.accessIndex[metadata.URI]
 		results = append(results, IndexedResource{
-			URI:           metadata.URI,
-			ContainerURI:  metadata.ContainerURI,
-			ResourceType:  metadata.ResourceType,
-			ContentType:   metadata.ContentType,
-			Size:          metadata.Size,
-			LastModified:  metadata.LastModified,
-			OwnerWebID:    metadata.OwnerWebID,
-			PrivacyLevel:  metadata.PrivacyLevel,
-			AccessInfo:    accessInfo,
+			URI:          metadata.URI,
+			ContainerURI: metadata.ContainerURI,
+			ResourceType: metadata.ResourceType,
+			ContentType:  metadata.ContentType,
+			Size:         metadata.Size,
+			LastModified: metadata.LastModified,
+			OwnerWebID:   metadata.OwnerWebID,
+			PrivacyLevel: metadata.PrivacyLevel,
+			AccessInfo:   accessInfo,
 		})
 	}
 
@@ -1136,15 +1136,15 @@ func (i *ResourceIndexLayer) GetResource(uri string, webID string, includePrivat
 	accessInfo := i.accessIndex[uri]
 
 	return &IndexedResource{
-		URI:           metadata.URI,
-		ContainerURI:  metadata.ContainerURI,
-		ResourceType:  metadata.ResourceType,
-		ContentType:   metadata.ContentType,
-		Size:          metadata.Size,
-		LastModified:  metadata.LastModified,
-		OwnerWebID:    metadata.OwnerWebID,
-		PrivacyLevel:  metadata.PrivacyLevel,
-		AccessInfo:    accessInfo,
+		URI:          metadata.URI,
+		ContainerURI: metadata.ContainerURI,
+		ResourceType: metadata.ResourceType,
+		ContentType:  metadata.ContentType,
+		Size:         metadata.Size,
+		LastModified: metadata.LastModified,
+		OwnerWebID:   metadata.OwnerWebID,
+		PrivacyLevel: metadata.PrivacyLevel,
+		AccessInfo:   accessInfo,
 	}, nil
 }
 
@@ -1183,15 +1183,15 @@ func (i *ResourceIndexLayer) GetContainerResources(containerURI string, webID st
 
 		accessInfo := i.accessIndex[uri]
 		results = append(results, IndexedResource{
-			URI:           metadata.URI,
-			ContainerURI:  metadata.ContainerURI,
-			ResourceType:  metadata.ResourceType,
-			ContentType:   metadata.ContentType,
-			Size:          metadata.Size,
-			LastModified:  metadata.LastModified,
-			OwnerWebID:    metadata.OwnerWebID,
-			PrivacyLevel:  metadata.PrivacyLevel,
-			AccessInfo:    accessInfo,
+			URI:          metadata.URI,
+			ContainerURI: metadata.ContainerURI,
+			ResourceType: metadata.ResourceType,
+			ContentType:  metadata.ContentType,
+			Size:         metadata.Size,
+			LastModified: metadata.LastModified,
+			OwnerWebID:   metadata.OwnerWebID,
+			PrivacyLevel: metadata.PrivacyLevel,
+			AccessInfo:   accessInfo,
 		})
 	}
 

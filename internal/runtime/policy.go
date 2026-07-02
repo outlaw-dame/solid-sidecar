@@ -360,12 +360,12 @@ func (p *PolicyEngineLayer) LoadPolicy(ctx context.Context, uri string, content 
 	if err := ValidateURI(uri); err != nil {
 		return nil, fmt.Errorf("invalid policy URI: %w", err)
 	}
-	
+
 	// Validate content type to prevent injection
 	if err := ValidateContentType(contentType); err != nil {
 		return nil, fmt.Errorf("invalid content type: %w", err)
 	}
-	
+
 	// Validate content size to prevent DoS attacks
 	if err := ValidateResourceSize(int64(len(content))); err != nil {
 		return nil, fmt.Errorf("policy content validation failed: %w", err)
@@ -609,26 +609,26 @@ func (p *PolicyEngineLayer) Evaluate(ctx context.Context, evaluationCtx *PolicyE
 	if err := ValidateURI(evaluationCtx.RequestURI); err != nil {
 		return nil, fmt.Errorf("invalid request URI: %w", err)
 	}
-	
+
 	if evaluationCtx.Agent != "" {
 		if err := ValidateWebID(evaluationCtx.Agent); err != nil {
 			return nil, fmt.Errorf("invalid agent WebID: %w", err)
 		}
 	}
-	
+
 	if evaluationCtx.ClientID != "" {
 		// Client IDs should be URIs
 		if err := ValidateURI(evaluationCtx.ClientID); err != nil {
 			return nil, fmt.Errorf("invalid client ID: %w", err)
 		}
 	}
-	
+
 	if evaluationCtx.ResourceType != "" {
 		if err := ValidateContentType(evaluationCtx.ResourceType); err != nil {
 			return nil, fmt.Errorf("invalid resource type: %w", err)
 		}
 	}
-	
+
 	if evaluationCtx.Container != "" {
 		if err := ValidateContainerURI(evaluationCtx.Container); err != nil {
 			return nil, fmt.Errorf("invalid container URI: %w", err)

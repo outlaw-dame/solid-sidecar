@@ -72,11 +72,11 @@ type EventStreamConfig struct {
 // DefaultEventStreamConfig returns a safe default configuration
 func DefaultEventStreamConfig() EventStreamConfig {
 	return EventStreamConfig{
-		MaxStreamBufferSize:   10000,
-		EventRetentionTime:     24 * time.Hour,
-		MaxStreamSubscribers:  1000,
-		EnableObservability:   true,
-		Logger:                nil,
+		MaxStreamBufferSize:  10000,
+		EventRetentionTime:   24 * time.Hour,
+		MaxStreamSubscribers: 1000,
+		EnableObservability:  true,
+		Logger:               nil,
 	}
 }
 
@@ -85,14 +85,14 @@ type EventStreamMetrics struct {
 	mu sync.RWMutex
 
 	// Event statistics
-	TotalEventsAdded     int64
-	TotalEventsStreamed  int64
+	TotalEventsAdded        int64
+	TotalEventsStreamed     int64
 	EventsDroppedDueToLimit int64
 
 	// Subscriber statistics
-	TotalSubscribers     int64
-	ActiveSubscribers     int64
-	SubscriberErrors     int64
+	TotalSubscribers  int64
+	ActiveSubscribers int64
+	SubscriberErrors  int64
 
 	// Performance metrics
 	StreamLag           time.Duration
@@ -258,15 +258,15 @@ func NewEventStreamLayer(config EventStreamConfig, notificationLayer *Notificati
 	}
 
 	layer := &EventStreamLayer{
-		config:            config,
-		notificationLayer: notificationLayer,
-		eventStreamBuffer: make([]StreamEvent, 0, config.MaxStreamBufferSize),
+		config:              config,
+		notificationLayer:   notificationLayer,
+		eventStreamBuffer:   make([]StreamEvent, 0, config.MaxStreamBufferSize),
 		maxStreamBufferSize: config.MaxStreamBufferSize,
-		streamSubscribers: make(map[string]*StreamSubscriber),
-		logger:            config.Logger,
-		closeChan:         make(chan struct{}),
-		closed:            false,
-		streamMetrics:     EventStreamMetrics{},
+		streamSubscribers:   make(map[string]*StreamSubscriber),
+		logger:              config.Logger,
+		closeChan:           make(chan struct{}),
+		closed:              false,
+		streamMetrics:       EventStreamMetrics{},
 	}
 
 	// Set up event buffer cleanup
@@ -410,7 +410,7 @@ func (e *EventStreamLayer) deliverToStreamSubscribers(event StreamEvent) {
 	}
 
 	startTime := time.Now()
-	
+
 	for _, subscriber := range e.streamSubscribers {
 		if !subscriber.Active {
 			continue
@@ -746,16 +746,16 @@ func (e *EventStreamLayer) IsClosed() bool {
 // ConvertNotificationToStreamEvent converts a NotificationEvent to a StreamEvent
 func ConvertNotificationToStreamEvent(notificationEvent NotificationEvent) StreamEvent {
 	return StreamEvent{
-		EventID:        notificationEvent.EventID,
-		EventType:      notificationEvent.EventType,
+		EventID:         notificationEvent.EventID,
+		EventType:       notificationEvent.EventType,
 		ResourceURI:     notificationEvent.ResourceURI,
 		ContainerURI:    notificationEvent.ContainerURI,
-		Timestamp:      notificationEvent.Timestamp,
-		Agent:          notificationEvent.Agent,
-		AgentType:      notificationEvent.AgentType,
-		Action:         notificationEvent.Action,
-		Metadata:       notificationEvent.Metadata,
-		SequenceNumber: notificationEvent.SequenceNumber,
+		Timestamp:       notificationEvent.Timestamp,
+		Agent:           notificationEvent.Agent,
+		AgentType:       notificationEvent.AgentType,
+		Action:          notificationEvent.Action,
+		Metadata:        notificationEvent.Metadata,
+		SequenceNumber:  notificationEvent.SequenceNumber,
 		StreamTimestamp: time.Now().UTC(),
 		PrivacyLevel:    determinePrivacyLevel(notificationEvent),
 	}
@@ -796,17 +796,17 @@ func generateStreamSubscriberID() string {
 func EventStreamAsJSON(event StreamEvent) (string, error) {
 	// Create a JSON-safe version of the event
 	jsonEvent := map[string]interface{}{
-		"event_id":        event.EventID,
-		"event_type":      string(event.EventType),
+		"event_id":         event.EventID,
+		"event_type":       string(event.EventType),
 		"resource_uri":     event.ResourceURI,
 		"container_uri":    event.ContainerURI,
-		"timestamp":       event.Timestamp.Format(time.RFC3339),
-		"agent":           event.Agent,
-		"agent_type":      string(event.AgentType),
-		"action":          event.Action,
-		"sequence_number": event.SequenceNumber,
+		"timestamp":        event.Timestamp.Format(time.RFC3339),
+		"agent":            event.Agent,
+		"agent_type":       string(event.AgentType),
+		"action":           event.Action,
+		"sequence_number":  event.SequenceNumber,
 		"stream_timestamp": event.StreamTimestamp.Format(time.RFC3339),
-		"privacy_level":   string(event.PrivacyLevel),
+		"privacy_level":    string(event.PrivacyLevel),
 	}
 
 	// Add metadata (filter out any sensitive fields)

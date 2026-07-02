@@ -299,12 +299,12 @@ func (r *RDFGraphIndexLayer) Parse(ctx context.Context, uri string, content []by
 	if err := ValidateURI(uri); err != nil {
 		return nil, fmt.Errorf("invalid URI: %w", err)
 	}
-	
+
 	// Validate content type to prevent injection
 	if err := ValidateContentType(contentType); err != nil {
 		return nil, fmt.Errorf("invalid content type: %w", err)
 	}
-	
+
 	// Validate content size to prevent DoS attacks
 	if err := ValidateResourceSize(int64(len(content))); err != nil {
 		return nil, fmt.Errorf("content validation failed: %w", err)

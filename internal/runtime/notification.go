@@ -520,7 +520,7 @@ func isValidNotificationEventType(eventType NotificationEventType) bool {
 		EventTypeContainer,
 		EventTypeCustom,
 	}
-	
+
 	for _, knownType := range knownTypes {
 		if eventType == knownType {
 			return true
@@ -535,13 +535,13 @@ func (n *NotificationLayer) PublishEvent(event NotificationEvent) error {
 	if err := ValidateURI(event.ResourceURI); err != nil {
 		return fmt.Errorf("invalid resource URI: %w", err)
 	}
-	
+
 	if event.ContainerURI != "" {
 		if err := ValidateContainerURI(event.ContainerURI); err != nil {
 			return fmt.Errorf("invalid container URI: %w", err)
 		}
 	}
-	
+
 	// Validate event type is one of the known types
 	if !isValidNotificationEventType(event.EventType) {
 		return fmt.Errorf("invalid event type: %s", event.EventType)
@@ -592,38 +592,38 @@ func (n *NotificationLayer) Subscribe(ctx context.Context, channel string, filte
 	if channel == "" {
 		return nil, errors.New("channel name cannot be empty")
 	}
-	
+
 	if len(channel) > 256 {
 		return nil, errors.New("channel name exceeds maximum length")
 	}
-	
+
 	// Validate channel characters
 	for _, r := range channel {
 		if r < 0x20 || r == 0x7f {
 			return nil, errors.New("channel name contains invalid characters")
 		}
 	}
-	
+
 	// Validate filter event types if present
 	for _, eventType := range filter.EventTypes {
 		if !isValidNotificationEventType(eventType) {
 			return nil, fmt.Errorf("invalid event type in filter: %s", eventType)
 		}
 	}
-	
+
 	// Validate filter URIs if present
 	for _, uri := range filter.ResourceURIs {
 		if err := ValidateURI(uri); err != nil {
 			return nil, fmt.Errorf("invalid resource URI in filter: %w", err)
 		}
 	}
-	
+
 	for _, uri := range filter.ContainerURIs {
 		if err := ValidateContainerURI(uri); err != nil {
 			return nil, fmt.Errorf("invalid container URI in filter: %w", err)
 		}
 	}
-	
+
 	// Validate filter patterns if present
 	for _, pattern := range filter.ResourcePatterns {
 		if len(pattern) > 256 {
@@ -635,7 +635,7 @@ func (n *NotificationLayer) Subscribe(ctx context.Context, channel string, filte
 			}
 		}
 	}
-	
+
 	// Validate agents if present
 	for _, agent := range filter.Agents {
 		if len(agent) > MaxURILength {

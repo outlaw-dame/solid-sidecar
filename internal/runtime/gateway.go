@@ -162,17 +162,17 @@ type GatewayCompatibilityConfig struct {
 // DefaultGatewayCompatibilityConfig returns a safe default configuration
 func DefaultGatewayCompatibilityConfig() GatewayCompatibilityConfig {
 	return GatewayCompatibilityConfig{
-		CSSBaseURL:                "http://localhost:3000",
-		EnableComparison:          true,
-		ComparisonTimeout:         5 * time.Second,
-		CacheSize:                 1000,
-		EnableRateLimiting:        true,                    // Enable rate limiting by default for security
-		RequestsPerSecond:         100.0,                   // Default global rate limit
-		BurstLimit:                200,                      // Allow bursts up to 200 requests
-		EnablePerIPRateLimiting:   true,                    // Enable per-IP rate limiting
-		PerIPRequestsPerSecond:    10.0,                    // 10 requests per second per IP
-		MaxRequestsPerMinute:       600,                     // 600 requests per minute per IP (10 RPS)
-		Logger:                    nil,
+		CSSBaseURL:              "http://localhost:3000",
+		EnableComparison:        true,
+		ComparisonTimeout:       5 * time.Second,
+		CacheSize:               1000,
+		EnableRateLimiting:      true,  // Enable rate limiting by default for security
+		RequestsPerSecond:       100.0, // Default global rate limit
+		BurstLimit:              200,   // Allow bursts up to 200 requests
+		EnablePerIPRateLimiting: true,  // Enable per-IP rate limiting
+		PerIPRequestsPerSecond:  10.0,  // 10 requests per second per IP
+		MaxRequestsPerMinute:    600,   // 600 requests per minute per IP (10 RPS)
+		Logger:                  nil,
 	}
 }
 
@@ -346,12 +346,12 @@ func NewGatewayCompatibilityLayer(config GatewayCompatibilityConfig) (*GatewayCo
 	}
 
 	layer := &GatewayCompatibilityLayer{
-		config:          config,
-		cssBaseURL:      config.CSSBaseURL,
-		comparisonCache: make(map[string]*ComparisonResult),
-		logger:          config.Logger,
-		closeChan:       make(chan struct{}),
-		closed:          false,
+		config:            config,
+		cssBaseURL:        config.CSSBaseURL,
+		comparisonCache:   make(map[string]*ComparisonResult),
+		logger:            config.Logger,
+		closeChan:         make(chan struct{}),
+		closed:            false,
 		perIPRateLimiters: make(map[string]*RateLimiter),
 	}
 
