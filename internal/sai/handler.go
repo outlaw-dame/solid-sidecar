@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"time"
 )
 
 // Handler provides HTTP endpoints for SAI operations
@@ -15,6 +14,7 @@ type Handler struct {
 	logger        *slog.Logger
 	rateLimiter   *RateLimiter
 	authenticator Authenticator
+	maxBodySize   int64
 }
 
 // HandlerOptions configures the SAI handler
@@ -22,6 +22,8 @@ type HandlerOptions struct {
 	Logger        *slog.Logger
 	RateLimiter   *RateLimiter
 	Authenticator Authenticator
+	// MaxBodySize is the maximum request body size (default: 1 MiB)
+	MaxBodySize int64
 }
 
 // NewHandler creates a new SAI HTTP handler with optional configuration
@@ -32,11 +34,14 @@ func NewHandler(service *SAIService, options HandlerOptions) *Handler {
 	}
 	if options.RateLimiter == nil {
 		// Default: 100 requests per minute
-		options.RateLimiter = NewRateLimiter(100, 1*time.Minute)
+		options.RateLimiter = NewRateLimiter(DefaultSAIRateLimitRequestsPerWindow, DefaultSAIRateLimitWindow)
 	}
 	if options.Authenticator == nil {
 		// Default: deny all (fail-secure) - no identity verifier configured
 		options.Authenticator = NewDefaultAuthenticator(options.Logger, nil)
+	}
+	if options.MaxBodySize <= 0 {
+		options.MaxBodySize = DefaultMaxSAIRequestBodySize
 	}
 
 	return &Handler{
@@ -44,6 +49,7 @@ func NewHandler(service *SAIService, options HandlerOptions) *Handler {
 		logger:        options.Logger,
 		rateLimiter:   options.RateLimiter,
 		authenticator: options.Authenticator,
+		maxBodySize:   options.MaxBodySize,
 	}
 }
 

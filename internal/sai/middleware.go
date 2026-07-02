@@ -26,8 +26,14 @@ var securityHeaders = map[string]string{
 	"Permissions-Policy":        "geolocation=(), microphone=(), camera=()",
 }
 
-// Maximum request body size for SAI endpoints (1 MB)
-const MaxSAIRequestBodySize = 1 << 20 // 1 MiB
+// Default maximum request body size for SAI endpoints (1 MB)
+const DefaultMaxSAIRequestBodySize = 1 << 20 // 1 MiB
+
+// Default rate limit settings for SAI endpoints
+const (
+	DefaultSAIRateLimitRequestsPerWindow = 100
+	DefaultSAIRateLimitWindow            = 1 * time.Minute
+)
 
 // SAIError is a structured error that can be safely returned to clients
 type SAIError struct {
@@ -108,7 +114,7 @@ type Authenticator interface {
 
 // DefaultAuthenticator is a WebID-based authenticator for SAI that integrates with the authn package
 type DefaultAuthenticator struct {
-	logger         *slog.Logger
+	logger           *slog.Logger
 	identityVerifier *authn.IdentityVerifier
 }
 
@@ -119,7 +125,7 @@ func NewDefaultAuthenticator(logger *slog.Logger, identityVerifier *authn.Identi
 		logger = slog.Default()
 	}
 	return &DefaultAuthenticator{
-		logger:         logger,
+		logger:           logger,
 		identityVerifier: identityVerifier,
 	}
 }
@@ -170,7 +176,7 @@ func (a *DefaultAuthenticator) Authorize(userID, resourceID, action string) erro
 	//
 	// The current implementation denies all access to prevent IDOR vulnerabilities
 	// until proper authorization logic is implemented and tested.
-	
+
 	// Log the authorization attempt for security auditing
 	if a.logger != nil {
 		a.logger.Warn("SAI authorization check failed: access denied (fail-secure mode)",
@@ -178,7 +184,7 @@ func (a *DefaultAuthenticator) Authorize(userID, resourceID, action string) erro
 			"resourceID", resourceID,
 			"action", action)
 	}
-	
+
 	return fmt.Errorf("SAI authorization access denied (fail-secure mode)")
 }
 

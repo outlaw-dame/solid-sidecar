@@ -64,8 +64,16 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 				},
 				cfg.Auth.VerifyWebIDOwnership,
 			)
-		} else {
-			logger.Warn("SAI authentication will use fail-secure mode: identity validation not configured")
+		}
+
+		// If SAI requires authentication and it's not configured, fail to start
+		if cfg.SAI.RequireAuthentication && saiIdentityVerifier == nil {
+			return nil, fmt.Errorf("SAI requires authentication but identity validation is not configured. Configure Auth.AllowedIdentityIssuers or set SAI.RequireAuthentication to false")
+		}
+
+		// Log warning if SAI is enabled without authentication
+		if !cfg.SAI.RequireAuthentication && saiIdentityVerifier == nil {
+			logger.Warn("SAI authentication will use fail-secure mode: identity validation not configured. All SAI endpoints will deny access.")
 		}
 
 		// Create SAI authenticator with identity verifier
@@ -77,11 +85,39 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			saiAuthenticator = sai.NewDefaultAuthenticator(logger, nil)
 		}
 
+		// Create configurable rate limiter for SAI
+		var saiRateLimiter *sai.RateLimiter
+		if cfg.SAI.RateLimit.Enabled {
+			if cfg.SAI.RateLimit.RequestsPerWindow <= 0 {
+				cfg.SAI.RateLimit.RequestsPerWindow = 100
+			}
+			if cfg.SAI.RateLimit.Window <= 0 {
+				cfg.SAI.RateLimit.Window = 1 * time.Minute
+			}
+			saiRateLimiter = sai.NewRateLimiter(
+				cfg.SAI.RateLimit.RequestsPerWindow,
+				cfg.SAI.RateLimit.Window,
+			)
+		} else {
+			// Use default rate limiter if not configured
+			saiRateLimiter = sai.NewRateLimiter(
+				sai.DefaultSAIRateLimitRequestsPerWindow,
+				sai.DefaultSAIRateLimitWindow,
+			)
+		}
+
+		// Determine max body size
+		maxBodySize := cfg.SAI.MaxRequestBodySize
+		if maxBodySize <= 0 {
+			maxBodySize = sai.DefaultMaxSAIRequestBodySize
+		}
+
 		// Create SAI handler with security middleware
 		saiHandler := sai.NewHandler(saiService, sai.HandlerOptions{
 			Logger:        logger,
-			RateLimiter:   nil, // Use default rate limiter
+			RateLimiter:   saiRateLimiter,
 			Authenticator: saiAuthenticator,
+			MaxBodySize:   maxBodySize,
 		})
 		saiHandler.RegisterRoutes(mux)
 		logger.Info("SAI support enabled with authorization agent", "url", cfg.SAI.AuthorizationAgentURL)

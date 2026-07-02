@@ -117,6 +117,23 @@ type SAIConfig struct {
 	Timeout time.Duration
 	// MaxRetries for failed SAI operations
 	MaxRetries int
+	// RateLimit controls rate limiting for SAI endpoints
+	RateLimit SAIRateLimitConfig
+	// MaxRequestBodySize is the maximum request body size for SAI endpoints (default: 1 MiB)
+	MaxRequestBodySize int64
+	// RequireAuthentication enforces that SAI requires valid authentication
+	// If true and authentication is not configured, SAI will fail to start
+	RequireAuthentication bool
+}
+
+// SAIRateLimitConfig contains rate limiting configuration for SAI endpoints
+type SAIRateLimitConfig struct {
+	// Enabled controls whether rate limiting is active for SAI endpoints
+	Enabled bool
+	// RequestsPerWindow is the maximum number of requests allowed per window
+	RequestsPerWindow int
+	// Window is the time window for rate limiting
+	Window time.Duration
 }
 
 // CompressionConfig contains configuration for HTTP compression
