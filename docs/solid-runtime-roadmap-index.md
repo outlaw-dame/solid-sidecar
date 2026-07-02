@@ -40,20 +40,20 @@ Immediate next implementation order:
 
 After Phase 17, proceed according to `docs/solid-platform-maturity-phases.md`:
 
-1. production storage engine;
-2. native authorization authority;
-3. Solid conformance/interoperability suite;
-4. multi-tenant/operator platform;
-5. federated identity and trust expansion;
-6. high-performance indexing/query layer;
-7. notifications and realtime productionization;
-8. migration tooling;
-9. security audit and formal hardening;
-10. SDK/client compatibility layer;
-11. clustered deployment;
-12. policy and compliance framework;
-13. plugin/extension architecture;
-14. stable native Solid release.
+18. production storage engine;
+19. native authorization authority;
+20. Solid conformance/interoperability suite;
+21. multi-tenant/operator platform;
+22. federated identity and trust expansion;
+23. high-performance indexing/query layer;
+24. notifications and realtime productionization;
+25. migration tooling;
+26. security audit and formal hardening;
+27. SDK/client compatibility layer;
+28. clustered deployment;
+29. policy and compliance framework;
+30. plugin/extension architecture;
+31. stable native Solid release.
 
 ## Documentation boundaries
 
