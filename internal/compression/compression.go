@@ -820,90 +820,101 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			next.ServeHTTP(crw, r)
 
 			// After the handler has completed, decide whether to compress
-			if crw.body != nil && crw.body.Len() > 0 {
-				// Record that this is a compression candidate
-				if cfg.Metrics != nil {
-					cfg.Metrics.RecordResponseCandidate()
-				}
+			bodyBytes := []byte{}
+			if crw.body != nil {
+				bodyBytes = crw.body.Bytes()
+			}
 
-				// Check if we should compress
-				shouldSkip, skipReason := shouldSkipResponseCompression(
-					r, cfg.Responses, crw.status, crw.headers, int64(crw.body.Len()), cfg.Metrics,
+			// Record that this is a compression candidate if it has a body
+			if len(bodyBytes) > 0 && cfg.Metrics != nil {
+				cfg.Metrics.RecordResponseCandidate()
+			}
+
+			// Check if we should compress
+			shouldSkip := true
+			var skipReason string
+			if len(bodyBytes) > 0 {
+				shouldSkip, skipReason = shouldSkipResponseCompression(
+					r, cfg.Responses, crw.status, crw.headers, int64(len(bodyBytes)), cfg.Metrics,
 				)
+			}
 
-				if !shouldSkip {
-					// Get accepted encodings
-					accepted := getAcceptedEncodings(r)
-					encoding := selectEncoding(accepted, cfg.Responses)
+			if !shouldSkip {
+				// Get accepted encodings
+				accepted := getAcceptedEncodings(r)
+				encoding := selectEncoding(accepted, cfg.Responses)
 
-					if encoding != "" {
-						// Compress the response
-						compressed, err := CompressResponse(crw.body.Bytes(), encoding, cfg.Responses)
-						if err == nil {
-							// Record successful compression
-							if cfg.Metrics != nil {
-								if encoding == EncodingGzip {
-									cfg.Metrics.RecordCompressedGzip()
-								} else if encoding == EncodingZstd {
-									cfg.Metrics.RecordCompressedZstd()
-								}
-							}
-
-							// Set compression headers
-							w.Header().Set("Content-Encoding", encoding)
-							addVaryHeader(w.Header())
-
-							// Handle ETag and Content-Length
-							handleETag(w.Header())
-							w.Header().Del("Content-Length")
-
-							// Copy other headers from the captured response
-							for k, v := range crw.headers {
-								// Don't overwrite headers we just set
-								if k != "Content-Encoding" && k != "Vary" && k != "ETag" && k != "Content-Length" {
-									w.Header()[k] = v
-								}
-							}
-
-							// Write the compressed response
-							w.WriteHeader(crw.status)
-							w.Write(compressed)
-							return
-						}
-						// If compression failed, record error and fall back to original response
+				if encoding != "" {
+					// Compress the response
+					compressed, err := CompressResponse(bodyBytes, encoding, cfg.Responses)
+					if err == nil {
+						// Record successful compression
 						if cfg.Metrics != nil {
-							cfg.Metrics.RecordCompressionError()
+							if encoding == EncodingGzip {
+								cfg.Metrics.RecordCompressedGzip()
+							} else if encoding == EncodingZstd {
+								cfg.Metrics.RecordCompressedZstd()
+							}
 						}
-					}
-				} else if cfg.Metrics != nil && skipReason != "" {
-					// Record the skip reason
-					switch skipReason {
-					case "no_client_accept":
-						cfg.Metrics.RecordSkipNoClientAccept()
-					case "already_encoded":
-						cfg.Metrics.RecordSkipAlreadyEncoded()
-					case "range_request":
-						cfg.Metrics.RecordSkipRangeRequest()
-					case "sensitive_response":
-						cfg.Metrics.RecordSkipSensitive()
-					case "content_type_skipped":
-						cfg.Metrics.RecordSkipContentType()
-					case "too_small":
-						cfg.Metrics.RecordSkipTooSmall()
-					case "error_response", "method_not_eligible", "method_skipped", "compression_disabled":
-						cfg.Metrics.RecordSkipStatusMethod()
-					}
-				}
 
-				// If we didn't compress or compression failed, write the original response
-				if !crw.wroteHeader {
-					// Headers weren't written yet, write them now
-					for k, v := range crw.headers {
-						w.Header()[k] = v
+						// Set compression headers
+						w.Header().Set("Content-Encoding", encoding)
+						addVaryHeader(w.Header())
+
+						// Handle ETag and Content-Length
+						handleETag(w.Header())
+						w.Header().Del("Content-Length")
+
+						// Copy other headers from the captured response
+						for k, v := range crw.headers {
+							// Don't overwrite headers we just set
+							if k != "Content-Encoding" && k != "Vary" && k != "ETag" && k != "Content-Length" {
+								w.Header()[k] = v
+							}
+						}
+
+						// Write the compressed response
+						w.WriteHeader(crw.status)
+						w.Write(compressed)
+						return
 					}
-					w.WriteHeader(crw.status)
+					// If compression failed, record error and fall back to original response
+					if cfg.Metrics != nil {
+						cfg.Metrics.RecordCompressionError()
+					}
 				}
-				w.Write(crw.body.Bytes())
+			} else if cfg.Metrics != nil && skipReason != "" && len(bodyBytes) > 0 {
+				// Record the skip reason
+				switch skipReason {
+				case "no_client_accept":
+					cfg.Metrics.RecordSkipNoClientAccept()
+				case "already_encoded":
+					cfg.Metrics.RecordSkipAlreadyEncoded()
+				case "range_request":
+					cfg.Metrics.RecordSkipRangeRequest()
+				case "sensitive_response":
+					cfg.Metrics.RecordSkipSensitive()
+				case "content_type_skipped":
+					cfg.Metrics.RecordSkipContentType()
+				case "too_small":
+					cfg.Metrics.RecordSkipTooSmall()
+				case "error_response", "method_not_eligible", "method_skipped", "compression_disabled":
+					cfg.Metrics.RecordSkipStatusMethod()
+				}
+			}
+
+			// If we didn't compress or compression failed, write the original response
+			if crw.wroteHeader {
+				// Headers were written, write them now
+				for k, v := range crw.headers {
+					w.Header()[k] = v
+				}
+				w.WriteHeader(crw.status)
+			} else {
+				w.WriteHeader(crw.status)
+			}
+			if len(bodyBytes) > 0 {
+				w.Write(bodyBytes)
 			}
 		})
 	}
