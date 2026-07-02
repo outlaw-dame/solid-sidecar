@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -101,8 +102,24 @@ func (r roundTripperWithTimeout) RoundTrip(req *http.Request) (*http.Response, e
 		return nil, errors.New("backend timeout must be positive")
 	}
 	ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
-	defer cancel()
-	return r.base.RoundTrip(req.WithContext(ctx))
+	resp, err := r.base.RoundTrip(req.WithContext(ctx))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	resp.Body = &bodyWithCancel{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
+}
+
+type bodyWithCancel struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *bodyWithCancel) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
 }
 
 func LimitBody(maxBytes int64, next http.Handler) http.Handler {
