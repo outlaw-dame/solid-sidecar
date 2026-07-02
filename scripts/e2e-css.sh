@@ -127,7 +127,7 @@ main() {
   assert_sidecar_matches_css_status HEAD /
   assert_sidecar_matches_css_status OPTIONS /
 
-  malformed_status="$(status_code GET '/%2e%2e/')"
+  malformed_status="$(status_code GET "${sidecar_url}/%2e%2e/")"
   if [[ "${malformed_status}" != "400" && "${malformed_status}" != "403" ]]; then
     echo "expected encoded dot-segment path to be rejected, got ${malformed_status}" >&2
     return 1
