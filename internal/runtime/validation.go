@@ -198,3 +198,31 @@ func ValidatePolicyURI(uri string) error {
 	// They follow the same validation as regular URIs
 	return ValidateURI(uri)
 }
+
+// ValidateRDFTerm validates an RDF term (subject, predicate, object) for safety
+// RDF terms can be URIs or literals, but should not contain control characters
+// that could be used for injection attacks
+func ValidateRDFTerm(term string) error {
+	if term == "" {
+		return errors.New("RDF term cannot be empty")
+	}
+
+	// Check for control characters
+	for _, r := range term {
+		if r < 0x20 || r == 0x7f {
+			return ErrInvalidURICharacters
+		}
+	}
+
+	// For terms that look like URIs, do additional validation
+	if strings.HasPrefix(term, "http://") || strings.HasPrefix(term, "https://") {
+		// If it starts with http:// or https://, validate as a URI
+		// But don't fail if it's not a valid URI, as it might be a literal
+		// We just want to catch obviously malicious ones
+		if strings.ContainsAny(term, "\\#") {
+			return ErrInvalidURICharacters
+		}
+	}
+
+	return nil
+}

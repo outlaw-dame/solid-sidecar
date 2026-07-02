@@ -507,8 +507,46 @@ func (n *NotificationLayer) eventMatchesFilter(event *NotificationEvent, filter 
 	return true
 }
 
+// isValidNotificationEventType validates that an event type is one of the known types
+func isValidNotificationEventType(eventType NotificationEventType) bool {
+	knownTypes := []NotificationEventType{
+		EventTypeCreate,
+		EventTypeUpdate,
+		EventTypeDelete,
+		EventTypeMove,
+		EventTypeCopy,
+		EventTypeAccess,
+		EventTypePolicy,
+		EventTypeContainer,
+		EventTypeCustom,
+	}
+	
+	for _, knownType := range knownTypes {
+		if eventType == knownType {
+			return true
+		}
+	}
+	return false
+}
+
 // PublishEvent publishes an event to the notification layer
 func (n *NotificationLayer) PublishEvent(event NotificationEvent) error {
+	// Validate event data to prevent injection attacks
+	if err := ValidateURI(event.ResourceURI); err != nil {
+		return fmt.Errorf("invalid resource URI: %w", err)
+	}
+	
+	if event.ContainerURI != "" {
+		if err := ValidateContainerURI(event.ContainerURI); err != nil {
+			return fmt.Errorf("invalid container URI: %w", err)
+		}
+	}
+	
+	// Validate event type is one of the known types
+	if !isValidNotificationEventType(event.EventType) {
+		return fmt.Errorf("invalid event type: %s", event.EventType)
+	}
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -550,6 +588,66 @@ func generateEventID() string {
 
 // Subscribe subscribes to notification events
 func (n *NotificationLayer) Subscribe(ctx context.Context, channel string, filter NotificationFilter) (*NotificationSubscriber, error) {
+	// Validate channel name to prevent injection attacks
+	if channel == "" {
+		return nil, errors.New("channel name cannot be empty")
+	}
+	
+	if len(channel) > 256 {
+		return nil, errors.New("channel name exceeds maximum length")
+	}
+	
+	// Validate channel characters
+	for _, r := range channel {
+		if r < 0x20 || r == 0x7f {
+			return nil, errors.New("channel name contains invalid characters")
+		}
+	}
+	
+	// Validate filter event types if present
+	for _, eventType := range filter.EventTypes {
+		if !isValidNotificationEventType(eventType) {
+			return nil, fmt.Errorf("invalid event type in filter: %s", eventType)
+		}
+	}
+	
+	// Validate filter URIs if present
+	for _, uri := range filter.ResourceURIs {
+		if err := ValidateURI(uri); err != nil {
+			return nil, fmt.Errorf("invalid resource URI in filter: %w", err)
+		}
+	}
+	
+	for _, uri := range filter.ContainerURIs {
+		if err := ValidateContainerURI(uri); err != nil {
+			return nil, fmt.Errorf("invalid container URI in filter: %w", err)
+		}
+	}
+	
+	// Validate filter patterns if present
+	for _, pattern := range filter.ResourcePatterns {
+		if len(pattern) > 256 {
+			return nil, errors.New("resource pattern exceeds maximum length")
+		}
+		for _, r := range pattern {
+			if r < 0x20 || r == 0x7f {
+				return nil, errors.New("resource pattern contains invalid characters")
+			}
+		}
+	}
+	
+	// Validate agents if present
+	for _, agent := range filter.Agents {
+		if len(agent) > MaxURILength {
+			return nil, errors.New("agent URI exceeds maximum length")
+		}
+		for _, r := range agent {
+			if r < 0x20 || r == 0x7f {
+				return nil, errors.New("agent URI contains invalid characters")
+			}
+		}
+	}
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 

@@ -289,6 +289,30 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 		config.Logger = slog.Default()
 	}
 
+	// Validate default tenant
+	if err := ValidateTenantID(config.DefaultTenant); err != nil {
+		config.Logger.Error("Invalid default tenant ID", "error", err)
+		// Use a safe default
+		config.DefaultTenant = "default"
+	}
+
+	// Validate default storage backend name
+	if config.DefaultStorage == "" {
+		config.DefaultStorage = "default"
+	}
+	if len(config.DefaultStorage) > 256 {
+		config.Logger.Error("Default storage backend name exceeds maximum length")
+		config.DefaultStorage = "default"
+	}
+
+	// Validate health check interval
+	if config.HealthCheckInterval <= 0 {
+		config.HealthCheckInterval = 60 // Default to 60 seconds
+	}
+	if config.HealthCheckInterval > 86400 {
+		config.HealthCheckInterval = 86400 // Maximum 24 hours
+	}
+
 	layer := &MultiStorageLayer{
 		config:        config,
 		storageRoutes: make(map[string]*StorageRoute),

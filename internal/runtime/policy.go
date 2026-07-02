@@ -356,6 +356,21 @@ func NewPolicyEngineLayer(config PolicyEngineConfig) *PolicyEngineLayer {
 
 // LoadPolicy loads a policy document from content
 func (p *PolicyEngineLayer) LoadPolicy(ctx context.Context, uri string, content []byte, contentType string) (*PolicyDocument, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		return nil, fmt.Errorf("invalid policy URI: %w", err)
+	}
+	
+	// Validate content type to prevent injection
+	if err := ValidateContentType(contentType); err != nil {
+		return nil, fmt.Errorf("invalid content type: %w", err)
+	}
+	
+	// Validate content size to prevent DoS attacks
+	if err := ValidateResourceSize(int64(len(content))); err != nil {
+		return nil, fmt.Errorf("policy content validation failed: %w", err)
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -363,7 +378,7 @@ func (p *PolicyEngineLayer) LoadPolicy(ctx context.Context, uri string, content 
 		return nil, errors.New("policy engine layer is closed")
 	}
 
-	// Check size limits
+	// Check size limits (additional layer-specific limit)
 	if len(content) > p.config.MaxPolicySize {
 		return nil, fmt.Errorf("policy exceeds maximum size: %d > %d", len(content), p.config.MaxPolicySize)
 	}
@@ -586,15 +601,44 @@ func hashContent(content []byte) string {
 
 // Evaluate evaluates access for a given context
 func (p *PolicyEngineLayer) Evaluate(ctx context.Context, evaluationCtx *PolicyEvaluationContext) (*PolicyEvaluationResult, error) {
+	if evaluationCtx == nil {
+		return nil, errors.New("evaluation context cannot be nil")
+	}
+
+	// Validate all URIs and identifiers in the evaluation context
+	if err := ValidateURI(evaluationCtx.RequestURI); err != nil {
+		return nil, fmt.Errorf("invalid request URI: %w", err)
+	}
+	
+	if evaluationCtx.Agent != "" {
+		if err := ValidateWebID(evaluationCtx.Agent); err != nil {
+			return nil, fmt.Errorf("invalid agent WebID: %w", err)
+		}
+	}
+	
+	if evaluationCtx.ClientID != "" {
+		// Client IDs should be URIs
+		if err := ValidateURI(evaluationCtx.ClientID); err != nil {
+			return nil, fmt.Errorf("invalid client ID: %w", err)
+		}
+	}
+	
+	if evaluationCtx.ResourceType != "" {
+		if err := ValidateContentType(evaluationCtx.ResourceType); err != nil {
+			return nil, fmt.Errorf("invalid resource type: %w", err)
+		}
+	}
+	
+	if evaluationCtx.Container != "" {
+		if err := ValidateContainerURI(evaluationCtx.Container); err != nil {
+			return nil, fmt.Errorf("invalid container URI: %w", err)
+		}
+	}
+
 	p.mu.RLock()
 	if p.closed {
 		p.mu.RUnlock()
 		return nil, errors.New("policy engine layer is closed")
-	}
-
-	if evaluationCtx == nil {
-		p.mu.RUnlock()
-		return nil, errors.New("evaluation context cannot be nil")
 	}
 
 	// Generate cache key

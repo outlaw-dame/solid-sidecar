@@ -295,6 +295,21 @@ func NewRDFGraphIndexLayer(config RDFGraphIndexConfig) *RDFGraphIndexLayer {
 
 // Parse parses RDF content and returns a graph
 func (r *RDFGraphIndexLayer) Parse(ctx context.Context, uri string, content []byte, contentType string) (*ParseResult, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+	
+	// Validate content type to prevent injection
+	if err := ValidateContentType(contentType); err != nil {
+		return nil, fmt.Errorf("invalid content type: %w", err)
+	}
+	
+	// Validate content size to prevent DoS attacks
+	if err := ValidateResourceSize(int64(len(content))); err != nil {
+		return nil, fmt.Errorf("content validation failed: %w", err)
+	}
+
 	r.mu.RLock()
 	if r.closed {
 		r.mu.RUnlock()
@@ -565,6 +580,11 @@ func (r *RDFGraphIndexLayer) addToIndexes(graph *RDFGraph) {
 
 // GetGraph retrieves a graph by URI
 func (r *RDFGraphIndexLayer) GetGraph(uri string) (*RDFGraph, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -611,6 +631,11 @@ func (r *RDFGraphIndexLayer) copyGraph(graph *RDFGraph) *RDFGraph {
 
 // QueryBySubject finds graphs containing triples with a specific subject
 func (r *RDFGraphIndexLayer) QueryBySubject(subject string) ([]*RDFGraph, error) {
+	// Validate RDF term to prevent injection attacks
+	if err := ValidateRDFTerm(subject); err != nil {
+		return nil, fmt.Errorf("invalid subject: %w", err)
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -635,6 +660,11 @@ func (r *RDFGraphIndexLayer) QueryBySubject(subject string) ([]*RDFGraph, error)
 
 // QueryByPredicate finds graphs containing triples with a specific predicate
 func (r *RDFGraphIndexLayer) QueryByPredicate(predicate string) ([]*RDFGraph, error) {
+	// Validate RDF term to prevent injection attacks
+	if err := ValidateRDFTerm(predicate); err != nil {
+		return nil, fmt.Errorf("invalid predicate: %w", err)
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -659,6 +689,11 @@ func (r *RDFGraphIndexLayer) QueryByPredicate(predicate string) ([]*RDFGraph, er
 
 // QueryByObject finds graphs containing triples with a specific object
 func (r *RDFGraphIndexLayer) QueryByObject(object string) ([]*RDFGraph, error) {
+	// Validate RDF term to prevent injection attacks
+	if err := ValidateRDFTerm(object); err != nil {
+		return nil, fmt.Errorf("invalid object: %w", err)
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -683,6 +718,11 @@ func (r *RDFGraphIndexLayer) QueryByObject(object string) ([]*RDFGraph, error) {
 
 // QueryByType finds resources of a specific RDF type
 func (r *RDFGraphIndexLayer) QueryByType(rdfType string) ([]string, error) {
+	// Validate RDF type term to prevent injection attacks
+	if err := ValidateRDFTerm(rdfType); err != nil {
+		return nil, fmt.Errorf("invalid RDF type: %w", err)
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

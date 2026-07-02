@@ -377,6 +377,34 @@ func NewCSSMigrationLayer(config CSSMigrationConfig) *CSSMigrationLayer {
 		config.Logger = slog.Default()
 	}
 
+	// Validate configuration
+	if config.ComparisonSampleRate < 0.0 || config.ComparisonSampleRate > 1.0 {
+		config.Logger.Warn("Invalid comparison sample rate, using default", "provided", config.ComparisonSampleRate, "default", 1.0)
+		config.ComparisonSampleRate = 1.0 // Default to 100% comparison
+	}
+
+	if config.DivergenceThreshold < 0.0 || config.DivergenceThreshold > 1.0 {
+		config.Logger.Warn("Invalid divergence threshold, using default", "provided", config.DivergenceThreshold, "default", 0.01)
+		config.DivergenceThreshold = 0.01 // Default to 1%
+	}
+
+	if config.RollbackCooldown < 0 {
+		config.Logger.Warn("Invalid rollback cooldown, using default", "provided", config.RollbackCooldown, "default", 300)
+		config.RollbackCooldown = 300 // Default to 5 minutes
+	}
+	if config.RollbackCooldown > 86400 {
+		config.RollbackCooldown = 86400 // Maximum 24 hours
+	}
+
+	if config.MigrationBatchSize <= 0 {
+		config.Logger.Warn("Invalid migration batch size, using default", "provided", config.MigrationBatchSize, "default", 100)
+		config.MigrationBatchSize = 100 // Default batch size
+	}
+	if config.MigrationBatchSize > 10000 {
+		config.Logger.Warn("Migration batch size too large, capping at maximum", "provided", config.MigrationBatchSize, "maximum", 10000)
+		config.MigrationBatchSize = 10000 // Maximum batch size
+	}
+
 	layer := &CSSMigrationLayer{
 		config:            config,
 		migrationState:    MigrationStateNotStarted,

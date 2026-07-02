@@ -10,9 +10,81 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// RateLimiter implements a token bucket rate limiter for DoS protection
+type RateLimiter struct {
+	// Tokens available
+	tokens float64
+	// Maximum tokens (bucket size)
+	maxTokens float64
+	// Tokens added per second
+	rate float64
+	// Last update time
+	lastUpdate time.Time
+	// Mutex for thread safety
+	mu sync.Mutex
+}
+
+// NewRateLimiter creates a new rate limiter with the specified rate (tokens/second) and bucket size
+func NewRateLimiter(rate float64, bucketSize int) *RateLimiter {
+	return &RateLimiter{
+		tokens:     float64(bucketSize),
+		maxTokens:  float64(bucketSize),
+		rate:       rate,
+		lastUpdate: time.Now(),
+	}
+}
+
+// Allow checks if a request should be allowed based on rate limiting
+func (rl *RateLimiter) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(rl.lastUpdate).Seconds()
+	rl.lastUpdate = now
+
+	// Add tokens based on elapsed time
+	rl.tokens += elapsed * rl.rate
+	if rl.tokens > rl.maxTokens {
+		rl.tokens = rl.maxTokens
+	}
+
+	// Check if we have tokens available
+	if rl.tokens >= 1 {
+		rl.tokens--
+		return true
+	}
+	return false
+}
+
+// Wait blocks until a token is available or timeout occurs
+func (rl *RateLimiter) Wait(timeout time.Duration) bool {
+	start := time.Now()
+	for {
+		if rl.Allow() {
+			return true
+		}
+		if time.Since(start) >= timeout {
+			return false
+		}
+		time.Sleep(time.Millisecond * 10) // Small sleep to prevent busy waiting
+	}
+}
+
+// Global rate limiter for overall request rate limiting
+var globalRateLimiter *RateLimiter
+
+// RequestCounter tracks request counts per IP/agent for DoS protection
+type RequestCounter struct {
+	count     int64
+	lastReset time.Time
+}
 
 // GatewayCompatibilityLayer implements Layer 1: Gateway compatibility layer
 // This layer ensures that the native runtime maintains CSS compatibility
@@ -37,6 +109,15 @@ type GatewayCompatibilityLayer struct {
 	// Logger
 	logger *slog.Logger
 
+	// Rate limiter for DoS protection
+	rateLimiter *RateLimiter
+
+	// Per-IP rate limiting (for global DoS protection)
+	perIPRateLimiters map[string]*RateLimiter
+
+	// Global request counter for monitoring
+	globalRequestCount int64
+
 	// Close channel
 	closeChan chan struct{}
 	closed    bool
@@ -56,6 +137,24 @@ type GatewayCompatibilityConfig struct {
 	// CacheSize is the maximum number of comparison results to cache
 	CacheSize int
 
+	// EnableRateLimiting enables rate limiting for DoS protection
+	EnableRateLimiting bool
+
+	// RequestsPerSecond is the global rate limit (requests per second)
+	RequestsPerSecond float64
+
+	// BurstLimit is the maximum burst size allowed
+	BurstLimit int
+
+	// EnablePerIPRateLimiting enables per-IP rate limiting
+	EnablePerIPRateLimiting bool
+
+	// PerIPRequestsPerSecond is the rate limit per IP
+	PerIPRequestsPerSecond float64
+
+	// MaxRequestsPerMinute is the maximum requests per minute per IP (0 = unlimited)
+	MaxRequestsPerMinute int
+
 	// Logger is the logger for this layer
 	Logger *slog.Logger
 }
@@ -63,11 +162,17 @@ type GatewayCompatibilityConfig struct {
 // DefaultGatewayCompatibilityConfig returns a safe default configuration
 func DefaultGatewayCompatibilityConfig() GatewayCompatibilityConfig {
 	return GatewayCompatibilityConfig{
-		CSSBaseURL:        "http://localhost:3000",
-		EnableComparison:  true,
-		ComparisonTimeout: 5 * time.Second,
-		CacheSize:         1000,
-		Logger:            nil,
+		CSSBaseURL:                "http://localhost:3000",
+		EnableComparison:          true,
+		ComparisonTimeout:         5 * time.Second,
+		CacheSize:                 1000,
+		EnableRateLimiting:        true,                    // Enable rate limiting by default for security
+		RequestsPerSecond:         100.0,                   // Default global rate limit
+		BurstLimit:                200,                      // Allow bursts up to 200 requests
+		EnablePerIPRateLimiting:   true,                    // Enable per-IP rate limiting
+		PerIPRequestsPerSecond:    10.0,                    // 10 requests per second per IP
+		MaxRequestsPerMinute:       600,                     // 600 requests per minute per IP (10 RPS)
+		Logger:                    nil,
 	}
 }
 
@@ -227,6 +332,19 @@ func NewGatewayCompatibilityLayer(config GatewayCompatibilityConfig) (*GatewayCo
 		config.CSSBaseURL = "http://localhost:3000"
 	}
 
+	// Validate CSS base URL
+	if err := ValidateURI(config.CSSBaseURL); err != nil {
+		return nil, fmt.Errorf("invalid CSS base URL: %w", err)
+	}
+
+	// Validate cache size
+	if config.CacheSize <= 0 {
+		config.CacheSize = 1000 // Default cache size
+	}
+	if config.CacheSize > 10000 {
+		return nil, errors.New("cache size exceeds maximum allowed")
+	}
+
 	layer := &GatewayCompatibilityLayer{
 		config:          config,
 		cssBaseURL:      config.CSSBaseURL,
@@ -234,6 +352,24 @@ func NewGatewayCompatibilityLayer(config GatewayCompatibilityConfig) (*GatewayCo
 		logger:          config.Logger,
 		closeChan:       make(chan struct{}),
 		closed:          false,
+		perIPRateLimiters: make(map[string]*RateLimiter),
+	}
+
+	// Initialize global rate limiter if rate limiting is enabled
+	if config.EnableRateLimiting && config.RequestsPerSecond > 0 {
+		layer.rateLimiter = NewRateLimiter(config.RequestsPerSecond, config.BurstLimit)
+		layer.logger.Info("Global rate limiting enabled",
+			"requests_per_second", config.RequestsPerSecond,
+			"burst_limit", config.BurstLimit,
+		)
+	}
+
+	// Initialize per-IP rate limiting if enabled
+	if config.EnablePerIPRateLimiting && config.PerIPRequestsPerSecond > 0 {
+		layer.logger.Info("Per-IP rate limiting enabled",
+			"per_ip_requests_per_second", config.PerIPRequestsPerSecond,
+			"max_requests_per_minute", config.MaxRequestsPerMinute,
+		)
 	}
 
 	// Create CSS client with timeout
@@ -280,6 +416,97 @@ func (g *GatewayCompatibilityLayer) IsClosed() bool {
 	return g.closed
 }
 
+// AllowRequest checks if a request should be allowed based on rate limiting
+// Returns true if allowed, false if rate limited
+func (g *GatewayCompatibilityLayer) AllowRequest(clientIP string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.closed {
+		return false
+	}
+
+	// Check global rate limiting first
+	if g.rateLimiter != nil && !g.rateLimiter.Allow() {
+		g.logger.Warn("Global rate limit exceeded")
+		atomic.AddInt64(&g.globalRequestCount, 1)
+		return false
+	}
+
+	// Check per-IP rate limiting
+	if g.config.EnablePerIPRateLimiting && clientIP != "" {
+		ipLimiter := g.getIPRateLimiter(clientIP)
+		if ipLimiter != nil && !ipLimiter.Allow() {
+			g.logger.Warn("Per-IP rate limit exceeded", "ip", clientIP)
+			return false
+		}
+	}
+
+	// Increment global request counter
+	atomic.AddInt64(&g.globalRequestCount, 1)
+	return true
+}
+
+// getIPRateLimiter gets or creates a rate limiter for a specific IP
+func (g *GatewayCompatibilityLayer) getIPRateLimiter(ip string) *RateLimiter {
+	g.mu.RLock()
+	if limiter, exists := g.perIPRateLimiters[ip]; exists {
+		g.mu.RUnlock()
+		return limiter
+	}
+	g.mu.RUnlock()
+
+	// Create new rate limiter for this IP
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Double-check in case another goroutine created it
+	if limiter, exists := g.perIPRateLimiters[ip]; exists {
+		return limiter
+	}
+
+	limiter := NewRateLimiter(g.config.PerIPRequestsPerSecond, g.config.BurstLimit)
+	g.perIPRateLimiters[ip] = limiter
+
+	// Clean up old rate limiters periodically to prevent memory leaks
+	go g.cleanupOldRateLimiters()
+
+	return limiter
+}
+
+// cleanupOldRateLimiters removes old rate limiters to prevent memory leaks
+func (g *GatewayCompatibilityLayer) cleanupOldRateLimiters() {
+	// Clean up every 5 minutes
+	time.Sleep(5 * time.Minute)
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Remove rate limiters that haven't been used recently
+	// We consider an IP inactive if it hasn't been seen in 1 hour
+	for ip, limiter := range g.perIPRateLimiters {
+		// Check if the limiter's last update was more than 1 hour ago
+		limiter.mu.Lock()
+		lastUpdate := limiter.lastUpdate
+		limiter.mu.Unlock()
+
+		if time.Since(lastUpdate) > time.Hour {
+			delete(g.perIPRateLimiters, ip)
+			g.logger.Debug("Cleaned up rate limiter for inactive IP", "ip", ip)
+		}
+	}
+}
+
+// GetRequestCount returns the current global request count
+func (g *GatewayCompatibilityLayer) GetRequestCount() int64 {
+	return atomic.LoadInt64(&g.globalRequestCount)
+}
+
+// ResetRequestCount resets the global request counter (useful for testing/monitoring)
+func (g *GatewayCompatibilityLayer) ResetRequestCount() {
+	atomic.StoreInt64(&g.globalRequestCount, 0)
+}
+
 // CompareWithCSS compares a native response with what CSS would return
 // This is the core compatibility check
 func (g *GatewayCompatibilityLayer) CompareWithCSS(
@@ -293,6 +520,34 @@ func (g *GatewayCompatibilityLayer) CompareWithCSS(
 		return nil, errors.New("gateway compatibility layer is closed")
 	}
 	g.mu.RUnlock()
+
+	// Validate request to prevent injection attacks
+	if req == nil || req.URL == nil {
+		return nil, errors.New("invalid request: nil request or URL")
+	}
+
+	// Validate request URI
+	if err := ValidateURI(req.URL.String()); err != nil {
+		return nil, fmt.Errorf("invalid request URI: %w", err)
+	}
+
+	// Validate request method
+	if req.Method == "" {
+		return nil, errors.New("invalid request: empty method")
+	}
+
+	// Validate request method characters
+	for _, r := range req.Method {
+		if r < 0x20 || r == 0x7f {
+			return nil, errors.New("invalid request: method contains control characters")
+		}
+	}
+
+	// Check rate limiting (DoS protection)
+	clientIP := getClientIP(req)
+	if !g.AllowRequest(clientIP) {
+		return nil, errors.New("rate limit exceeded - request rejected for DoS protection")
+	}
 
 	if !g.config.EnableComparison {
 		// If comparison is disabled, assume it matches
@@ -530,6 +785,34 @@ func (g *GatewayCompatibilityLayer) compareHeaders(
 			}
 		}
 	}
+}
+
+// getClientIP extracts the client IP from a request, checking common headers
+func getClientIP(req *http.Request) string {
+	// Check X-Forwarded-For header (common for proxies/load balancers)
+	if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can contain multiple IPs, take the first one
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// Check X-Real-IP header (used by nginx)
+	if xri := req.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	if req.RemoteAddr != "" {
+		// RemoteAddr is in the form "IP:port", so we need to extract just the IP
+		if strings.Contains(req.RemoteAddr, ":") {
+			return strings.Split(req.RemoteAddr, ":")[0]
+		}
+		return req.RemoteAddr
+	}
+
+	return ""
 }
 
 // getCachedComparison retrieves a cached comparison result
