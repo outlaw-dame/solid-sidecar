@@ -20,10 +20,11 @@ import (
 )
 
 type Server struct {
-	cfg          config.Config
-	logger       *slog.Logger
-	http         *http.Server
-	authzMetrics *authz.ShadowMetrics
+	cfg             config.Config
+	logger          *slog.Logger
+	http            *http.Server
+	authzMetrics    *authz.ShadowMetrics
+	enforcementGate *authz.EnforcementGate
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -66,6 +67,21 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	authCache := authn.NewReplayCache()
 	authzMetrics := authz.NewShadowMetrics()
 
+	// Create enforcement gate with startup guardrails
+	// Enforcement is disabled by default (AllowEnforcement: false)
+	enforcementGate, err := authz.NewEnforcementGate(authz.EnforcementGateOptions{
+		InitialMode:            authz.EnforcementModeShadow,
+		AllowEnforcement:       false, // Startup guardrail: must be explicitly enabled
+		EmergencyBypassEnabled: true,
+		MaxEnforcementDuration: 0, // No auto-revert by default
+		MethodAllowlist:        []string{"GET", "HEAD"},
+		AuditLogger:            logger,
+		Logger:                 logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create enforcement gate: %w", err)
+	}
+
 	// Create compression middleware config from the main config
 	// Initialize metrics for compression observation
 	compressionMetrics := compression.NewMetrics()
@@ -105,6 +121,9 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		}, inner)
 	}
 
+	// Add enforcement gate middleware for authorization enforcement control
+	inner = authz.EnforcementGateMiddleware(enforcementGate, inner)
+
 	// Add compression middleware if enabled
 	if cfg.Compression.Responses.Enabled || cfg.Compression.Requests.Enabled {
 		inner = compression.Middleware(compressionConfig)(inner)
@@ -130,7 +149,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		IdleTimeout:       cfg.Server.IdleTimeout,
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
-	return &Server{cfg: cfg, logger: logger, http: httpServer, authzMetrics: authzMetrics}, nil
+	return &Server{cfg: cfg, logger: logger, http: httpServer, authzMetrics: authzMetrics, enforcementGate: enforcementGate}, nil
 }
 
 func newAuthzEvaluator(cfg config.AuthzConfig) (authz.Evaluator, error) {
@@ -203,4 +222,9 @@ func (s *Server) ShutdownDelayForTests() time.Duration {
 
 func (s *Server) AuthzMetricsSnapshotForTests() authz.ShadowMetricsSnapshot {
 	return s.authzMetrics.Snapshot()
+}
+
+// EnforcementGateForTests exposes the enforcement gate for testing
+func (s *Server) EnforcementGateForTests() *authz.EnforcementGate {
+	return s.enforcementGate
 }
