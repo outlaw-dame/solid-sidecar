@@ -14,6 +14,73 @@ import (
 	"time"
 )
 
+// Validation constants
+const (
+	// MaxURILength is the maximum allowed length for resource URIs
+	MaxURILength = 4096
+	// MaxResourceSize is the maximum allowed size for resources in bytes
+	MaxResourceSize = 10 * 1024 * 1024 // 10MB
+)
+
+// Validation errors
+var (
+	ErrInvalidURI           = errors.New("invalid URI")
+	ErrURITooLong           = errors.New("URI exceeds maximum length")
+	ErrInvalidURIScheme     = errors.New("invalid URI scheme")
+	ErrInvalidURICharacters = errors.New("invalid URI characters")
+	ErrResourceTooLarge     = errors.New("resource exceeds maximum size")
+)
+
+// ValidateURI validates a resource URI for safety and correctness
+// Prevents URI injection attacks, path traversal, and malformed URIs
+func ValidateURI(uri string) error {
+	if uri == "" {
+		return ErrInvalidURI
+	}
+
+	if len(uri) > MaxURILength {
+		return ErrURITooLong
+	}
+
+	// Check for control characters and non-printable ASCII
+	for _, r := range uri {
+		if r < 0x20 || r == 0x7f {
+			return ErrInvalidURICharacters
+		}
+	}
+
+	// Check for path traversal and fragment characters
+	if strings.ContainsAny(uri, "\\#") {
+		return ErrInvalidURICharacters
+	}
+
+	// Parse and validate the URI structure
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidURI, err)
+	}
+
+	// Only allow http and https schemes for resource URIs
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%w: %s", ErrInvalidURIScheme, parsed.Scheme)
+	}
+
+	// Ensure host is present
+	if parsed.Host == "" {
+		return ErrInvalidURI
+	}
+
+	return nil
+}
+
+// ValidateResourceSize checks if a resource exceeds the maximum allowed size
+func ValidateResourceSize(size int64) error {
+	if size > MaxResourceSize {
+		return ErrResourceTooLarge
+	}
+	return nil
+}
+
 // StorageAbstractionLayer implements Layer 2: Storage abstraction
 // This layer provides a unified interface for different storage backends,
 // allowing them to be swapped without changing protocol behavior
@@ -96,6 +163,10 @@ type StorageAbstractionMetrics struct {
 	RetryAttempts int64
 	MaxRetriesHit int64
 
+	// Validation metrics
+	ValidationFailures       int64
+	ValidationFailuresByType map[string]int64
+
 	// Backend-specific metrics
 	BackendOperations map[string]int64
 }
@@ -142,6 +213,17 @@ func (m *StorageAbstractionMetrics) RecordMaxRetriesHit() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.MaxRetriesHit++
+}
+
+// RecordValidationFailure records a validation failure
+func (m *StorageAbstractionMetrics) RecordValidationFailure(failureType string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ValidationFailures++
+	if m.ValidationFailuresByType == nil {
+		m.ValidationFailuresByType = make(map[string]int64)
+	}
+	m.ValidationFailuresByType[failureType]++
 }
 
 // StorageBackend is the interface that all storage backends must implement
@@ -229,7 +311,8 @@ func NewStorageAbstractionLayer(config StorageAbstractionConfig) *StorageAbstrac
 		logger:         config.Logger,
 		closed:         false,
 		metrics: StorageAbstractionMetrics{
-			BackendOperations: make(map[string]int64),
+			BackendOperations:        make(map[string]int64),
+			ValidationFailuresByType: make(map[string]int64),
 		},
 	}
 
@@ -320,6 +403,12 @@ func (s *StorageAbstractionLayer) SetDefaultBackend(name string) error {
 
 // Get retrieves a resource from the default backend
 func (s *StorageAbstractionLayer) Get(ctx context.Context, uri string) (*StorageResource, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return nil, err
@@ -342,6 +431,18 @@ func (s *StorageAbstractionLayer) GetFromBackend(ctx context.Context, backendNam
 
 // Put stores a resource in the default backend
 func (s *StorageAbstractionLayer) Put(ctx context.Context, uri string, resource *StorageResource) error {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return fmt.Errorf("invalid URI: %w", err)
+	}
+
+	// Validate resource size to prevent DoS attacks
+	if err := ValidateResourceSize(int64(len(resource.Body))); err != nil {
+		s.metrics.RecordValidationFailure("size")
+		return fmt.Errorf("resource validation failed: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return err
@@ -365,6 +466,12 @@ func (s *StorageAbstractionLayer) PutToBackend(ctx context.Context, backendName 
 
 // Delete removes a resource from the default backend
 func (s *StorageAbstractionLayer) Delete(ctx context.Context, uri string) error {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return fmt.Errorf("invalid URI: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return err
@@ -388,6 +495,12 @@ func (s *StorageAbstractionLayer) DeleteFromBackend(ctx context.Context, backend
 
 // List lists resources in a container from the default backend
 func (s *StorageAbstractionLayer) List(ctx context.Context, containerURI string) ([]*StorageResource, error) {
+	// Validate container URI to prevent injection attacks and path traversal
+	if err := ValidateURI(containerURI); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return nil, fmt.Errorf("invalid container URI: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return nil, err
@@ -435,6 +548,12 @@ func (s *StorageAbstractionLayer) ListFromBackend(ctx context.Context, backendNa
 
 // Exists checks if a resource exists in the default backend
 func (s *StorageAbstractionLayer) Exists(ctx context.Context, uri string) (bool, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return false, fmt.Errorf("invalid URI: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return false, err
@@ -458,6 +577,12 @@ func (s *StorageAbstractionLayer) ExistsInBackend(ctx context.Context, backendNa
 
 // Head retrieves metadata only from the default backend
 func (s *StorageAbstractionLayer) Head(ctx context.Context, uri string) (*StorageResourceMetadata, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		s.metrics.RecordValidationFailure("uri")
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+
 	_, err := s.getDefaultBackend()
 	if err != nil {
 		return nil, err

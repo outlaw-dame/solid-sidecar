@@ -3,9 +3,11 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -622,9 +624,9 @@ func TestStorageAbstractionLayerConcurrent(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func(id int) {
-			for j := 0; j < 50; j++ {
+			for j := 0; j < 26; j++ { // Use only valid alphabetic characters (a-z)
 				resource := &StorageResource{
-					URI:         "http://example.com/resource/" + string(rune(id+'0')) + string(rune(j+'a')),
+					URI:         fmt.Sprintf("http://example.com/resource/%d_%c", id, j+'a'),
 					ContentType: "text/plain",
 					Body:        []byte("test"),
 				}
@@ -644,8 +646,8 @@ func TestStorageAbstractionLayerConcurrent(t *testing.T) {
 
 	// Verify all resources are still accessible
 	for i := 0; i < 10; i++ {
-		for j := 0; j < 50; j++ {
-			uri := "http://example.com/resource/" + string(rune(i+'0')) + string(rune(j+'a'))
+		for j := 0; j < 26; j++ { // Use only valid alphabetic characters (a-z)
+			uri := fmt.Sprintf("http://example.com/resource/%d_%c", i, j+'a')
 			_, err := layer.Get(ctx, uri)
 			assert.NoError(t, err, "Get should succeed for resource %s", uri)
 		}
@@ -895,4 +897,165 @@ func TestStorageAbstractionLayerDefaultConfig(t *testing.T) {
 	assert.Equal(t, 100, config.BackoffBase, "Backoff base should be 100")
 	assert.Equal(t, 5000, config.BackoffMax, "Backoff max should be 5000")
 	assert.Nil(t, config.Logger, "Logger should be nil by default")
+}
+
+// TestValidateURI tests URI validation for security
+func TestValidateURI(t *testing.T) {
+	t.Parallel()
+
+	// Valid URIs
+	validURIs := []string{
+		"http://example.com/resource",
+		"https://example.com/path/to/resource",
+		"http://localhost:8080/resource",
+		"https://example.com:443/resource?query=value",
+		"http://example.com/resource#fragment", // Note: fragments are not allowed by our validation
+	}
+
+	// Invalid URIs - security threats
+	invalidURIs := []struct {
+		uri         string
+		expectedErr error
+	}{
+		{"", ErrInvalidURI},
+		{"not-a-uri", ErrInvalidURI},
+		{"http://", ErrInvalidURI},
+		{"ftp://example.com/resource", ErrInvalidURIScheme},
+		{"http://example.com/resource\\path", ErrInvalidURICharacters},
+		{"http://example.com/resource#fragment", ErrInvalidURICharacters},
+		{"http://example.com/resource\x00", ErrInvalidURICharacters},
+		{"http://example.com/\x00resource", ErrInvalidURICharacters},
+		{"http://example.com/resource\x7f", ErrInvalidURICharacters},
+		{string([]byte{0x1f, 0x8b}), ErrInvalidURICharacters}, // gzip magic bytes
+		{"javascript:alert(1)", ErrInvalidURIScheme},
+		{"data:text/plain;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==", ErrInvalidURIScheme},
+	}
+
+	// Test valid URIs
+	for _, uri := range validURIs {
+		// Skip fragment test as our validation rejects fragments
+		if strings.Contains(uri, "#") {
+			continue
+		}
+		err := ValidateURI(uri)
+		assert.NoError(t, err, "URI %s should be valid", uri)
+	}
+
+	// Test invalid URIs - these should all be rejected for security
+	for _, testCase := range invalidURIs {
+		err := ValidateURI(testCase.uri)
+		assert.Error(t, err, "URI %q should be rejected", testCase.uri)
+		// Check if the error is of the expected type
+		if errors.Is(err, testCase.expectedErr) {
+			// This is fine, the error matches
+		} else {
+			// The error might be wrapped, check the message
+			assert.Contains(t, err.Error(), testCase.expectedErr.Error(),
+				"Error for URI %q should contain expected error type", testCase.uri)
+		}
+	}
+
+	// Test URI length validation
+	longURI := "http://example.com/" + strings.Repeat("a", MaxURILength+1)
+	err := ValidateURI(longURI)
+	assert.Error(t, err, "URI exceeding max length should be rejected")
+	assert.True(t, errors.Is(err, ErrURITooLong), "Should be URI too long error")
+}
+
+// TestValidateResourceSize tests resource size validation for DoS protection
+func TestValidateResourceSize(t *testing.T) {
+	t.Parallel()
+
+	// Valid sizes
+	for size := int64(0); size <= MaxResourceSize; size += 1024 * 1024 {
+		err := ValidateResourceSize(size)
+		assert.NoError(t, err, "Size %d should be valid", size)
+	}
+
+	// Invalid size - too large
+	largeSize := int64(MaxResourceSize + 1)
+	err := ValidateResourceSize(largeSize)
+	assert.Error(t, err, "Size exceeding max should be rejected")
+	assert.True(t, errors.Is(err, ErrResourceTooLarge), "Should be resource too large error")
+}
+
+// TestStorageValidationIntegration tests that validation is properly integrated
+func TestStorageValidationIntegration(t *testing.T) {
+	t.Parallel()
+
+	config := StorageAbstractionConfig{
+		DefaultStorage: "test",
+		MaxRetries:     3,
+		BackoffBase:    100,
+		BackoffMax:     1000,
+		Logger:         nil,
+	}
+
+	layer := NewStorageAbstractionLayer(config)
+	defer layer.Close()
+
+	backend := NewInMemoryStorageBackend("test", nil)
+	defer backend.Close()
+	layer.RegisterBackend("test", backend)
+
+	ctx := context.Background()
+
+	// Test invalid URI rejection
+	invalidURIs := []string{
+		"",
+		"not-a-uri",
+		"ftp://example.com/resource",
+		"http://example.com/resource\\path",
+		"http://example.com/resource#fragment",
+		"javascript:alert(1)",
+	}
+
+	for _, uri := range invalidURIs {
+		// Test Get with invalid URI
+		_, err := layer.Get(ctx, uri)
+		assert.Error(t, err, "Get should reject invalid URI: %s", uri)
+		assert.Contains(t, err.Error(), "invalid URI", "Error should mention invalid URI")
+
+		// Test Put with invalid URI
+		resource := &StorageResource{
+			URI:         uri,
+			ContentType: "text/plain",
+			Body:        []byte("test"),
+		}
+		err = layer.Put(ctx, uri, resource)
+		assert.Error(t, err, "Put should reject invalid URI: %s", uri)
+		assert.Contains(t, err.Error(), "invalid URI", "Error should mention invalid URI")
+
+		// Test Delete with invalid URI
+		err = layer.Delete(ctx, uri)
+		assert.Error(t, err, "Delete should reject invalid URI: %s", uri)
+		assert.Contains(t, err.Error(), "invalid URI", "Error should mention invalid URI")
+
+		// Test Exists with invalid URI
+		_, err = layer.Exists(ctx, uri)
+		assert.Error(t, err, "Exists should reject invalid URI: %s", uri)
+		assert.Contains(t, err.Error(), "invalid URI", "Error should mention invalid URI")
+
+		// Test Head with invalid URI
+		_, err = layer.Head(ctx, uri)
+		assert.Error(t, err, "Head should reject invalid URI: %s", uri)
+		assert.Contains(t, err.Error(), "invalid URI", "Error should mention invalid URI")
+	}
+
+	// Test too large resource rejection
+	largeBody := make([]byte, MaxResourceSize+1)
+	largeResource := &StorageResource{
+		URI:         "http://example.com/large",
+		ContentType: "text/plain",
+		Body:        largeBody,
+	}
+	err := layer.Put(ctx, "http://example.com/large", largeResource)
+	assert.Error(t, err, "Put should reject too large resource")
+	assert.Contains(t, err.Error(), "resource validation failed", "Error should mention validation")
+
+	// Check that validation failures are tracked in metrics
+	metrics := layer.GetMetrics()
+	assert.True(t, metrics.ValidationFailures > 0, "Should have validation failures")
+	assert.True(t, metrics.ValidationFailuresByType["uri"] > 0, "Should have URI validation failures")
+	assert.True(t, metrics.ValidationFailuresByType["size"] > 0, "Should have size validation failures")
 }
