@@ -21,19 +21,19 @@ import (
 
 // Errors for the storage package
 var (
-	ErrNotFound             = errors.New("resource not found")
-	ErrAlreadyExists        = errors.New("resource already exists")
-	ErrPreconditionFailed   = errors.New("precondition failed")
-	ErrConflict             = errors.New("conflict")
-	ErrQuotaExceeded        = errors.New("quota exceeded")
-	ErrStorageClosed        = errors.New("storage is closed")
-	ErrInvalidURI           = errors.New("invalid URI")
-	ErrInvalidContentType   = errors.New("invalid content type")
-	ErrInvalidETag          = errors.New("invalid ETag")
-	ErrBackendUnavailable   = errors.New("backend unavailable")
-	ErrIntegrityViolation   = errors.New("integrity violation")
-	ErrMigrationRequired    = errors.New("migration required")
-	ErrTombstoneExists      = errors.New("tombstone exists")
+	ErrNotFound           = errors.New("resource not found")
+	ErrAlreadyExists      = errors.New("resource already exists")
+	ErrPreconditionFailed = errors.New("precondition failed")
+	ErrConflict           = errors.New("conflict")
+	ErrQuotaExceeded      = errors.New("quota exceeded")
+	ErrStorageClosed      = errors.New("storage is closed")
+	ErrInvalidURI         = errors.New("invalid URI")
+	ErrInvalidContentType = errors.New("invalid content type")
+	ErrInvalidETag        = errors.New("invalid ETag")
+	ErrBackendUnavailable = errors.New("backend unavailable")
+	ErrIntegrityViolation = errors.New("integrity violation")
+	ErrMigrationRequired  = errors.New("migration required")
+	ErrTombstoneExists    = errors.New("tombstone exists")
 )
 
 // ResourceType defines the type of a resource
@@ -41,11 +41,11 @@ type ResourceType string
 
 const (
 	ResourceTypeUnknown   ResourceType = "Unknown"
-	ResourceTypeResource ResourceType = "Resource"
+	ResourceTypeResource  ResourceType = "Resource"
 	ResourceTypeContainer ResourceType = "Container"
 	ResourceTypeACL       ResourceType = "ACL"
 	ResourceTypeACP       ResourceType = "ACP"
-	ResourceTypeMetadata ResourceType = "Metadata"
+	ResourceTypeMetadata  ResourceType = "Metadata"
 	ResourceTypeBlob      ResourceType = "Blob"
 )
 
@@ -327,11 +327,11 @@ type IntegrityIssue struct {
 type IntegrityIssueType string
 
 const (
-	IssueTypeMetadataBodyMismatch IntegrityIssueType = "metadata_body_mismatch"
-	IssueTypeMissingDigest       IntegrityIssueType = "missing_digest"
-	IssueTypeInvalidDigest       IntegrityIssueType = "invalid_digest"
-	IssueTypeOrphanedBlob        IntegrityIssueType = "orphaned_blob"
-	IssueTypeCorruptedMetadata   IntegrityIssueType = "corrupted_metadata"
+	IssueTypeMetadataBodyMismatch  IntegrityIssueType = "metadata_body_mismatch"
+	IssueTypeMissingDigest         IntegrityIssueType = "missing_digest"
+	IssueTypeInvalidDigest         IntegrityIssueType = "invalid_digest"
+	IssueTypeOrphanedBlob          IntegrityIssueType = "orphaned_blob"
+	IssueTypeCorruptedMetadata     IntegrityIssueType = "corrupted_metadata"
 	IssueTypeLayoutVersionMismatch IntegrityIssueType = "layout_version_mismatch"
 )
 
@@ -339,9 +339,9 @@ const (
 type IntegrityIssueSeverity string
 
 const (
-	SeverityLow    IntegrityIssueSeverity = "low"
-	SeverityMedium IntegrityIssueSeverity = "medium"
-	SeverityHigh   IntegrityIssueSeverity = "high"
+	SeverityLow      IntegrityIssueSeverity = "low"
+	SeverityMedium   IntegrityIssueSeverity = "medium"
+	SeverityHigh     IntegrityIssueSeverity = "high"
 	SeverityCritical IntegrityIssueSeverity = "critical"
 )
 
@@ -371,51 +371,51 @@ type StorageEngine interface {
 	Put(ctx context.Context, resource *WriteResource) error
 	Delete(ctx context.Context, uri string) error
 	DeleteWithTombstone(ctx context.Context, uri string, tombstone *Tombstone) error
-	
+
 	// Container operations
 	List(ctx context.Context, containerURI string) ([]*Metadata, error)
 	ListWithPrefix(ctx context.Context, containerURI, prefix string) ([]*Metadata, error)
-	
+
 	// Existence checks
 	Exists(ctx context.Context, uri string) (bool, error)
 	ExistsWithTombstone(ctx context.Context, uri string) (bool, bool, error) // (exists, isTombstoned, error)
-	
+
 	// Blob operations (content-addressed)
 	StoreBlob(ctx context.Context, data []byte) (ContentAddress, error)
 	GetBlob(ctx context.Context, address ContentAddress) ([]byte, error)
 	DeleteBlob(ctx context.Context, address ContentAddress) error
 	BlobExists(ctx context.Context, address ContentAddress) (bool, error)
-	
+
 	// Transaction operations
 	BeginTransaction(ctx context.Context) (Transaction, error)
-	
+
 	// Quota operations
 	GetQuota(ctx context.Context, storageRoot string) (*QuotaInfo, error)
 	GetTenantQuota(ctx context.Context, tenant string) (*QuotaInfo, error)
 	CheckQuota(ctx context.Context, storageRoot string, additionalBytes int64) error
-	
+
 	// Tombstone operations
 	GetTombstone(ctx context.Context, uri string) (*Tombstone, error)
 	ListTombstones(ctx context.Context, storageRoot string) ([]*Tombstone, error)
 	RestoreFromTombstone(ctx context.Context, uri string, restoreToken string) error
-	
+
 	// Layout version operations
 	GetLayoutVersion(ctx context.Context) (StorageLayoutVersion, error)
 	SetLayoutVersion(ctx context.Context, version StorageLayoutVersion) error
 	MigrateLayout(ctx context.Context, targetVersion StorageLayoutVersion) error
-	
+
 	// Backup/restore operations
 	Backup() BackupRestore
-	
+
 	// Integrity operations
 	Integrity() IntegrityScanner
-	
+
 	// Health check
 	HealthCheck(ctx context.Context) error
-	
+
 	// Close
 	Close() error
-	
+
 	// RegisterBackend registers a new storage backend
 	RegisterBackend(name string, backend StorageBackend) error
 }
@@ -424,16 +424,16 @@ type StorageEngine interface {
 type MetadataStore interface {
 	// GetMetadata retrieves metadata for a resource
 	GetMetadata(ctx context.Context, uri string) (*Metadata, error)
-	
+
 	// StoreMetadata stores metadata for a resource
 	StoreMetadata(ctx context.Context, uri string, metadata *Metadata) error
-	
+
 	// DeleteMetadata deletes metadata for a resource
 	DeleteMetadata(ctx context.Context, uri string) error
-	
+
 	// ListMetadata lists metadata for resources in a container
 	ListMetadata(ctx context.Context, containerURI string) ([]*Metadata, error)
-	
+
 	// Exists checks if metadata exists for a resource
 	Exists(ctx context.Context, uri string) (bool, error)
 }
@@ -442,16 +442,16 @@ type MetadataStore interface {
 type BlobStore interface {
 	// StoreBlob stores a content-addressed blob and returns its address
 	StoreBlob(ctx context.Context, data []byte) (ContentAddress, error)
-	
+
 	// GetBlob retrieves a content-addressed blob
 	GetBlob(ctx context.Context, address ContentAddress) ([]byte, error)
-	
+
 	// DeleteBlob deletes a content-addressed blob
 	DeleteBlob(ctx context.Context, address ContentAddress) error
-	
+
 	// BlobExists checks if a blob exists
 	BlobExists(ctx context.Context, address ContentAddress) (bool, error)
-	
+
 	// ListBlobs lists all blobs (for migration/integrity purposes)
 	ListBlobs(ctx context.Context) ([]ContentAddress, error)
 }
@@ -460,16 +460,16 @@ type BlobStore interface {
 type TombstoneStore interface {
 	// GetTombstone retrieves a tombstone for a resource
 	GetTombstone(ctx context.Context, uri string) (*Tombstone, error)
-	
+
 	// StoreTombstone stores a tombstone for a resource
 	StoreTombstone(ctx context.Context, tombstone *Tombstone) error
-	
+
 	// DeleteTombstone deletes a tombstone for a resource
 	DeleteTombstone(ctx context.Context, uri string) error
-	
+
 	// ListTombstones lists tombstones for a storage root
 	ListTombstones(ctx context.Context, storageRoot string) ([]*Tombstone, error)
-	
+
 	// TombstoneExists checks if a tombstone exists for a resource
 	TombstoneExists(ctx context.Context, uri string) (bool, error)
 }
@@ -478,19 +478,19 @@ type TombstoneStore interface {
 type QuotaManager interface {
 	// GetQuota retrieves quota information for a storage root or tenant
 	GetQuota(ctx context.Context, storageRoot string) (*QuotaInfo, error)
-	
+
 	// GetTenantQuota retrieves quota information for a tenant
 	GetTenantQuota(ctx context.Context, tenant string) (*QuotaInfo, error)
-	
+
 	// CheckQuota checks if a write would exceed quota
 	CheckQuota(ctx context.Context, storageRoot string, additionalBytes int64) error
-	
+
 	// RecordUsage records resource usage for quota tracking
 	RecordUsage(ctx context.Context, storageRoot string, bytesUsed int64) error
-	
+
 	// ReleaseUsage releases resource usage for quota tracking
 	ReleaseUsage(ctx context.Context, storageRoot string, bytesFreed int64) error
-	
+
 	// SetQuota sets quota limits for a storage root or tenant
 	SetQuota(ctx context.Context, storageRoot string, quota *QuotaInfo) error
 }

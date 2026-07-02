@@ -20,7 +20,7 @@ type backupRestoreImpl struct {
 func (b *backupRestoreImpl) Backup(ctx context.Context, writer io.Writer) error {
 	// This is a simple implementation that backs up metadata and blobs
 	// In a production implementation, this would be more comprehensive
-	
+
 	// For now, return an error indicating this is not implemented
 	return fmt.Errorf("backup not implemented")
 }

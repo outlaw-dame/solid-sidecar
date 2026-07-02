@@ -20,12 +20,12 @@ func (s *integrityScannerImpl) Scan(ctx context.Context) (*IntegrityReport, erro
 	// For now, return an empty report
 	// In a production implementation, this would scan all resources
 	// and verify metadata/body consistency
-	
+
 	return &IntegrityReport{
 		ScannedAt:           time.Now(),
 		TotalResources:      0,
 		ResourcesWithIssues: 0,
-		ResourceReports:      []ResourceIntegrityReport{},
+		ResourceReports:     []ResourceIntegrityReport{},
 	}, nil
 }
 
@@ -51,7 +51,7 @@ func (s *integrityScannerImpl) ScanResource(ctx context.Context, uri string) (*R
 
 	// Check for basic integrity issues
 	var issues []IntegrityIssue
-	
+
 	// Check if digest is present but doesn't match computed digest
 	if resource.Metadata.Digest != "" {
 		computedDigest := computeDigest(resource.Body)
@@ -94,10 +94,10 @@ func (s *integrityScannerImpl) ScanResource(ctx context.Context, uri string) (*R
 func (s *integrityScannerImpl) Repair(ctx context.Context, report *IntegrityReport) (*IntegrityRepairReport, error) {
 	// For now, return an empty report
 	return &IntegrityRepairReport{
-		RepairedAt:     time.Now(),
-		TotalIssues:    report.ResourcesWithIssues,
-		IssuesRepaired: 0,
+		RepairedAt:       time.Now(),
+		TotalIssues:      report.ResourcesWithIssues,
+		IssuesRepaired:   0,
 		IssuesUnrepaired: report.ResourcesWithIssues,
-		Errors:         []error{},
+		Errors:           []error{},
 	}, nil
 }

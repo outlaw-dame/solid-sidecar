@@ -49,7 +49,7 @@ type storageEngineImpl struct {
 	logger *slog.Logger
 
 	// Close state
-	closed bool
+	closed    bool
 	closeChan chan struct{}
 }
 
@@ -91,23 +91,23 @@ type EngineConfig struct {
 
 // QuotaConfig holds quota configuration for a storage root or tenant
 type QuotaConfig struct {
-	MaxBytes      int64
-	MaxResources  int64
+	MaxBytes     int64
+	MaxResources int64
 }
 
 // DefaultEngineConfig returns a safe default configuration
 func DefaultEngineConfig() EngineConfig {
 	return EngineConfig{
 		DefaultBackend:          "filesystem",
-		BackendConfigs:         make(map[string]map[string]string),
-		EnableBlobStorage:      true,
-		BlobStorageBackend:     "",
-		EnableQuotaManagement:  false,
-		QuotaConfigs:           make(map[string]QuotaConfig),
-		EnableTombstones:       true,
+		BackendConfigs:          make(map[string]map[string]string),
+		EnableBlobStorage:       true,
+		BlobStorageBackend:      "",
+		EnableQuotaManagement:   false,
+		QuotaConfigs:            make(map[string]QuotaConfig),
+		EnableTombstones:        true,
 		EnableIntegrityScanning: false,
 		IntegrityScanInterval:   0,
-		EnableBackupRestore:    true,
+		EnableBackupRestore:     true,
 		Logger:                  nil,
 	}
 }
@@ -138,17 +138,17 @@ type EngineMetrics struct {
 	MetadataErrors int64
 
 	// Blob operations
-	BlobStoreRequests  int64
+	BlobStoreRequests    int64
 	BlobRetrieveRequests int64
 
 	// Transaction operations
-	TransactionsStarted int64
-	TransactionsCommitted int64
+	TransactionsStarted    int64
+	TransactionsCommitted  int64
 	TransactionsRolledBack int64
 
 	// Quota operations
-	QuotaChecks    int64
-	QuotaExceeded  int64
+	QuotaChecks   int64
+	QuotaExceeded int64
 
 	// Tombstone operations
 	TombstoneCreations int64
@@ -367,7 +367,7 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 		RootPath: "./storage",
 		Logger:   s.logger.With("backend", "filesystem"),
 	})
-	
+
 	if err := s.RegisterBackend("filesystem", fsBackend); err != nil {
 		return fmt.Errorf("failed to register filesystem backend: %w", err)
 	}
@@ -376,7 +376,7 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 	memBackend := NewMemoryBackend(MemoryBackendConfig{
 		Logger: s.logger.With("backend", "memory"),
 	})
-	
+
 	if err := s.RegisterBackend("memory", memBackend); err != nil {
 		return fmt.Errorf("failed to register memory backend: %w", err)
 	}
@@ -391,10 +391,10 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 		// Create backend based on configuration
 		// This would be extended to support different backend types
 		var backend StorageBackend
-		
+
 		backendType := backendConfig["type"]
 		rootPath := backendConfig["root_path"]
-		
+
 		switch backendType {
 		case "filesystem":
 			backend = NewFilesystemBackend(FilesystemBackendConfig{
@@ -952,13 +952,13 @@ func (s *storageEngineImpl) BeginTransaction(ctx context.Context) (Transaction, 
 	// For now, use a simple in-memory transaction
 	// In a production implementation, this would use the backend's transaction support
 	txn := &storageTransaction{
-		engine:   s,
-		ctx:      ctx,
-		pending: make(map[string]*WriteResource),
-		deleted:  make(map[string]bool),
-		committed: false,
+		engine:     s,
+		ctx:        ctx,
+		pending:    make(map[string]*WriteResource),
+		deleted:    make(map[string]bool),
+		committed:  false,
 		rolledBack: false,
-		logger:   s.logger.With("component", "transaction"),
+		logger:     s.logger.With("component", "transaction"),
 	}
 
 	s.metrics.TransactionsStarted++
@@ -982,9 +982,9 @@ func (s *storageEngineImpl) GetQuota(ctx context.Context, storageRoot string) (*
 func (s *storageEngineImpl) GetTenantQuota(ctx context.Context, tenant string) (*QuotaInfo, error) {
 	if !s.config.EnableQuotaManagement {
 		return &QuotaInfo{
-			Tenant:       tenant,
-			UsedBytes:   0,
-			MaxBytes:    0, // 0 = unlimited
+			Tenant:    tenant,
+			UsedBytes: 0,
+			MaxBytes:  0, // 0 = unlimited
 		}, nil
 	}
 
@@ -1247,7 +1247,7 @@ func validateResource(resource *WriteResource) error {
 func detectContentType(uri string, data []byte) string {
 	// Simple detection based on URI extension
 	ext := filepath.Ext(uri)
-	
+
 	switch ext {
 	case ".ttl":
 		return "text/turtle"

@@ -66,7 +66,7 @@ func (s *defaultBlobStore) ListBlobs(ctx context.Context) ([]ContentAddress, err
 
 // defaultTombstoneStore implements TombstoneStore
 type defaultTombstoneStore struct {
-	mu        sync.RWMutex
+	mu         sync.RWMutex
 	tombstones map[string]*Tombstone
 }
 
@@ -79,10 +79,10 @@ func (s *defaultTombstoneStore) GetTombstone(ctx context.Context, uri string) (*
 	}
 	// Return a copy
 	return &Tombstone{
-		URI:         tombstone.URI,
-		DeletedAt:   tombstone.DeletedAt,
-		DeletedBy:   tombstone.DeletedBy,
-		Reason:      tombstone.Reason,
+		URI:          tombstone.URI,
+		DeletedAt:    tombstone.DeletedAt,
+		DeletedBy:    tombstone.DeletedBy,
+		Reason:       tombstone.Reason,
 		RestoreToken: tombstone.RestoreToken,
 	}, nil
 }
@@ -92,10 +92,10 @@ func (s *defaultTombstoneStore) StoreTombstone(ctx context.Context, tombstone *T
 	defer s.mu.Unlock()
 	// Store a copy
 	s.tombstones[tombstone.URI] = &Tombstone{
-		URI:         tombstone.URI,
-		DeletedAt:   tombstone.DeletedAt,
-		DeletedBy:   tombstone.DeletedBy,
-		Reason:      tombstone.Reason,
+		URI:          tombstone.URI,
+		DeletedAt:    tombstone.DeletedAt,
+		DeletedBy:    tombstone.DeletedBy,
+		Reason:       tombstone.Reason,
 		RestoreToken: tombstone.RestoreToken,
 	}
 	return nil
@@ -116,10 +116,10 @@ func (s *defaultTombstoneStore) ListTombstones(ctx context.Context, storageRoot 
 		// For now, return all tombstones regardless of storage root
 		// In a production implementation, we'd filter by storage root
 		result = append(result, &Tombstone{
-			URI:         tombstone.URI,
-			DeletedAt:   tombstone.DeletedAt,
-			DeletedBy:   tombstone.DeletedBy,
-			Reason:      tombstone.Reason,
+			URI:          tombstone.URI,
+			DeletedAt:    tombstone.DeletedAt,
+			DeletedBy:    tombstone.DeletedBy,
+			Reason:       tombstone.Reason,
 			RestoreToken: tombstone.RestoreToken,
 		})
 	}
@@ -135,7 +135,7 @@ func (s *defaultTombstoneStore) TombstoneExists(ctx context.Context, uri string)
 
 // defaultQuotaManager implements QuotaManager
 type defaultQuotaManager struct {
-	mu    sync.RWMutex
+	mu     sync.RWMutex
 	quotas map[string]*QuotaInfo
 }
 

@@ -12,7 +12,7 @@ func TestFilesystemBackend(t *testing.T) {
 	// Create a test filesystem backend
 	backend := NewFilesystemBackend(FilesystemBackendConfig{
 		RootPath: t.TempDir(),
-		Logger:  slog.Default(),
+		Logger:   slog.Default(),
 	})
 
 	ctx := context.Background()
@@ -26,10 +26,10 @@ func TestFilesystemBackend(t *testing.T) {
 	testURI := "/test/resource"
 	testBody := []byte("Hello, World!")
 	testMetadata := Metadata{
-		URI:         testURI,
+		URI:          testURI,
 		ResourceType: ResourceTypeResource,
-		ContentType: "text/plain",
-		Size:        int64(len(testBody)),
+		ContentType:  "text/plain",
+		Size:         int64(len(testBody)),
 	}
 
 	// Store the resource
@@ -108,10 +108,10 @@ func TestMemoryBackend(t *testing.T) {
 	testURI := "/test/resource"
 	testBody := []byte("Hello, Memory!")
 	testMetadata := Metadata{
-		URI:         testURI,
+		URI:          testURI,
 		ResourceType: ResourceTypeResource,
-		ContentType: "text/plain",
-		Size:        int64(len(testBody)),
+		ContentType:  "text/plain",
+		Size:         int64(len(testBody)),
 	}
 
 	// Store the resource
@@ -183,10 +183,10 @@ func TestStorageEngine(t *testing.T) {
 		URI:  testURI,
 		Body: testBody,
 		Metadata: Metadata{
-			URI:         testURI,
+			URI:          testURI,
 			ResourceType: ResourceTypeResource,
-			ContentType: "text/plain",
-			StorageRoot: "/",
+			ContentType:  "text/plain",
+			StorageRoot:  "/",
 		},
 	}); err != nil {
 		t.Fatalf("Failed to put resource: %v", err)
@@ -271,12 +271,12 @@ func TestPreconditions(t *testing.T) {
 	config.DefaultBackend = "memory"
 	config.EnableBlobStorage = false
 	config.EnableTombstones = false
-	
+
 	engine, err := NewStorageEngine(config)
 	if err != nil {
 		t.Fatalf("Failed to create storage engine: %v", err)
 	}
-	
+
 	ctx := context.Background()
 
 	testURI := "/test/precondition"
@@ -285,10 +285,10 @@ func TestPreconditions(t *testing.T) {
 
 	// Store initial resource
 	initialMetadata := Metadata{
-		URI:         testURI,
+		URI:          testURI,
 		ResourceType: ResourceTypeResource,
-		ETag:        `"etag1"`,
-		StorageRoot: "/",
+		ETag:         `"etag1"`,
+		StorageRoot:  "/",
 	}
 
 	if err := engine.Put(ctx, &WriteResource{

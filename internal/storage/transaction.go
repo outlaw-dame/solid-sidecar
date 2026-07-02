@@ -11,13 +11,13 @@ import (
 
 // storageTransaction implements the Transaction interface
 type storageTransaction struct {
-	engine   *storageEngineImpl
-	ctx      context.Context
-	pending  map[string]*WriteResource
-	deleted  map[string]bool
-	committed bool
+	engine     *storageEngineImpl
+	ctx        context.Context
+	pending    map[string]*WriteResource
+	deleted    map[string]bool
+	committed  bool
 	rolledBack bool
-	logger   *slog.Logger
+	logger     *slog.Logger
 }
 
 // Get retrieves a resource within the transaction
@@ -53,7 +53,7 @@ func (t *storageTransaction) Put(ctx context.Context, resource *WriteResource) e
 	if t.committed || t.rolledBack {
 		return fmt.Errorf("transaction already completed")
 	}
-	
+
 	// Store in pending
 	t.pending[resource.URI] = resource
 	return nil
@@ -64,7 +64,7 @@ func (t *storageTransaction) Delete(ctx context.Context, uri string) error {
 	if t.committed || t.rolledBack {
 		return fmt.Errorf("transaction already completed")
 	}
-	
+
 	// Mark as deleted
 	t.deleted[uri] = true
 	// Also remove from pending in case it was added in this transaction

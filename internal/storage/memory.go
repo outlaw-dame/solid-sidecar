@@ -70,8 +70,8 @@ func (b *memoryBackend) GetLayoutVersion(ctx context.Context) (StorageLayoutVers
 func (b *memoryBackend) SetLayoutVersion(ctx context.Context, version StorageLayoutVersion) error {
 	return nil
 }
-func (b *memoryBackend) Backup(ctx context.Context, writer io.Writer) error   { return nil }
-func (b *memoryBackend) Restore(ctx context.Context, reader io.Reader) error  { return nil }
+func (b *memoryBackend) Backup(ctx context.Context, writer io.Writer) error  { return nil }
+func (b *memoryBackend) Restore(ctx context.Context, reader io.Reader) error { return nil }
 func (b *memoryBackend) ScanIntegrity(ctx context.Context) (*IntegrityReport, error) {
 	return nil, nil
 }

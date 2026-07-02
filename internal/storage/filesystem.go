@@ -18,7 +18,7 @@ import (
 // FilesystemBackendConfig holds configuration for the filesystem backend
 type FilesystemBackendConfig struct {
 	RootPath string
-	Logger  *slog.Logger
+	Logger   *slog.Logger
 }
 
 // filesystemBackend implements StorageBackend using the local filesystem
@@ -40,8 +40,8 @@ func NewFilesystemBackend(config FilesystemBackendConfig) StorageBackend {
 	}
 }
 
-func (b *filesystemBackend) Name() string                              { return "filesystem" }
-func (b *filesystemBackend) Description() string                       { return "Local filesystem storage backend" }
+func (b *filesystemBackend) Name() string        { return "filesystem" }
+func (b *filesystemBackend) Description() string { return "Local filesystem storage backend" }
 func (b *filesystemBackend) GetQuota(ctx context.Context, storageRoot string) (*QuotaInfo, error) {
 	return &QuotaInfo{StorageRoot: storageRoot}, nil
 }
@@ -63,8 +63,8 @@ func (b *filesystemBackend) GetLayoutVersion(ctx context.Context) (StorageLayout
 func (b *filesystemBackend) SetLayoutVersion(ctx context.Context, version StorageLayoutVersion) error {
 	return nil
 }
-func (b *filesystemBackend) Backup(ctx context.Context, writer io.Writer) error   { return nil }
-func (b *filesystemBackend) Restore(ctx context.Context, reader io.Reader) error  { return nil }
+func (b *filesystemBackend) Backup(ctx context.Context, writer io.Writer) error  { return nil }
+func (b *filesystemBackend) Restore(ctx context.Context, reader io.Reader) error { return nil }
 func (b *filesystemBackend) ScanIntegrity(ctx context.Context) (*IntegrityReport, error) {
 	return nil, nil
 }
