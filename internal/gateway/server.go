@@ -48,11 +48,40 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			return nil, fmt.Errorf("create SAI service: %w", err)
 		}
 
+		// Create IdentityVerifier for SAI authentication
+		// Use the same authn configuration as the main authn middleware
+		var saiIdentityVerifier *authn.IdentityVerifier
+		if cfg.Auth.IdentityValidationEnabled && len(cfg.Auth.AllowedIdentityIssuers) > 0 {
+			// Create HTTP client for issuer discovery (nil uses default HTTP client)
+			discoveryClient := authn.NewIssuerDiscoveryClient(nil)
+			saiIdentityVerifier = authn.NewIdentityVerifierWithWebID(
+				discoveryClient,
+				authn.IdentityValidationOptions{
+					AllowedIssuers:   cfg.Auth.AllowedIdentityIssuers,
+					ExpectedAudience: cfg.Auth.ExpectedIdentityAudience,
+					Now:              time.Now(),
+					ClockSkew:        cfg.Auth.MaxClockSkew,
+				},
+				cfg.Auth.VerifyWebIDOwnership,
+			)
+		} else {
+			logger.Warn("SAI authentication will use fail-secure mode: identity validation not configured")
+		}
+
+		// Create SAI authenticator with identity verifier
+		var saiAuthenticator sai.Authenticator
+		if saiIdentityVerifier != nil {
+			saiAuthenticator = sai.NewDefaultAuthenticator(logger, saiIdentityVerifier)
+		} else {
+			// Even without identity verifier, create authenticator (will fail-secure)
+			saiAuthenticator = sai.NewDefaultAuthenticator(logger, nil)
+		}
+
 		// Create SAI handler with security middleware
 		saiHandler := sai.NewHandler(saiService, sai.HandlerOptions{
 			Logger:        logger,
 			RateLimiter:   nil, // Use default rate limiter
-			Authenticator: nil, // Use default authenticator (denies all until integrated)
+			Authenticator: saiAuthenticator,
 		})
 		saiHandler.RegisterRoutes(mux)
 		logger.Info("SAI support enabled with authorization agent", "url", cfg.SAI.AuthorizationAgentURL)

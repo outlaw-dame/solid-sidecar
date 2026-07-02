@@ -35,8 +35,8 @@ func NewHandler(service *SAIService, options HandlerOptions) *Handler {
 		options.RateLimiter = NewRateLimiter(100, 1*time.Minute)
 	}
 	if options.Authenticator == nil {
-		// Default: deny all (fail-secure)
-		options.Authenticator = NewDefaultAuthenticator(options.Logger)
+		// Default: deny all (fail-secure) - no identity verifier configured
+		options.Authenticator = NewDefaultAuthenticator(options.Logger, nil)
 	}
 
 	return &Handler{
@@ -112,10 +112,17 @@ func withSAISecurityMiddleware(h *Handler, next http.HandlerFunc) http.HandlerFu
 			}
 		}
 
-		// Apply authentication
+		// Apply authentication (skip for OPTIONS preflight)
 		if r.Method != http.MethodOptions {
-			userID, err := h.authenticator.Authenticate(r)
+			authUserID, err := h.authenticator.Authenticate(r)
 			if err != nil {
+				// Log authentication failure for security auditing
+				if h.logger != nil {
+					h.logger.Warn("SAI authentication failed",
+						"error", err.Error(),
+						"path", r.URL.Path,
+						"method", r.Method)
+				}
 				writeSAIError(w, http.StatusUnauthorized, SAIError{
 					Code:    ErrCodeUnauthorized,
 					Message: "Authentication required",
@@ -124,7 +131,7 @@ func withSAISecurityMiddleware(h *Handler, next http.HandlerFunc) http.HandlerFu
 			}
 
 			// Add user to context
-			ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
+			ctx := context.WithValue(r.Context(), contextKeyUserID, authUserID)
 			r = r.WithContext(ctx)
 		}
 

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/outlaw-dame/solid-sidecar/internal/authn"
 )
 
 // Security headers to add to all SAI responses
@@ -104,23 +106,26 @@ type Authenticator interface {
 	Authorize(userID, resourceID, action string) error
 }
 
-// DefaultAuthenticator is a simple WebID-based authenticator for SAI
+// DefaultAuthenticator is a WebID-based authenticator for SAI that integrates with the authn package
 type DefaultAuthenticator struct {
-	logger *slog.Logger
+	logger         *slog.Logger
+	identityVerifier *authn.IdentityVerifier
 }
 
-// NewDefaultAuthenticator creates a new default authenticator
-func NewDefaultAuthenticator(logger *slog.Logger) *DefaultAuthenticator {
+// NewDefaultAuthenticator creates a new default authenticator with optional identity verifier
+// If no identity verifier is provided, authentication will fail with an error
+func NewDefaultAuthenticator(logger *slog.Logger, identityVerifier *authn.IdentityVerifier) *DefaultAuthenticator {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &DefaultAuthenticator{
-		logger: logger,
+		logger:         logger,
+		identityVerifier: identityVerifier,
 	}
 }
 
-// Authenticate verifies the request and extracts the user WebID
+// Authenticate verifies the request and extracts the user WebID using the authn package
 func (a *DefaultAuthenticator) Authenticate(r *http.Request) (string, error) {
-	// Extract WebID from the request (e.g., from DPoP token, Authorization header, or Solid-OIDC)
-	// For now, this is a placeholder that should be integrated with the existing authn package
-
 	// Check for Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
@@ -133,26 +138,48 @@ func (a *DefaultAuthenticator) Authenticate(r *http.Request) (string, error) {
 		return "", errors.New("invalid authorization header format")
 	}
 
-	// TODO: Integrate with existing authn package to validate the token
-	// and extract the WebID. For now, return an error indicating
-	// authentication is not yet fully integrated.
-	return "", errors.New("SAI authentication not yet integrated with authn package")
+	token := parts[1]
+
+	// If no identity verifier is configured, authentication fails (fail-secure)
+	if a.identityVerifier == nil {
+		return "", errors.New("SAI authentication not configured: no identity verifier")
+	}
+
+	// Use the identity verifier to validate the token and extract the WebID
+	identity, err := a.identityVerifier.Verify(r.Context(), token)
+	if err != nil {
+		return "", fmt.Errorf("SAI token validation failed: %w", err)
+	}
+
+	// Extract WebID from the trusted identity
+	if identity.WebID == "" {
+		return "", errors.New("SAI token does not contain a valid WebID")
+	}
+
+	return identity.WebID, nil
 }
 
 // Authorize checks if the user has access to the resource
+// This is a critical security check to prevent IDOR vulnerabilities
 func (a *DefaultAuthenticator) Authorize(userID, resourceID, action string) error {
-	// Check for ownership or explicit access grants
-	// This is a critical security check to prevent IDOR vulnerabilities
-
-	// For now, we'll implement a simple ownership check
-	// In a real implementation, this would check:
-	// 1. If the user owns the resource
-	// 2. If the user has an access grant for the resource
+	// For now, implement a fail-secure default: deny all access
+	// In a production implementation, this would check:
+	// 1. If the user owns the resource (via WebID matching)
+	// 2. If the user has an access grant for the resource (via WAC/ACP/SAI policies)
 	// 3. If the action is allowed by the grant
-
-	// TODO: Implement proper authorization logic
-	// For now, deny all access to prevent IDOR until proper authz is implemented
-	return fmt.Errorf("SAI authorization not yet implemented - access denied")
+	//
+	// The current implementation denies all access to prevent IDOR vulnerabilities
+	// until proper authorization logic is implemented and tested.
+	
+	// Log the authorization attempt for security auditing
+	if a.logger != nil {
+		a.logger.Warn("SAI authorization check failed: access denied (fail-secure mode)",
+			"userID", userID,
+			"resourceID", resourceID,
+			"action", action)
+	}
+	
+	return fmt.Errorf("SAI authorization access denied (fail-secure mode)")
 }
 
 // validateContentType checks that the request has the correct Content-Type

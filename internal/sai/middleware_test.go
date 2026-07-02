@@ -530,7 +530,7 @@ func TestWriteSAIError(t *testing.T) {
 // =============================================================================
 
 func TestDefaultAuthenticator_Authenticate_MissingHeader(t *testing.T) {
-	auth := NewDefaultAuthenticator(nil)
+	auth := NewDefaultAuthenticator(nil, nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	_, err := auth.Authenticate(req)
@@ -541,7 +541,7 @@ func TestDefaultAuthenticator_Authenticate_MissingHeader(t *testing.T) {
 }
 
 func TestDefaultAuthenticator_Authenticate_InvalidFormat(t *testing.T) {
-	auth := NewDefaultAuthenticator(nil)
+	auth := NewDefaultAuthenticator(nil, nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "InvalidFormat")
@@ -553,33 +553,33 @@ func TestDefaultAuthenticator_Authenticate_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestDefaultAuthenticator_Authenticate_NotIntegrated(t *testing.T) {
-	auth := NewDefaultAuthenticator(nil)
+func TestDefaultAuthenticator_Authenticate_NotConfigured(t *testing.T) {
+	auth := NewDefaultAuthenticator(nil, nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer some-token")
 
 	_, err := auth.Authenticate(req)
 
-	// Should return error indicating integration is needed
+	// Should return error indicating no identity verifier configured
 	if err == nil {
-		t.Error("Expected error indicating authn not integrated")
+		t.Error("Expected error indicating no identity verifier configured")
 	}
-	if !strings.Contains(err.Error(), "not yet integrated") {
-		t.Errorf("Expected error about integration, got: %v", err)
+	if !strings.Contains(err.Error(), "not configured") {
+		t.Errorf("Expected error about configuration, got: %v", err)
 	}
 }
 
 func TestDefaultAuthenticator_Authorize(t *testing.T) {
-	auth := NewDefaultAuthenticator(nil)
+	auth := NewDefaultAuthenticator(nil, nil)
 
-	// Should deny all access until implemented
+	// Should deny all access in fail-secure mode until proper authz is implemented
 	err := auth.Authorize("user1", "resource1", "read")
 
 	if err == nil {
 		t.Error("Expected error for authorization not implemented")
 	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("Expected error about implementation, got: %v", err)
+	if !strings.Contains(err.Error(), "fail-secure mode") {
+		t.Errorf("Expected error about fail-secure mode, got: %v", err)
 	}
 }
