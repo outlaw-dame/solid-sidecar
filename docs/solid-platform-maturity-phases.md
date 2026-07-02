@@ -12,11 +12,12 @@ Goal: define and implement the storage substrate that can eventually support a n
 
 Implement:
 
-- storage interface package for resource reads, writes, metadata, delete, copy/move where supported, and conditional operations;
+- storage interface package for resource reads, writes, metadata, delete, copy/move where supported, conditional operations, and concurrency control such as optimistic concurrency control via ETags or explicit locking where required;
 - content-addressed blob option for immutable payload storage;
 - path-addressed resource mapping for Solid URL compatibility;
-- metadata store for resource type, content type, size, digest, modified time, owner/storage root, auxiliary links, and policy references;
+- metadata store for resource type, content type, size, digest, modified time, owner/storage root, auxiliary links, policy references, and validator state;
 - transaction boundary for resource body + metadata updates;
+- write precondition handling for `If-Match`, `If-None-Match`, and storage-level compare-and-swap equivalents;
 - storage backend adapters, starting with local filesystem/test backend and one production-grade object/blob backend;
 - quota accounting by storage root and tenant;
 - tombstone/deletion marker semantics for safe cache/index invalidation;
@@ -27,7 +28,9 @@ Implement:
 Acceptance criteria:
 
 - storage adapters pass the same behavioral contract tests;
+- concurrent writes cannot silently lose updates;
 - metadata and body updates cannot diverge silently;
+- conditional writes produce deterministic success/conflict/precondition-failed outcomes;
 - resource URLs remain stable across backend changes;
 - storage backend failures produce deterministic errors;
 - quota checks cannot be bypassed by alternate write paths;
@@ -36,6 +39,7 @@ Acceptance criteria:
 Implementation notes:
 
 - Keep the storage interface small and Solid-oriented.
+- Treat validators and concurrency metadata as storage-layer facts, not HTTP-only decorations.
 - Do not expose backend-specific behavior to authz or HTTP layers.
 - Treat backend adapters as replaceable plugins only after the core interface is stable.
 - Add conformance fixtures before adding a second production backend.
@@ -316,12 +320,13 @@ Implementation notes:
 
 ## Phase 28: Clustered deployment
 
-Goal: support horizontally scaled deployments with consistent authn, authz, cache, storage, and notification behavior.
+Goal: support horizontally scaled deployments with consistent authn, authz, cache, storage, rate limiting, and notification behavior.
 
 Implement:
 
 - distributed replay cache for DPoP proofs;
 - distributed decision cache or cache-invalidation bus;
+- distributed rate limiting coordination to prevent limit bypass across instances;
 - shared storage backend configuration;
 - leader election or coordination for background jobs;
 - notification fanout across instances;
@@ -334,6 +339,7 @@ Implement:
 Acceptance criteria:
 
 - DPoP replay cannot succeed by switching instances;
+- rate limits cannot be bypassed by rotating requests across instances;
 - policy changes invalidate decisions across the cluster;
 - background jobs are not duplicated unsafely;
 - rolling upgrades preserve protocol behavior;
@@ -343,6 +349,7 @@ Implementation notes:
 
 - Keep single-node mode first-class.
 - Avoid requiring a heavyweight cluster dependency for local development.
+- Treat rate-limit state as security-sensitive when authn, authz, or abuse controls depend on it.
 
 ## Phase 29: Policy and compliance framework
 
@@ -441,20 +448,20 @@ Implementation notes:
 
 After Phase 17, proceed in this order unless a security issue requires reprioritization:
 
-1. production storage engine;
-2. native authorization authority;
-3. Solid conformance/interoperability suite;
-4. multi-tenant/operator platform;
-5. federated identity and trust expansion;
-6. high-performance indexing/query layer;
-7. notifications and realtime productionization;
-8. migration tooling;
-9. security audit and formal hardening;
-10. SDK/client compatibility layer;
-11. clustered deployment;
-12. policy and compliance framework;
-13. plugin/extension architecture;
-14. stable native Solid release.
+18. production storage engine;
+19. native authorization authority;
+20. Solid conformance/interoperability suite;
+21. multi-tenant/operator platform;
+22. federated identity and trust expansion;
+23. high-performance indexing/query layer;
+24. notifications and realtime productionization;
+25. migration tooling;
+26. security audit and formal hardening;
+27. SDK/client compatibility layer;
+28. clustered deployment;
+29. policy and compliance framework;
+30. plugin/extension architecture;
+31. stable native Solid release.
 
 ## Additional stop conditions
 
@@ -466,7 +473,7 @@ Pause post-Phase-17 work and reassess if any of these occur:
 - indexes reveal private resource existence or content;
 - notification delivery leaks private changes;
 - migration cannot produce verification reports;
-- cluster mode allows DPoP replay across instances;
+- cluster mode allows DPoP replay or rate-limit bypass across instances;
 - plugins can bypass authn/authz or access private bodies without explicit capability grants;
 - compliance features weaken Solid access control or user data ownership;
 - stable release criteria become optional or undocumented.
