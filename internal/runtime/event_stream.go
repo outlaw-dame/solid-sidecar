@@ -10,8 +10,147 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// Hardening constants for Phase 16
+type EventStreamHardeningConfig struct {
+	// Maximum metadata size per event to prevent memory exhaustion
+	MaxMetadataSize int
+
+	// Maximum number of metadata keys per event
+	MaxMetadataKeys int
+
+	// Maximum metadata key length
+	MaxMetadataKeyLength int
+
+	// Maximum metadata value length
+	MaxMetadataValueLength int
+
+	// Maximum subscriber buffer size (events per subscriber)
+	MaxSubscriberBufferSize int
+
+	// Maximum time a subscriber can be inactive before cleanup
+	MaxSubscriberInactivityTime time.Duration
+
+	// Rate limiting for event publishing (events per second)
+	MaxEventsPerSecond float64
+
+	// Burst limit for event publishing
+	EventBurstLimit int
+
+	// Circuit breaker thresholds
+	CircuitBreakerFailureThreshold int
+	CircuitBreakerResetTimeout     time.Duration
+}
+
+// DefaultEventStreamHardeningConfig returns safe defaults for hardening
+func DefaultEventStreamHardeningConfig() EventStreamHardeningConfig {
+	return EventStreamHardeningConfig{
+		MaxMetadataSize:                4096, // 4KB max metadata per event
+		MaxMetadataKeys:                50,   // 50 metadata keys max
+		MaxMetadataKeyLength:           256,  // 256 chars max key length
+		MaxMetadataValueLength:         1024, // 1KB max value length
+		MaxSubscriberBufferSize:        1000, // 1000 events per subscriber buffer
+		MaxSubscriberInactivityTime:    1 * time.Hour,
+		MaxEventsPerSecond:             1000.0, // 1000 events per second max
+		EventBurstLimit:                2000,   // Allow bursts up to 2000
+		CircuitBreakerFailureThreshold: 5,
+		CircuitBreakerResetTimeout:     30 * time.Second,
+	}
+}
+
+// EventStreamError represents errors specific to the event stream layer
+var (
+	ErrEventStreamClosed      = errors.New("event stream layer is closed")
+	ErrInvalidEventData       = errors.New("invalid event data")
+	ErrRateLimitExceeded      = errors.New("rate limit exceeded")
+	ErrSubscriberLimitReached = errors.New("maximum subscribers reached")
+	ErrEventBufferFull        = errors.New("event buffer is full")
+	ErrCircuitBreakerOpen     = errors.New("circuit breaker is open")
+	ErrInvalidPrivacyLevel    = errors.New("invalid privacy level")
+	ErrAccessDenied           = errors.New("access denied")
+)
+
+// CircuitBreaker implements a circuit breaker pattern for event streaming
+type CircuitBreaker struct {
+	mu sync.RWMutex
+
+	// Failure count
+	failures int64
+
+	// Failure threshold
+	threshold int
+
+	// Reset timeout
+	resetTimeout time.Duration
+
+	// Last failure time
+	lastFailure time.Time
+
+	// State: true = open (stopping requests), false = closed (allowing requests)
+	state bool
+}
+
+// NewCircuitBreaker creates a new circuit breaker
+func NewCircuitBreaker(threshold int, resetTimeout time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		threshold:    threshold,
+		resetTimeout: resetTimeout,
+		state:        false,
+	}
+}
+
+// Check checks if the circuit breaker allows requests
+func (cb *CircuitBreaker) Check() bool {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+
+	if !cb.state {
+		return true
+	}
+
+	// Check if reset timeout has passed
+	if time.Since(cb.lastFailure) >= cb.resetTimeout {
+		return true // Allow retry after timeout
+	}
+
+	return false
+}
+
+// RecordFailure records a failure
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.failures++
+	cb.lastFailure = time.Now()
+
+	if cb.failures >= int64(cb.threshold) {
+		cb.state = true
+	}
+}
+
+// RecordSuccess records a success
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	// Reset failures and state on success
+	cb.failures = 0
+	cb.state = false
+}
+
+// Reset resets the circuit breaker
+func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.failures = 0
+	cb.state = false
+	cb.lastFailure = time.Time{}
+}
 
 // EventStreamLayer implements Layer 6.5: Resource change event stream
 // This layer provides event streaming capabilities for Solid notifications
@@ -28,6 +167,9 @@ type EventStreamLayer struct {
 
 	config EventStreamConfig
 
+	// Hardening configuration
+	hardeningConfig EventStreamHardeningConfig
+
 	// Notification layer reference
 	notificationLayer *NotificationLayer
 
@@ -42,6 +184,15 @@ type EventStreamLayer struct {
 
 	// Event statistics and observability
 	streamMetrics EventStreamMetrics
+
+	// Rate limiter for event publishing
+	eventRateLimiter *RateLimiter
+
+	// Circuit breaker for event delivery
+	circuitBreaker *CircuitBreaker
+
+	// Global event counter for metrics
+	globalEventCount int64
 
 	// Logger
 	logger *slog.Logger
@@ -65,6 +216,9 @@ type EventStreamConfig struct {
 	// EnableObservability enables observability metrics
 	EnableObservability bool
 
+	// HardeningConfig contains security and reliability settings
+	HardeningConfig EventStreamHardeningConfig
+
 	// Logger is the logger for this layer
 	Logger *slog.Logger
 }
@@ -76,6 +230,7 @@ func DefaultEventStreamConfig() EventStreamConfig {
 		EventRetentionTime:   24 * time.Hour,
 		MaxStreamSubscribers: 1000,
 		EnableObservability:  true,
+		HardeningConfig:      DefaultEventStreamHardeningConfig(),
 		Logger:               nil,
 	}
 }
@@ -259,6 +414,7 @@ func NewEventStreamLayer(config EventStreamConfig, notificationLayer *Notificati
 
 	layer := &EventStreamLayer{
 		config:              config,
+		hardeningConfig:     config.HardeningConfig,
 		notificationLayer:   notificationLayer,
 		eventStreamBuffer:   make([]StreamEvent, 0, config.MaxStreamBufferSize),
 		maxStreamBufferSize: config.MaxStreamBufferSize,
@@ -269,9 +425,30 @@ func NewEventStreamLayer(config EventStreamConfig, notificationLayer *Notificati
 		streamMetrics:       EventStreamMetrics{},
 	}
 
+	// Initialize rate limiter if configured
+	if config.HardeningConfig.MaxEventsPerSecond > 0 {
+		layer.eventRateLimiter = NewRateLimiter(
+			config.HardeningConfig.MaxEventsPerSecond,
+			config.HardeningConfig.EventBurstLimit,
+		)
+	}
+
+	// Initialize circuit breaker if configured
+	if config.HardeningConfig.CircuitBreakerFailureThreshold > 0 {
+		layer.circuitBreaker = NewCircuitBreaker(
+			config.HardeningConfig.CircuitBreakerFailureThreshold,
+			config.HardeningConfig.CircuitBreakerResetTimeout,
+		)
+	}
+
 	// Set up event buffer cleanup
 	if config.EventRetentionTime > 0 {
 		go layer.eventBufferCleanup(config.EventRetentionTime)
+	}
+
+	// Set up subscriber cleanup for inactive subscribers
+	if config.HardeningConfig.MaxSubscriberInactivityTime > 0 {
+		go layer.subscriberCleanup(config.HardeningConfig.MaxSubscriberInactivityTime)
 	}
 
 	config.Logger.Info("Event stream layer initialized",
@@ -279,6 +456,9 @@ func NewEventStreamLayer(config EventStreamConfig, notificationLayer *Notificati
 		"event_retention_time", config.EventRetentionTime,
 		"max_stream_subscribers", config.MaxStreamSubscribers,
 		"enable_observability", config.EnableObservability,
+		"max_events_per_second", config.HardeningConfig.MaxEventsPerSecond,
+		"event_burst_limit", config.HardeningConfig.EventBurstLimit,
+		"circuit_breaker_enabled", config.HardeningConfig.CircuitBreakerFailureThreshold > 0,
 	)
 
 	return layer
@@ -325,28 +505,177 @@ func (e *EventStreamLayer) cleanOldEvents(retentionTime time.Duration) {
 	}
 }
 
-// AddEvent adds an event to the event stream
+// subscriberCleanup periodically cleans up inactive subscribers
+func (e *EventStreamLayer) subscriberCleanup(inactivityTime time.Duration) {
+	ticker := time.NewTicker(5 * time.Minute) // Clean up every 5 minutes
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			e.cleanInactiveSubscribers(inactivityTime)
+		case <-e.closeChan:
+			e.logger.Info("Event stream subscriber cleanup stopped")
+			return
+		}
+	}
+}
+
+// cleanInactiveSubscribers removes subscribers that have been inactive too long
+func (e *EventStreamLayer) cleanInactiveSubscribers(inactivityTime time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return
+	}
+
+	cutoff := time.Now().Add(-inactivityTime)
+
+	for id, subscriber := range e.streamSubscribers {
+		// Check if subscriber has been inactive too long
+		if subscriber.LastSent.Before(cutoff) && !subscriber.LastSent.IsZero() {
+			// Close and remove inactive subscriber
+			close(subscriber.EventChannel)
+			if subscriber.Cancel != nil {
+				subscriber.Cancel()
+			}
+			delete(e.streamSubscribers, id)
+
+			if e.config.EnableObservability {
+				e.streamMetrics.RecordSubscriber(false)
+			}
+
+			e.logger.Debug("Cleaned up inactive subscriber", "subscriber_id", id)
+		}
+	}
+}
+
+// GetGlobalEventCount returns the current global event count
+func (e *EventStreamLayer) GetGlobalEventCount() int64 {
+	return atomic.LoadInt64(&e.globalEventCount)
+}
+
+// ResetCircuitBreaker resets the circuit breaker (for testing or manual intervention)
+func (e *EventStreamLayer) ResetCircuitBreaker() {
+	if e.circuitBreaker != nil {
+		e.circuitBreaker.Reset()
+	}
+}
+
+// AddEvent adds an event to the event stream with hardening protections
 func (e *EventStreamLayer) AddEvent(event StreamEvent) error {
-	// Validate event data
+	// Check if layer is closed
+	e.mu.RLock()
+	if e.closed {
+		e.mu.RUnlock()
+		return ErrEventStreamClosed
+	}
+	e.mu.RUnlock()
+
+	// Validate event data with comprehensive checks
 	if err := ValidateURI(event.ResourceURI); err != nil {
-		return fmt.Errorf("invalid resource URI: %w", err)
+		return fmt.Errorf("%w: invalid resource URI: %v", ErrInvalidEventData, err)
 	}
 
 	if event.ContainerURI != "" {
 		if err := ValidateContainerURI(event.ContainerURI); err != nil {
-			return fmt.Errorf("invalid container URI: %w", err)
+			return fmt.Errorf("%w: invalid container URI: %v", ErrInvalidEventData, err)
 		}
 	}
 
 	// Validate event type
 	if !isValidNotificationEventType(event.EventType) {
-		return fmt.Errorf("invalid event type: %s", event.EventType)
+		return fmt.Errorf("%w: invalid event type: %s", ErrInvalidEventData, event.EventType)
 	}
 
 	// Validate agent if present
 	if event.Agent != "" {
 		if err := ValidateWebID(event.Agent); err != nil {
-			return fmt.Errorf("invalid agent WebID: %w", err)
+			return fmt.Errorf("%w: invalid agent WebID: %v", ErrInvalidEventData, err)
+		}
+	}
+
+	// Validate metadata with hardening limits
+	if len(event.Metadata) > e.hardeningConfig.MaxMetadataKeys {
+		return fmt.Errorf("%w: metadata exceeds maximum keys limit (%d)", ErrInvalidEventData, e.hardeningConfig.MaxMetadataKeys)
+	}
+
+	for key, value := range event.Metadata {
+		// Validate metadata key
+		if len(key) > e.hardeningConfig.MaxMetadataKeyLength {
+			return fmt.Errorf("%w: metadata key exceeds maximum length (%d)", ErrInvalidEventData, e.hardeningConfig.MaxMetadataKeyLength)
+		}
+
+		// Validate metadata value
+		if len(value) > e.hardeningConfig.MaxMetadataValueLength {
+			return fmt.Errorf("%w: metadata value exceeds maximum length (%d)", ErrInvalidEventData, e.hardeningConfig.MaxMetadataValueLength)
+		}
+
+		// Validate metadata characters (prevent injection attacks)
+		for _, r := range key {
+			if r < 0x20 || r == 0x7f {
+				return fmt.Errorf("%w: metadata key contains control characters", ErrInvalidEventData)
+			}
+		}
+		for _, r := range value {
+			if r < 0x20 || r == 0x7f {
+				return fmt.Errorf("%w: metadata value contains control characters", ErrInvalidEventData)
+			}
+		}
+
+		// Check for sensitive keys that shouldn't be in metadata
+		if isSensitiveMetadataKey(key) {
+			e.logger.Warn("Sensitive metadata key detected and blocked", "key", key)
+			return fmt.Errorf("%w: sensitive metadata key not allowed", ErrInvalidEventData)
+		}
+	}
+
+	// Check total metadata size
+	var totalMetadataSize int
+	for key, value := range event.Metadata {
+		totalMetadataSize += len(key) + len(value)
+	}
+	if totalMetadataSize > e.hardeningConfig.MaxMetadataSize {
+		return fmt.Errorf("%w: total metadata size exceeds limit (%d bytes)", ErrInvalidEventData, e.hardeningConfig.MaxMetadataSize)
+	}
+
+	// Check rate limiting
+	if e.eventRateLimiter != nil && !e.eventRateLimiter.Allow() {
+		if e.config.EnableObservability {
+			e.streamMetrics.RecordEventDropped()
+		}
+		return fmt.Errorf("%w: event rate limit exceeded", ErrRateLimitExceeded)
+	}
+
+	// Check circuit breaker
+	if e.circuitBreaker != nil && !e.circuitBreaker.Check() {
+		if e.config.EnableObservability {
+			e.streamMetrics.RecordEventDropped()
+		}
+		return fmt.Errorf("%w: circuit breaker is open", ErrCircuitBreakerOpen)
+	}
+
+	// Validate privacy level
+	if event.PrivacyLevel == "" {
+		event.PrivacyLevel = PrivacyLevelMetadata // Default privacy level
+	} else {
+		// Validate it's a known privacy level
+		validPrivacyLevels := []PrivacyLevel{
+			PrivacyLevelPublic,
+			PrivacyLevelMetadata,
+			PrivacyLevelSensitive,
+			PrivacyLevelPrivate,
+		}
+		valid := false
+		for _, level := range validPrivacyLevels {
+			if event.PrivacyLevel == level {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("%w: %s", ErrInvalidPrivacyLevel, event.PrivacyLevel)
 		}
 	}
 
@@ -366,14 +695,18 @@ func (e *EventStreamLayer) AddEvent(event StreamEvent) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// Double-check closed state (in case it changed between RLock and Lock)
 	if e.closed {
-		return errors.New("event stream layer is closed")
+		return ErrEventStreamClosed
 	}
 
 	// Add to buffer
 	e.eventStreamBuffer = append(e.eventStreamBuffer, event)
 
-	// Check buffer size
+	// Increment global event counter
+	atomic.AddInt64(&e.globalEventCount, 1)
+
+	// Check buffer size with hardening
 	if len(e.eventStreamBuffer) > e.maxStreamBufferSize {
 		// Remove oldest event
 		e.eventStreamBuffer = e.eventStreamBuffer[1:]
@@ -544,50 +877,117 @@ func (e *EventStreamLayer) eventMatchesStreamFilter(event *StreamEvent, filter *
 	return true
 }
 
-// Subscribe subscribes to the event stream
+// isValidPrivacyLevel checks if a privacy level is valid
+func isValidPrivacyLevel(level PrivacyLevel) bool {
+	validLevels := []PrivacyLevel{
+		PrivacyLevelPublic,
+		PrivacyLevelMetadata,
+		PrivacyLevelSensitive,
+		PrivacyLevelPrivate,
+	}
+
+	for _, validLevel := range validLevels {
+		if level == validLevel {
+			return true
+		}
+	}
+	return false
+}
+
+// Subscribe subscribes to the event stream with hardening protections
 func (e *EventStreamLayer) Subscribe(ctx context.Context, filter StreamFilter, webID string, minPrivacyLevel PrivacyLevel) (*StreamSubscriber, error) {
-	// Validate filter
+	// Check if layer is closed first
+	e.mu.RLock()
+	if e.closed {
+		e.mu.RUnlock()
+		return nil, ErrEventStreamClosed
+	}
+	e.mu.RUnlock()
+
+	// Validate filter with comprehensive checks
+	if len(filter.ResourceURIs) > e.hardeningConfig.MaxMetadataKeys {
+		return nil, fmt.Errorf("%w: too many resource URIs in filter (%d max)", ErrInvalidEventData, e.hardeningConfig.MaxMetadataKeys)
+	}
+
 	for _, uri := range filter.ResourceURIs {
 		if err := ValidateURI(uri); err != nil {
-			return nil, fmt.Errorf("invalid resource URI in filter: %w", err)
+			return nil, fmt.Errorf("%w: invalid resource URI in filter: %v", ErrInvalidEventData, err)
 		}
 	}
 
 	for _, uri := range filter.ContainerURIs {
 		if err := ValidateContainerURI(uri); err != nil {
-			return nil, fmt.Errorf("invalid container URI in filter: %w", err)
+			return nil, fmt.Errorf("%w: invalid container URI in filter: %v", ErrInvalidEventData, err)
 		}
 	}
 
 	for _, eventType := range filter.EventTypes {
 		if !isValidNotificationEventType(eventType) {
-			return nil, fmt.Errorf("invalid event type in filter: %s", eventType)
+			return nil, fmt.Errorf("%w: invalid event type in filter: %s", ErrInvalidEventData, eventType)
+		}
+	}
+
+	// Validate privacy level range
+	if filter.MinPrivacyLevel != "" && filter.MaxPrivacyLevel != "" {
+		if filter.MinPrivacyLevel > filter.MaxPrivacyLevel {
+			return nil, fmt.Errorf("%w: min privacy level cannot be greater than max privacy level", ErrInvalidPrivacyLevel)
+		}
+	}
+
+	// Validate privacy levels if provided
+	if filter.MinPrivacyLevel != "" {
+		if !isValidPrivacyLevel(filter.MinPrivacyLevel) {
+			return nil, fmt.Errorf("%w: invalid min privacy level: %s", ErrInvalidPrivacyLevel, filter.MinPrivacyLevel)
+		}
+	}
+	if filter.MaxPrivacyLevel != "" {
+		if !isValidPrivacyLevel(filter.MaxPrivacyLevel) {
+			return nil, fmt.Errorf("%w: invalid max privacy level: %s", ErrInvalidPrivacyLevel, filter.MaxPrivacyLevel)
 		}
 	}
 
 	// Validate WebID if provided
 	if webID != "" {
 		if err := ValidateWebID(webID); err != nil {
-			return nil, fmt.Errorf("invalid WebID: %w", err)
+			return nil, fmt.Errorf("%w: invalid WebID: %v", ErrInvalidEventData, err)
 		}
+	}
+
+	// Validate minPrivacyLevel parameter
+	if !isValidPrivacyLevel(minPrivacyLevel) {
+		return nil, fmt.Errorf("%w: invalid minPrivacyLevel parameter: %s", ErrInvalidPrivacyLevel, minPrivacyLevel)
+	}
+
+	// Validate context
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: nil context provided", ErrInvalidEventData)
 	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// Double-check closed state (in case it changed between RLock and Lock)
 	if e.closed {
-		return nil, errors.New("event stream layer is closed")
+		return nil, ErrEventStreamClosed
 	}
 
-	// Check subscriber limit
+	// Check subscriber limit with circuit breaker check
 	if len(e.streamSubscribers) >= e.config.MaxStreamSubscribers {
-		return nil, errors.New("maximum stream subscribers reached")
+		if e.circuitBreaker != nil {
+			e.circuitBreaker.RecordFailure()
+		}
+		return nil, ErrSubscriberLimitReached
 	}
 
-	// Create subscriber
+	// Create subscriber with hardened buffer size
+	bufferSize := e.hardeningConfig.MaxSubscriberBufferSize
+	if bufferSize <= 0 {
+		bufferSize = 100 // Default buffer size
+	}
+
 	subscriber := &StreamSubscriber{
 		SubscriberID:    generateStreamSubscriberID(),
-		EventChannel:    make(chan StreamEvent, 100), // Buffered channel
+		EventChannel:    make(chan StreamEvent, bufferSize), // Buffered channel with size limit
 		Context:         ctx,
 		Filter:          filter,
 		Active:          true,

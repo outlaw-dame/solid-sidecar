@@ -10,6 +10,80 @@ import (
 	"time"
 )
 
+// Hardening constants for Phase 16 resource indexing
+const (
+	// DefaultMaxResourceSize is the maximum size for indexed resources (10MB)
+	DefaultMaxResourceSize = 10 * 1024 * 1024
+
+	// DefaultMaxOwnerWebIDs is the maximum number of owners per resource
+	DefaultMaxOwnerWebIDs = 10
+
+	// DefaultMaxContributors is the maximum number of contributors per resource
+	DefaultMaxContributors = 50
+
+	// DefaultMaxAllowedAgents is the maximum number of allowed agents in access info
+	DefaultMaxAllowedAgents = 100
+
+	// DefaultMaxAllowedGroups is the maximum number of allowed groups in access info
+	DefaultMaxAllowedGroups = 20
+)
+
+// ResourceIndexError represents errors specific to the resource indexing layer
+var (
+	ErrIndexClosed                 = errors.New("resource index layer is closed")
+	ErrResourceTooLargeForIndexing = errors.New("resource too large to index")
+	ErrIndexLimitReached           = errors.New("index limit reached")
+	ErrInvalidResourceMetadata     = errors.New("invalid resource metadata")
+	ErrAccessInfoInvalid           = errors.New("invalid access control information")
+	ErrIndexingRateLimitExceeded   = errors.New("indexing rate limit exceeded")
+	ErrIndexCircuitBreakerOpen     = errors.New("index circuit breaker is open")
+)
+
+// ResourceIndexHardeningConfig holds hardening configuration for the resource index layer
+type ResourceIndexHardeningConfig struct {
+	// MaxResourceSize is the maximum size of resources to index (in bytes)
+	MaxResourceSize int64
+
+	// MaxOwners is the maximum number of owners per resource
+	MaxOwners int
+
+	// MaxContributors is the maximum number of contributors per resource
+	MaxContributors int
+
+	// MaxAllowedAgents is the maximum number of allowed agents in access info
+	MaxAllowedAgents int
+
+	// MaxAllowedGroups is the maximum number of allowed groups in access info
+	MaxAllowedGroups int
+
+	// IndexRateLimit is the maximum indexing operations per second
+	IndexRateLimit float64
+
+	// IndexBurstLimit is the burst limit for indexing operations
+	IndexBurstLimit int
+
+	// CircuitBreakerFailureThreshold is the failure threshold for the circuit breaker
+	CircuitBreakerFailureThreshold int
+
+	// CircuitBreakerResetTimeout is the reset timeout for the circuit breaker
+	CircuitBreakerResetTimeout time.Duration
+}
+
+// DefaultResourceIndexHardeningConfig returns safe defaults for resource indexing hardening
+func DefaultResourceIndexHardeningConfig() ResourceIndexHardeningConfig {
+	return ResourceIndexHardeningConfig{
+		MaxResourceSize:                DefaultMaxResourceSize,
+		MaxOwners:                      DefaultMaxOwnerWebIDs,
+		MaxContributors:                DefaultMaxContributors,
+		MaxAllowedAgents:               DefaultMaxAllowedAgents,
+		MaxAllowedGroups:               DefaultMaxAllowedGroups,
+		IndexRateLimit:                 100.0, // 100 indexing operations per second
+		IndexBurstLimit:                200,   // Allow bursts up to 200 operations
+		CircuitBreakerFailureThreshold: 5,
+		CircuitBreakerResetTimeout:     30 * time.Second,
+	}
+}
+
 // ResourceIndexLayer implements Layer 6.6: Resource indexing layer
 // This layer provides indexing capabilities for Solid resources
 // with privacy-aware filtering and WebID-scoped access.
@@ -24,6 +98,9 @@ type ResourceIndexLayer struct {
 	mu sync.RWMutex
 
 	config ResourceIndexConfig
+
+	// Hardening configuration
+	hardeningConfig ResourceIndexHardeningConfig
 
 	// Resource index (URI -> ResourceMetadata)
 	resourceIndex map[string]*ResourceMetadata
@@ -45,6 +122,15 @@ type ResourceIndexLayer struct {
 
 	// Index statistics and observability
 	indexMetrics ResourceIndexMetrics
+
+	// Rate limiter for indexing operations
+	indexRateLimiter *RateLimiter
+
+	// Circuit breaker for indexing operations
+	indexCircuitBreaker *CircuitBreaker
+
+	// Global operation counter for metrics
+	globalOperationCount int64
 
 	// Logger
 	logger *slog.Logger
@@ -74,6 +160,9 @@ type ResourceIndexConfig struct {
 	// EnableObservability enables observability metrics
 	EnableObservability bool
 
+	// HardeningConfig contains security and reliability settings
+	HardeningConfig ResourceIndexHardeningConfig
+
 	// Logger is the logger for this layer
 	Logger *slog.Logger
 }
@@ -87,6 +176,7 @@ func DefaultResourceIndexConfig() ResourceIndexConfig {
 		EnableAgentIndex:    true,
 		IndexRetentionTime:  24 * time.Hour * 30, // 30 days retention
 		EnableObservability: true,
+		HardeningConfig:     DefaultResourceIndexHardeningConfig(),
 		Logger:              nil,
 	}
 }
@@ -312,21 +402,38 @@ func NewResourceIndexLayer(config ResourceIndexConfig) *ResourceIndexLayer {
 	}
 
 	layer := &ResourceIndexLayer{
-		config:         config,
-		resourceIndex:  make(map[string]*ResourceMetadata),
-		containerIndex: make(map[string][]string),
-		agentIndex:     make(map[string][]string),
-		typeIndex:      make(map[string][]string),
-		accessIndex:    make(map[string]*ResourceAccessInfo),
-		logger:         config.Logger,
-		closeChan:      make(chan struct{}),
-		closed:         false,
-		indexMetrics:   ResourceIndexMetrics{},
+		config:          config,
+		hardeningConfig: config.HardeningConfig,
+		resourceIndex:   make(map[string]*ResourceMetadata),
+		containerIndex:  make(map[string][]string),
+		agentIndex:      make(map[string][]string),
+		typeIndex:       make(map[string][]string),
+		accessIndex:     make(map[string]*ResourceAccessInfo),
+		logger:          config.Logger,
+		closeChan:       make(chan struct{}),
+		closed:          false,
+		indexMetrics:    ResourceIndexMetrics{},
 	}
 
 	// Initialize full-text index if enabled
 	if config.EnableFullTextIndex {
 		layer.fullTextIndex = make(map[string][]string)
+	}
+
+	// Initialize rate limiter if configured
+	if config.HardeningConfig.IndexRateLimit > 0 {
+		layer.indexRateLimiter = NewRateLimiter(
+			config.HardeningConfig.IndexRateLimit,
+			config.HardeningConfig.IndexBurstLimit,
+		)
+	}
+
+	// Initialize circuit breaker if configured
+	if config.HardeningConfig.CircuitBreakerFailureThreshold > 0 {
+		layer.indexCircuitBreaker = NewCircuitBreaker(
+			config.HardeningConfig.CircuitBreakerFailureThreshold,
+			config.HardeningConfig.CircuitBreakerResetTimeout,
+		)
 	}
 
 	// Set up index cleanup if retention is configured
@@ -340,6 +447,10 @@ func NewResourceIndexLayer(config ResourceIndexConfig) *ResourceIndexLayer {
 		"max_full_text_terms", config.MaxFullTextTerms,
 		"enable_agent_index", config.EnableAgentIndex,
 		"index_retention_time", config.IndexRetentionTime,
+		"max_resource_size", config.HardeningConfig.MaxResourceSize,
+		"index_rate_limit", config.HardeningConfig.IndexRateLimit,
+		"index_burst_limit", config.HardeningConfig.IndexBurstLimit,
+		"circuit_breaker_enabled", config.HardeningConfig.CircuitBreakerFailureThreshold > 0,
 	)
 
 	return layer
