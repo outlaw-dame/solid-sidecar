@@ -1289,10 +1289,3 @@ func init() {
 	// Don't initialize here to avoid side effects
 	// Initialization should be explicit
 }
-
-// EngineMetrics accessor
-func (s *storageEngineImpl) GetMetrics() EngineMetrics {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.metrics
-}
