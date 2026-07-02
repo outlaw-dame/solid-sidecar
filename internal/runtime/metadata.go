@@ -399,6 +399,12 @@ func maxTime(a, b time.Time) time.Time {
 
 // GetResourceMetadata retrieves metadata for a resource by URI
 func (m *MetadataIndexLayer) GetResourceMetadata(uri string) (*ResourceMetadataRecord, error) {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		m.metrics.RecordGetByURIQuery()
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -477,6 +483,11 @@ func (m *MetadataIndexLayer) GetResourcesByWebID(webID string) ([]string, error)
 
 // ListContainer retrieves the children of a container
 func (m *MetadataIndexLayer) ListContainer(containerURI string) ([]string, error) {
+	// Validate container URI to prevent injection attacks and path traversal
+	if err := ValidateContainerURI(containerURI); err != nil {
+		return nil, fmt.Errorf("invalid container URI: %w", err)
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -499,6 +510,11 @@ func (m *MetadataIndexLayer) ListContainer(containerURI string) ([]string, error
 
 // GetContainerMetadata retrieves metadata for a container
 func (m *MetadataIndexLayer) GetContainerMetadata(containerURI string) (*ContainerIndexRecord, error) {
+	// Validate container URI to prevent injection attacks and path traversal
+	if err := ValidateContainerURI(containerURI); err != nil {
+		return nil, fmt.Errorf("invalid container URI: %w", err)
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -522,6 +538,16 @@ func (m *MetadataIndexLayer) GetContainerMetadata(containerURI string) (*Contain
 
 // AddResource adds a resource to the indexes
 func (m *MetadataIndexLayer) AddResource(resource *StorageResource) error {
+	// Validate resource URI to prevent injection attacks and path traversal
+	if err := ValidateURI(resource.URI); err != nil {
+		return fmt.Errorf("invalid resource URI: %w", err)
+	}
+
+	// Validate resource size to prevent DoS attacks
+	if err := ValidateResourceSize(int64(len(resource.Body))); err != nil {
+		return fmt.Errorf("resource validation failed: %w", err)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -535,11 +561,22 @@ func (m *MetadataIndexLayer) AddResource(resource *StorageResource) error {
 
 // RemoveResource removes a resource from the indexes
 func (m *MetadataIndexLayer) RemoveResource(uri string) error {
+	// Validate URI to prevent injection attacks and path traversal
+	if err := ValidateURI(uri); err != nil {
+		return fmt.Errorf("invalid URI: %w", err)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.closed {
 		return errors.New("metadata index layer is closed")
+	}
+
+	// Get resource info before removing from indexes
+	var contentType string
+	if resource, exists := m.resourceIndex[uri]; exists {
+		contentType = resource.ContentType
 	}
 
 	// Remove from resource index
@@ -559,8 +596,8 @@ func (m *MetadataIndexLayer) RemoveResource(uri string) error {
 	}
 
 	// Remove from type index
-	if resource, exists := m.resourceIndex[uri]; exists {
-		if typeRecord, typeExists := m.typeIndex[resource.ContentType]; typeExists {
+	if contentType != "" {
+		if typeRecord, typeExists := m.typeIndex[contentType]; typeExists {
 			newURIs := make([]string, 0, len(typeRecord.ResourceURIs))
 			for _, typeURI := range typeRecord.ResourceURIs {
 				if typeURI != uri {
@@ -577,6 +614,16 @@ func (m *MetadataIndexLayer) RemoveResource(uri string) error {
 
 // UpdateResource updates a resource in the indexes
 func (m *MetadataIndexLayer) UpdateResource(resource *StorageResource) error {
+	// Validate resource URI to prevent injection attacks and path traversal
+	if err := ValidateURI(resource.URI); err != nil {
+		return fmt.Errorf("invalid resource URI: %w", err)
+	}
+
+	// Validate resource size to prevent DoS attacks
+	if err := ValidateResourceSize(int64(len(resource.Body))); err != nil {
+		return fmt.Errorf("resource validation failed: %w", err)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -584,8 +631,57 @@ func (m *MetadataIndexLayer) UpdateResource(resource *StorageResource) error {
 		return errors.New("metadata index layer is closed")
 	}
 
-	// First remove the old version
-	m.RemoveResource(resource.URI)
+	// First remove the old version from indexes
+	// Note: We can't call RemoveResource here as it would deadlock (tries to acquire lock)
+	// Instead, we use the same removal logic as RemoveResource but without locking
+
+	// Get old resource info before removing
+	var oldContentType string
+	if oldResource, exists := m.resourceIndex[resource.URI]; exists {
+		oldContentType = oldResource.ContentType
+	}
+
+	// Remove from resource index
+	delete(m.resourceIndex, resource.URI)
+
+	// Remove from container index
+	container := extractContainerURI(resource.URI)
+	if containerRecord, exists := m.containerIndex[container]; exists {
+		newChildren := make([]string, 0, len(containerRecord.Children))
+		for _, childURI := range containerRecord.Children {
+			if childURI != resource.URI {
+				newChildren = append(newChildren, childURI)
+			}
+		}
+		containerRecord.Children = newChildren
+		containerRecord.Size = int64(len(newChildren))
+	}
+
+	// Remove from type index
+	if oldContentType != "" {
+		if typeRecord, typeExists := m.typeIndex[oldContentType]; typeExists {
+			newURIs := make([]string, 0, len(typeRecord.ResourceURIs))
+			for _, typeURI := range typeRecord.ResourceURIs {
+				if typeURI != resource.URI {
+					newURIs = append(newURIs, typeURI)
+				}
+			}
+			typeRecord.ResourceURIs = newURIs
+			typeRecord.Count = len(newURIs)
+		}
+	}
+
+	// Remove from WebID index
+	for _, webIDRecord := range m.webIDIndex {
+		newURIs := make([]string, 0, len(webIDRecord.ResourceURIs))
+		for _, u := range webIDRecord.ResourceURIs {
+			if u != resource.URI {
+				newURIs = append(newURIs, u)
+			}
+		}
+		webIDRecord.ResourceURIs = newURIs
+	}
+
 	// Then add the new version
 	m.addToIndexes(resource)
 	return nil
