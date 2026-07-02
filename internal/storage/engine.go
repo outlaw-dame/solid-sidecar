@@ -692,22 +692,14 @@ func (s *storageEngineImpl) Put(ctx context.Context, resource *WriteResource) er
 	}
 
 	// Store in default backend
-	if err := s.defaultBackend.Put(ctx, resource.URI, &WriteResource{
-		URI:         resource.URI,
-		BodyReader:  nil, // We've already read the body
-		BodySize:    resource.BodySize,
-		Metadata:    resource.Metadata,
-		Preconditions: resource.Preconditions,
-	}); err != nil {
+	// Use the original resource since it has the body
+	if err := s.defaultBackend.Put(ctx, resource.URI, resource); err != nil {
 		s.metrics.RecordError("put", err)
 		return err
 	}
 
-	// Update metadata store
-	if err := s.metadataStore.StoreMetadata(ctx, resource.URI, &resource.Metadata); err != nil {
-		s.logger.Warn("Failed to store metadata", "uri", resource.URI, "error", err)
-		// Don't fail the operation, but log the warning
-	}
+	// Note: The backend already stores the metadata, so no need to store it separately here
+	// The metadata store is available for cases where metadata needs to be updated independently
 
 	// Update quota usage
 	if s.config.EnableQuotaManagement && resource.Metadata.StorageRoot != "" {
