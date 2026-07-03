@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	// AWS SDK imports (optional - S3 functionality requires these)
@@ -93,6 +95,84 @@ const (
 	SSHConnectionTimeout = 30 * time.Second
 )
 
+// RateLimiter implements a token bucket rate limiter for transport operations
+type RateLimiter struct {
+	mu           sync.Mutex
+	tokens       int
+	maxTokens    int
+	refillRate   float64 // tokens per second
+	lastRefill   time.Time
+	lastRefillMu sync.Mutex
+}
+
+// NewRateLimiter creates a new rate limiter with the specified rate (operations per second)
+func NewRateLimiter(ratePerSecond int) *RateLimiter {
+	if ratePerSecond <= 0 {
+		return nil // No rate limiting
+	}
+	return &RateLimiter{
+		tokens:     ratePerSecond,
+		maxTokens:  ratePerSecond,
+		refillRate: float64(ratePerSecond),
+		lastRefill: time.Now(),
+	}
+}
+
+// Allow checks if an operation is allowed under the rate limit
+func (rl *RateLimiter) Allow() bool {
+	if rl == nil {
+		return true // No rate limiting
+	}
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	// Refill tokens based on elapsed time
+	now := time.Now()
+	rl.lastRefillMu.Lock()
+	elapsed := now.Sub(rl.lastRefill)
+	rl.lastRefill = now
+	rl.lastRefillMu.Unlock()
+
+	// Add tokens based on elapsed time
+	tokensToAdd := int(elapsed.Seconds() * rl.refillRate)
+	if tokensToAdd > 0 {
+		rl.tokens += tokensToAdd
+		if rl.tokens > rl.maxTokens {
+			rl.tokens = rl.maxTokens
+		}
+	}
+
+	// Check if we have a token available
+	if rl.tokens > 0 {
+		rl.tokens--
+		return true
+	}
+
+	return false
+}
+
+// Wait blocks until a rate limit token is available or context is cancelled
+func (rl *RateLimiter) Wait(ctx context.Context) error {
+	if rl == nil {
+		return nil // No rate limiting
+	}
+
+	for {
+		if rl.Allow() {
+			return nil
+		}
+
+		// Wait for a short interval before checking again
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: context cancelled while waiting for rate limit", ErrTransportTimeout)
+		case <-time.After(100 * time.Millisecond):
+			// Try again
+		}
+	}
+}
+
 // sanitizeError removes sensitive information from error messages
 func sanitizeError(err error, sensitiveFields ...string) error {
 	if err == nil {
@@ -163,6 +243,13 @@ type TransportConfig struct {
 	RetryJitter float64
 	// VerifyTLS controls whether TLS certificates are verified
 	VerifyTLS bool
+	// RateLimitPerSecond is the maximum number of operations per second (0 = no limit)
+	RateLimitPerSecond int
+	// MaxConcurrentConnections is the maximum number of concurrent connections (0 = no limit)
+	MaxConcurrentConnections int
+	// AllowLocalhost controls whether localhost/loopback addresses are allowed (for testing only)
+	// WARNING: Setting this to true in production is a security risk
+	AllowLocalhost bool
 }
 
 // DefaultTransportConfig returns the default transport configuration
@@ -230,6 +317,13 @@ type HTTPTransport struct {
 	client          *http.Client
 	baseURL         *url.URL
 	metricsRecorder TransportMetricsRecorder
+	// Rate limiting
+	rateLimiter *RateLimiter
+	// Connection tracking
+	activeConnections int64
+	maxConnections    int
+	// Security
+	allowLocalhost bool
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -255,10 +349,20 @@ func NewHTTPTransport(options FixtureTransportOptions) (*HTTPTransport, error) {
 	}
 
 	// Create HTTP client with custom transport for TLS verification control
+	// Also set connection limits if configured
+	maxIdleConns := 100
+	maxConnsPerHost := 100
+	if config.MaxConcurrentConnections > 0 {
+		maxIdleConns = config.MaxConcurrentConnections
+		maxConnsPerHost = config.MaxConcurrentConnections
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: !config.VerifyTLS,
 		},
+		MaxIdleConns:        maxIdleConns,
+		MaxIdleConnsPerHost: maxConnsPerHost,
 	}
 
 	client := &http.Client{
@@ -266,10 +370,16 @@ func NewHTTPTransport(options FixtureTransportOptions) (*HTTPTransport, error) {
 		Timeout:   config.Timeout,
 	}
 
+	// Initialize rate limiter if configured
+	rateLimiter := NewRateLimiter(config.RateLimitPerSecond)
+
 	return &HTTPTransport{
 		config:          config,
 		client:          client,
 		metricsRecorder: &NopTransportMetricsRecorder{},
+		rateLimiter:     rateLimiter,
+		maxConnections:  config.MaxConcurrentConnections,
+		allowLocalhost:  config.AllowLocalhost,
 	}, nil
 }
 
@@ -292,6 +402,27 @@ func (t *HTTPTransport) SetBaseURL(rawURL string) error {
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return fmt.Errorf("%w: invalid URL scheme, must be http or https", ErrTransportConnectionFailed)
 	}
+
+	// Security: Prevent SSRF attacks - check for localhost and private IP addresses
+	// unless explicitly allowed (for testing purposes)
+	if !t.allowLocalhost {
+		host := parsedURL.Hostname()
+		if host == "" {
+			return fmt.Errorf("%w: URL must have a hostname", ErrTransportInvalidPath)
+		}
+
+		// Check for localhost and loopback addresses
+		lowerHost := strings.ToLower(host)
+		if lowerHost == "localhost" || lowerHost == "localhost.localdomain" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+			return fmt.Errorf("%w: HTTP URL cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
+		}
+
+		// Check for private IP address ranges
+		if isPrivateIPAddress(host) {
+			return fmt.Errorf("%w: HTTP URL cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
+		}
+	}
+
 	t.baseURL = parsedURL
 	return nil
 }
@@ -301,6 +432,21 @@ func (t *HTTPTransport) SetMetricsRecorder(recorder TransportMetricsRecorder) {
 	t.metricsRecorder = recorder
 }
 
+// SetRateLimiter sets the rate limiter for this transport
+func (t *HTTPTransport) SetRateLimiter(ratePerSecond int) {
+	t.rateLimiter = NewRateLimiter(ratePerSecond)
+}
+
+// SetMaxConnections sets the maximum number of concurrent connections
+func (t *HTTPTransport) SetMaxConnections(max int) {
+	t.maxConnections = max
+}
+
+// GetActiveConnections returns the current number of active connections
+func (t *HTTPTransport) GetActiveConnections() int64 {
+	return atomic.LoadInt64(&t.activeConnections)
+}
+
 // Distribute sends fixture data via HTTP POST
 func (t *HTTPTransport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
 	// Record start of operation
@@ -308,6 +454,30 @@ func (t *HTTPTransport) Distribute(ctx context.Context, job FixtureDistributionJ
 	if t.metricsRecorder != nil {
 		t.metricsRecorder.IncrementConcurrent(TransportMethodHTTP)
 		defer t.metricsRecorder.DecrementConcurrent(TransportMethodHTTP)
+	}
+
+	// Apply rate limiting if configured
+	if t.rateLimiter != nil {
+		if err := t.rateLimiter.Wait(ctx); err != nil {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
+			return FixtureDistributionReceipt{}, err
+		}
+	}
+
+	// Track active connections if limit is configured
+	if t.maxConnections > 0 {
+		atomic.AddInt64(&t.activeConnections, 1)
+		defer atomic.AddInt64(&t.activeConnections, -1)
+
+		// Check if we've exceeded the connection limit
+		if atomic.LoadInt64(&t.activeConnections) > int64(t.maxConnections) {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
+			return FixtureDistributionReceipt{}, fmt.Errorf("%w: connection limit exceeded (max %d)", ErrTransportConnectionFailed, t.maxConnections)
+		}
 	}
 
 	// Validate payload size
@@ -327,6 +497,11 @@ func (t *HTTPTransport) Distribute(ctx context.Context, job FixtureDistributionJ
 		requestURL, err = url.Parse(target.URL)
 		if err != nil {
 			return FixtureDistributionReceipt{}, fmt.Errorf("%w: failed to parse target URL: %v", ErrTransportConnectionFailed, err)
+		}
+
+		// Security: Validate target URL to prevent SSRF
+		if err := validateHTTPTargetURL(requestURL); err != nil {
+			return FixtureDistributionReceipt{}, err
 		}
 	}
 
@@ -1526,6 +1701,37 @@ func validateS3Endpoint(endpoint string) error {
 	lowerHost := strings.ToLower(host)
 	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" {
 		return fmt.Errorf("%w: S3 endpoint cannot point to localhost", ErrTransportSecurityViolation)
+	}
+
+	return nil
+}
+
+// validateHTTPTargetURL validates an HTTP target URL to prevent SSRF attacks
+func validateHTTPTargetURL(parsedURL *url.URL) error {
+	if parsedURL == nil {
+		return fmt.Errorf("%w: URL cannot be nil", ErrTransportInvalidPath)
+	}
+
+	// Check scheme - must be http or https
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("%w: URL must use http or https scheme, got %s", ErrTransportInvalidPath, parsedURL.Scheme)
+	}
+
+	// Check for hostname
+	host := parsedURL.Hostname()
+	if host == "" {
+		return fmt.Errorf("%w: URL must have a hostname", ErrTransportInvalidPath)
+	}
+
+	// Check for localhost and loopback addresses
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+		return fmt.Errorf("%w: HTTP URL cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
+	}
+
+	// Check for private IP address ranges
+	if isPrivateIPAddress(host) {
+		return fmt.Errorf("%w: HTTP URL cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
 	}
 
 	return nil

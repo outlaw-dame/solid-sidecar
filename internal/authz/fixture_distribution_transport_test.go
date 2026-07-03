@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+// testTransportConfig returns a TransportConfig suitable for testing with localhost
+func testTransportConfig() TransportConfig {
+	config := DefaultTransportConfig()
+	config.AllowLocalhost = true // Allow localhost for testing
+	config.VerifyTLS = false     // Don't verify TLS for test servers
+	return config
+}
+
 // TestTransportErrors tests that transport errors are properly defined
 func TestTransportErrors(t *testing.T) {
 	errors := []error{
@@ -255,6 +263,134 @@ func TestHTTPTransportSetBaseURL(t *testing.T) {
 	}
 }
 
+// TestHTTPTransportSSRFProtection tests SSRF protection in HTTP transport
+func TestHTTPTransportSSRFProtection(t *testing.T) {
+	config := DefaultTransportConfig()
+	options := FixtureTransportOptions{Config: config}
+
+	transport, err := NewHTTPTransport(options)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	ssrfTests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"Valid HTTPS URL", "https://example.com/api", false},
+		{"Valid HTTP URL", "http://example.com/api", false},
+		{"Localhost HTTP", "http://localhost/api", true},
+		{"Localhost HTTPS", "https://localhost/api", true},
+		{"127.0.0.1 HTTP", "http://127.0.0.1/api", true},
+		{"127.0.0.1 HTTPS", "https://127.0.0.1/api", true},
+		{"IPv6 loopback HTTP", "http://[::1]/api", true},
+		{"IPv6 loopback HTTPS", "https://[::1]/api", true},
+		{"Localhost variations", "http://localhost.localdomain/api", true},
+		{"Private IP 10.0.0.0/8", "http://10.0.0.1/api", true},
+		{"Private IP 172.16.0.0/12", "http://172.16.0.1/api", true},
+		{"Private IP 192.168.0.0/16", "http://192.168.1.1/api", true},
+		{"No hostname", "http:///api", true},
+	}
+
+	for _, tt := range ssrfTests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := transport.SetBaseURL(tt.url)
+			if tt.wantErr && err == nil {
+				t.Errorf("Expected error for %s, got nil", tt.url)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("Expected no error for %s, got: %v", tt.url, err)
+			}
+			if tt.wantErr && err != nil && !errors.Is(err, ErrTransportSecurityViolation) && !errors.Is(err, ErrTransportInvalidPath) {
+				t.Errorf("Expected security violation error for %s, got: %v", tt.url, err)
+			}
+		})
+	}
+}
+
+// TestHTTPTransportRateLimiting tests rate limiting functionality
+func TestHTTPTransportRateLimiting(t *testing.T) {
+	config := DefaultTransportConfig()
+	config.RateLimitPerSecond = 5 // Allow 5 requests per second
+	options := FixtureTransportOptions{Config: config}
+
+	transport, err := NewHTTPTransport(options)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Set a base URL for testing
+	if err := transport.SetBaseURL("https://example.com/api"); err != nil {
+		t.Fatalf("Failed to set base URL: %v", err)
+	}
+
+	// Verify rate limiter is initialized
+	if transport.rateLimiter == nil {
+		t.Fatal("Expected rate limiter to be initialized")
+	}
+
+	// Set metrics recorder for testing
+	transport.SetMetricsRecorder(&NopTransportMetricsRecorder{})
+
+	// Test SetRateLimiter method
+	transport.SetRateLimiter(10)
+	if transport.rateLimiter == nil {
+		t.Error("Expected rate limiter after SetRateLimiter")
+	}
+
+	// Test SetMaxConnections method
+	transport.SetMaxConnections(50)
+	if transport.maxConnections != 50 {
+		t.Errorf("Expected maxConnections to be 50, got %d", transport.maxConnections)
+	}
+
+	// Test GetActiveConnections method
+	active := transport.GetActiveConnections()
+	if active != 0 {
+		t.Errorf("Expected 0 active connections initially, got %d", active)
+	}
+}
+
+// TestRateLimiter tests the rate limiter implementation
+func TestRateLimiter(t *testing.T) {
+	// Test nil rate limiter (no limiting)
+	var nilLimiter *RateLimiter
+	if !nilLimiter.Allow() {
+		t.Error("Nil rate limiter should always allow")
+	}
+
+	// Test rate limiter with 10 requests per second
+	limiter := NewRateLimiter(10)
+	if limiter == nil {
+		t.Fatal("Expected rate limiter to be created")
+	}
+
+	// Should allow initial requests up to the limit
+	for i := 0; i < 10; i++ {
+		if !limiter.Allow() {
+			t.Errorf("Expected request %d to be allowed", i+1)
+		}
+	}
+
+	// Next request should be denied (tokens exhausted)
+	if limiter.Allow() {
+		t.Error("Expected request to be denied after exhausting tokens")
+	}
+
+	// Test zero rate (no limiting)
+	zeroLimiter := NewRateLimiter(0)
+	if zeroLimiter != nil {
+		t.Error("Expected nil rate limiter for zero rate")
+	}
+
+	// Test negative rate (no limiting)
+	negLimiter := NewRateLimiter(-1)
+	if negLimiter != nil {
+		t.Error("Expected nil rate limiter for negative rate")
+	}
+}
+
 // TestHTTPTransportDistributePayloadTooLarge tests payload size validation
 func TestHTTPTransportDistributePayloadTooLarge(t *testing.T) {
 	config := DefaultTransportConfig()
@@ -344,6 +480,7 @@ func TestHTTPTransportDistributeSuccess(t *testing.T) {
 		RetryMultiplier: 2.0,
 		RetryJitter:     0.1,
 		VerifyTLS:       false, // Don't verify TLS for test server
+		AllowLocalhost:  true,  // Allow localhost for testing
 	}
 	options := FixtureTransportOptions{Config: config}
 
@@ -399,15 +536,13 @@ func TestHTTPTransportDistributeWithAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -461,15 +596,13 @@ func TestHTTPTransportDistributeNonRetryableError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -506,15 +639,13 @@ func TestHTTPTransportDistributeRetryableError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      2, // Try once, retry twice
-		RetryBaseDelay:  10 * time.Millisecond,
-		RetryMaxDelay:   100 * time.Millisecond,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 2 // Try once, retry twice
+	config.RetryBaseDelay = 10 * time.Millisecond
+	config.RetryMaxDelay = 100 * time.Millisecond
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -571,15 +702,13 @@ func TestHTTPTransportDistributeSuccessAfterRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      3, // Try once, retry 3 times
-		RetryBaseDelay:  10 * time.Millisecond,
-		RetryMaxDelay:   100 * time.Millisecond,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.0, // No jitter for deterministic test
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 3 // Try once, retry 3 times
+	config.RetryBaseDelay = 10 * time.Millisecond
+	config.RetryMaxDelay = 100 * time.Millisecond
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.0 // No jitter for deterministic test
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -620,15 +749,13 @@ func TestHTTPTransportDistributeTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         50 * time.Millisecond, // Very short timeout
-		RetryCount:      0,
-		RetryBaseDelay:  10 * time.Millisecond,
-		RetryMaxDelay:   100 * time.Millisecond,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 50 * time.Millisecond // Very short timeout
+	config.RetryCount = 0
+	config.RetryBaseDelay = 10 * time.Millisecond
+	config.RetryMaxDelay = 100 * time.Millisecond
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -739,15 +866,13 @@ func TestHTTPTransportAuthFailed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -890,15 +1015,13 @@ func TestDistributionClientDistribute(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 
 	client := NewDistributionClient(config)
 
@@ -951,15 +1074,13 @@ func TestDistributionClientDistributeWithRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      1, // 1 retry at client level
-		RetryBaseDelay:  10 * time.Millisecond,
-		RetryMaxDelay:   100 * time.Millisecond,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.0,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 1 // 1 retry at client level
+	config.RetryBaseDelay = 10 * time.Millisecond
+	config.RetryMaxDelay = 100 * time.Millisecond
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.0
 
 	client := NewDistributionClient(config)
 
@@ -998,15 +1119,13 @@ func TestDistributionClientDistributeError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 
 	client := NewDistributionClient(config)
 
@@ -1084,15 +1203,13 @@ func TestHTTPTransportParseResponseNonJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -1160,15 +1277,13 @@ func TestHTTPTransportContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -1259,15 +1374,13 @@ func TestEmptyPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
@@ -1316,15 +1429,13 @@ func TestFixtureHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := TransportConfig{
-		Timeout:         5 * time.Second,
-		RetryCount:      0,
-		RetryBaseDelay:  100 * time.Millisecond,
-		RetryMaxDelay:   1 * time.Second,
-		RetryMultiplier: 2.0,
-		RetryJitter:     0.1,
-		VerifyTLS:       false,
-	}
+	config := testTransportConfig()
+	config.Timeout = 5 * time.Second
+	config.RetryCount = 0
+	config.RetryBaseDelay = 100 * time.Millisecond
+	config.RetryMaxDelay = 1 * time.Second
+	config.RetryMultiplier = 2.0
+	config.RetryJitter = 0.1
 	options := FixtureTransportOptions{Config: config}
 
 	transport, err := NewHTTPTransport(options)
