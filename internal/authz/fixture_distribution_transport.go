@@ -1998,13 +1998,21 @@ func (t *SSHTransport) uploadViaSSH(ctx context.Context, host string, port int, 
 	}
 
 	// Set up host key verification if configured
-	if t.strictHostKeyChecking && t.knownHosts != "" {
-		// Use strict host key checking
-		sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey() // TODO: Implement proper host key verification
-		// Note: For production use, implement proper known hosts callback
-		// using ssh.KnownHosts() with the knownHosts content
+	if t.strictHostKeyChecking {
+		if t.knownHosts != "" {
+			// Parse known hosts and create callback
+			hostKeyCallback, err := t.createKnownHostsCallback()
+			if err != nil {
+				return fmt.Errorf("%w: failed to create host key callback: %v", ErrTransportConnectionFailed, err)
+			}
+			sshConfig.HostKeyCallback = hostKeyCallback
+		} else {
+			// Strict checking requested but no known hosts provided
+			return fmt.Errorf("%w: strict host key checking requires known hosts to be configured", ErrTransportSecurityViolation)
+		}
 	} else {
 		// Use insecure host key checking (allows any host)
+		// Note: This is insecure and should only be used in development/test environments
 		sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey()
 	}
 
@@ -2310,6 +2318,102 @@ func (t *SSHTransport) Close() error {
 	t.useSFTP = false
 
 	return nil
+}
+
+// createKnownHostsCallback creates a HostKeyCallback from the configured knownHosts string
+func (t *SSHTransport) createKnownHostsCallback() (ssh.HostKeyCallback, error) {
+	// knownHosts format: hostname key-type key [comment]
+	// or: hostname key-type key-hash
+	// We parse this and create a map of hostname -> expected public keys
+
+	callback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		// If no known hosts configured, reject all (should not happen as we check this earlier)
+		if t.knownHosts == "" {
+			return fmt.Errorf("host key verification failed: no known hosts configured")
+		}
+
+		// Check if this hostname matches any in our known hosts
+		// For now, we parse known hosts on each connection (simple implementation)
+		// In production, this should be cached
+		return t.verifyHostKey(hostname, key)
+	}
+
+	return callback, nil
+}
+
+// verifyHostKey verifies a host key against the configured known hosts
+func (t *SSHTransport) verifyHostKey(hostname string, key ssh.PublicKey) error {
+	// Parse known hosts line by line
+	lines := strings.Split(t.knownHosts, "\n")
+
+	for _, line := range lines {
+		// Skip empty lines and comments
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse: hostname key-type key [comment]
+		// or: hostname key-type key-hash
+		parts := strings.Fields(line)
+		if len(parts) < 3 {
+			continue // Invalid line, skip
+		}
+
+		// Check if hostname matches
+		hostPattern := parts[0]
+		if !t.hostnameMatches(hostname, hostPattern) {
+			continue
+		}
+
+		// The rest should be the key
+		keyStr := strings.Join(parts[1:], " ")
+
+		// Try to parse the key
+		knownKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(keyStr))
+		if err != nil {
+			// Try parsing as a public key
+			knownKey, err = ssh.ParsePublicKey([]byte(keyStr))
+			if err != nil {
+				continue // Skip invalid key
+			}
+		}
+
+		// Compare the keys
+		if knownKey.Type() == key.Type() && bytes.Equal(knownKey.Marshal(), key.Marshal()) {
+			return nil // Key matches
+		}
+	}
+
+	return fmt.Errorf("host key verification failed: key for %s does not match known hosts", hostname)
+}
+
+// hostnameMatches checks if the given hostname matches the pattern from known_hosts
+func (t *SSHTransport) hostnameMatches(hostname, pattern string) bool {
+	// Remove port if present
+	if h, _, err := net.SplitHostPort(hostname); err == nil {
+		hostname = h
+	}
+
+	// Handle wildcard patterns
+	if strings.HasPrefix(pattern, "*") {
+		// Match any hostname ending with the suffix
+		suffix := pattern[1:]
+		// Special case: * matches everything
+		if suffix == "" {
+			return true
+		}
+		// Check if hostname ends with the suffix, or hostname equals the suffix
+		return strings.HasSuffix(hostname, suffix) || hostname == suffix
+	}
+
+	// Handle domain matching (e.g., .example.com matches foo.example.com)
+	if strings.HasPrefix(pattern, ".") {
+		return strings.HasSuffix(hostname, pattern) || hostname == strings.TrimPrefix(pattern, ".")
+	}
+
+	// Exact match
+	return hostname == pattern
 }
 
 // DistributionClient provides a high-level interface for fixture distribution

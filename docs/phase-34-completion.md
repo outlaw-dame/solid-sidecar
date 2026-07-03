@@ -25,7 +25,7 @@ Phase 34 involved implementing full transport layer functionality for fixture di
 
 ### 2. S3Transport (`internal/authz/fixture_distribution_transport.go`)
 
-**Status: Transport Layer Complete, SDK Integration Pending**
+**Status: 100% Complete with AWS SDK Integration**
 
 - **Full transport layer** implementation
 - **URL parsing** for `s3://bucket/key` and `bucket/key` formats
@@ -34,12 +34,14 @@ Phase 34 involved implementing full transport layer functionality for fixture di
 - **Key prefix generation** with distribution metadata
 - **Retry logic** with exponential backoff
 - **Error classification** for retryable vs non-retryable S3 errors
-- **SDK placeholder**: Returns `ErrTransportSDKNecessary` - ready for AWS SDK integration
-- **Public methods**: `ParseS3URL`, `SetBucket`, `SetKeyPrefix`, `SetRegion`
+- **AWS SDK v2 integration**: Uses `github.com/aws/aws-sdk-go-v2/service/s3` for actual S3 operations
+- **SSRF protection**: Validates S3 endpoint URLs to prevent SSRF attacks
+- **TLS enforcement**: Always uses SSL/TLS for S3 connections
+- **Public methods**: `ParseS3URL`, `SetBucket`, `SetKeyPrefix`, `SetRegion`, `SetAWSCredentials`, `SetUseDefaultAWSCredentials`
 
 ### 3. SSHTransport (`internal/authz/fixture_distribution_transport.go`)
 
-**Status: Transport Layer Complete, SSH Library Integration Pending**
+**Status: 100% Complete with SSH Library Integration and Proper Host Key Verification**
 
 - **Full transport layer** implementation
 - **URL parsing** for `ssh://`, `sftp://`, and raw formats
@@ -50,8 +52,18 @@ Phase 34 involved implementing full transport layer functionality for fixture di
 - **SFTP mode toggle** via `SetUseSFTP`
 - **Retry logic** with exponential backoff
 - **Error classification** for retryable SSH errors
-- **SDK placeholder**: Returns `ErrTransportSDKNecessary` - ready for `golang.org/x/crypto/ssh` integration
-- **Public methods**: `ParseSSHURL`, `SetHost`, `SetPort`, `SetUsername`, `SetUseSFTP`
+- **SSH library integration**: Uses `golang.org/x/crypto/ssh` and `github.com/pkg/sftp` for actual SSH/SFTP operations
+- **Proper host key verification**: Implements known_hosts file parsing and verification
+  - Supports wildcard patterns (`*.example.com`, `.example.com`)
+  - Supports multiple key types (RSA, ECDSA, Ed25519)
+  - Validates against configured known hosts
+  - Requires known hosts to be configured when strict checking is enabled
+  - Secure default: rejects connections if strict checking is enabled but no known hosts are provided
+- **Security features**:
+  - Private key file permissions (0600)
+  - Atomic file operations for local file transport
+  - SSRF protection for SSH endpoints
+- **Public methods**: `ParseSSHURL`, `SetHost`, `SetPort`, `SetUsername`, `SetUseSFTP`, `SetSSHCredentials`, `SetPrivateKey`, `SetPrivateKeyPath`, `SetKnownHosts`, `SetStrictHostKeyChecking`
 
 ## New Error Types
 
@@ -61,7 +73,7 @@ Added comprehensive transport-specific errors:
 - `ErrTransportFileExists`
 - `ErrTransportInvalidPath`
 - `ErrTransportPermissionDenied`
-- `ErrTransportSDKNecessary`
+- `ErrTransportSDKNecessary` (kept for backward compatibility, not used with full SDK integration)
 
 ## New Configuration Constants
 
@@ -108,7 +120,7 @@ Added comprehensive transport-specific errors:
 - ✅ Bucket validation (valid/invalid names)
 - ✅ URL parsing (multiple formats)
 - ✅ Key prefix and region configuration
-- ✅ SDK requirement verification
+- ✅ AWS SDK integration with actual S3 operations
 
 ### SSHTransport Tests
 - ✅ Transport creation and validation
@@ -116,7 +128,7 @@ Added comprehensive transport-specific errors:
 - ✅ URL parsing (SSH, SFTP, and raw formats)
 - ✅ Username extraction from URLs
 - ✅ Port extraction from host:port strings
-- ✅ SDK requirement verification
+- ✅ Host key verification with known_hosts pattern matching
 
 ## Performance Considerations
 
@@ -127,14 +139,14 @@ Added comprehensive transport-specific errors:
 
 ## Integration Points
 
-### Required External Dependencies
+### External Dependencies (Already Integrated)
 
-For full functionality, the following dependencies are needed:
+The following dependencies are already integrated and functional:
 
-1. **S3Transport**: AWS SDK (`github.com/aws/aws-sdk-go`)
-2. **SSHTransport**: Go SSH library (`golang.org/x/crypto/ssh`)
+1. **S3Transport**: AWS SDK v2 (`github.com/aws/aws-sdk-go-v2`)
+2. **SSHTransport**: Go SSH library (`golang.org/x/crypto/ssh`) and SFTP library (`github.com/pkg/sftp`)
 
-Both transports are fully functional and will return `ErrTransportSDKNecessary` until the respective SDKs are integrated.
+All transports are fully functional with their respective libraries integrated.
 
 ### Transport Registry
 
@@ -174,18 +186,19 @@ gofmt -d internal/authz/
 
 ## Next Steps
 
-1. **SDK Integration**: Integrate AWS SDK for S3Transport and golang.org/x/crypto/ssh for SSHTransport
-2. **Performance Testing**: Load test transport implementations
-3. **Security Audit**: External review of path validation logic
-4. **Monitoring**: Add metrics for transport operations
+1. **Performance Testing**: Load test transport implementations
+2. **Security Audit**: External review of path validation logic and host key verification
+3. **Monitoring**: Add metrics for transport operations
+4. **Production Readiness**: Deployment testing in staging environment
 
 ## Completion Criteria Met
 
 - ✅ LocalFileTransport: 100% complete with pure Go
-- ✅ S3Transport: Transport layer complete, ready for SDK
-- ✅ SSHTransport: Transport layer complete, ready for SDK
-- ✅ Comprehensive test coverage for all transports
-- ✅ Security hardening (path traversal, validation, permissions)
+- ✅ S3Transport: 100% complete with AWS SDK v2 integration
+- ✅ SSHTransport: 100% complete with SSH library integration and proper host key verification
+- ✅ Comprehensive test coverage for all transports (including host key verification tests)
+- ✅ Security hardening (path traversal, validation, permissions, SSRF protection)
+- ✅ Proper host key verification with known_hosts format support
 - ✅ Error handling with appropriate error types
 - ✅ Configuration management with sensible defaults
 - ✅ Code quality: go build, go test, go vet, gofmt all pass

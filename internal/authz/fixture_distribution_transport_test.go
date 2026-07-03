@@ -2552,3 +2552,45 @@ func TestSecurityValidation(t *testing.T) {
 		}
 	})
 }
+
+// TestSSHTransportHostKeyVerification tests host key verification with known hosts
+func TestSSHTransportHostKeyVerification(t *testing.T) {
+	// Test hostname matching directly (we can't easily test full SSH connection in unit tests)
+	transport, err := NewSSHTransportWithOptions(SSHTransportOptions{
+		Config: DefaultTransportConfig(),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create SSH transport: %v", err)
+	}
+
+	// Test hostname matching
+	tests := []struct {
+		hostname string
+		pattern  string
+		match    bool
+	}{
+		{"example.com", "example.com", true},
+		{"example.com", "*.example.com", false},    // *.example.com does NOT match example.com
+		{"foo.example.com", "*.example.com", true}, // *.example.com matches foo.example.com
+		{"foo.example.com", ".example.com", true},  // .example.com matches foo.example.com
+		{"example.com", "other.com", false},
+		{"example.com:22", "example.com", true},
+		{"*.example.com", "*", true}, // * matches everything
+	}
+
+	for _, tc := range tests {
+		result := transport.hostnameMatches(tc.hostname, tc.pattern)
+		if result != tc.match {
+			t.Errorf("hostnameMatches(%q, %q) = %v, expected %v", tc.hostname, tc.pattern, result, tc.match)
+		}
+	}
+
+	// Test that createKnownHostsCallback can be created
+	callback, err := transport.createKnownHostsCallback()
+	if err != nil {
+		t.Fatalf("Failed to create host key callback: %v", err)
+	}
+	if callback == nil {
+		t.Fatal("Expected callback to be non-nil")
+	}
+}
