@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -239,6 +240,12 @@ func (ai AgentIdentity) String() string {
 	return ai.RedactedString()
 }
 
+// GoString returns a privacy-safe Go-syntax representation of the AgentIdentity.
+// This prevents sensitive data leaks when using %#v formatting.
+func (ai AgentIdentity) GoString() string {
+	return ai.RedactedString()
+}
+
 // RedactedString returns a privacy-safe string representation
 func (ai AgentIdentity) RedactedString() string {
 	var b strings.Builder
@@ -256,6 +263,12 @@ func (ai AgentIdentity) RedactedString() string {
 	b.WriteString(fmt.Sprintf("Source: %s", ai.VerificationSource))
 	b.WriteString("}")
 	return b.String()
+}
+
+// LogValue returns a slog.Value that contains only privacy-safe information.
+// This prevents sensitive data leaks when using structured logging with slog.
+func (ai AgentIdentity) LogValue() slog.Value {
+	return slog.StringValue(ai.RedactedString())
 }
 
 // PrivacySafeHash returns a privacy-safe hash of the identity for use in metrics
