@@ -8,6 +8,7 @@ CSS remains the Solid protocol and access-control authority. The sidecar is stil
 
 The project has pivoted from metadata phases to production-readiness work. Start with:
 
+- `docs/repository-audit-2026-07-02.md` for the latest reconciliation of recent direct-to-main work against the roadmap.
 - `docs/implementation-status.md` for the current done/missing audit.
 - `docs/production-implementation-plan.md` for the roadmap.
 - `docs/solid-runtime-roadmap-index.md` for the expanded roadmap documentation index.
@@ -44,7 +45,7 @@ Recently completed production-readiness work:
 - `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
 - `contracts/`: JSON schemas and shared fixtures.
 - `rust/`: Rust workspace for deterministic internal kernels.
-- `docs/`: implementation status, architecture, phase notes, `did:solid`, compression compatibility, platform maturity phases, and runbooks.
+- `docs/`: implementation status, architecture, phase notes, `did:solid`, compression compatibility, platform maturity phases, repository audit, and runbooks.
 - `scripts/`: local/CI verification scripts.
 
 ## Run locally
