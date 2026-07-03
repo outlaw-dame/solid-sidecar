@@ -24,7 +24,7 @@ var (
 // from PR #5's conditional-write/OCC storage work.
 type ContainerOperationService struct {
 	storage *StorageAbstractionLayer
-	locks   sync.Map // map[string]*sync.Mutex, keyed by normalized container URI
+	locks   [256]sync.Mutex
 }
 
 // NewContainerOperationService creates a container operation coordinator.
@@ -147,8 +147,12 @@ func (s *ContainerOperationService) ListMembers(ctx context.Context, containerUR
 }
 
 func (s *ContainerOperationService) lockFor(containerURI string) *sync.Mutex {
-	lock, _ := s.locks.LoadOrStore(containerURI, &sync.Mutex{})
-	return lock.(*sync.Mutex)
+	var h uint32 = 2166136261
+	for i := 0; i < len(containerURI); i++ {
+		h ^= uint32(containerURI[i])
+		h *= 16777619
+	}
+	return &s.locks[h%uint32(len(s.locks))]
 }
 
 // NormalizeContainerURI validates and normalizes a container URI to trailing-slash form.
@@ -180,7 +184,12 @@ func ValidateResourceName(resourceName string) error {
 	if strings.Contains(resourceName, "/") || strings.Contains(resourceName, "\\") {
 		return fmt.Errorf("%w: resource name must not contain path separators", ErrContainerMembershipConflict)
 	}
-	if resourceName == "." || resourceName == ".." || strings.Contains(resourceName, "\x00") || strings.ContainsAny(resourceName, "\r\n") {
+	for _, r := range resourceName {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("%w: resource name contains control characters or is unsafe", ErrContainerMembershipConflict)
+		}
+	}
+	if resourceName == "." || resourceName == ".." {
 		return fmt.Errorf("%w: resource name is unsafe", ErrContainerMembershipConflict)
 	}
 	if _, err := url.PathUnescape(resourceName); err != nil {
