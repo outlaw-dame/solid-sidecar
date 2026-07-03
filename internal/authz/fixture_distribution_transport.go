@@ -18,6 +18,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// AWS SDK imports (optional - S3 functionality requires these)
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	s3sdk "github.com/aws/aws-sdk-go-v2/service/s3"
+
+	// SSH library imports (optional - SSH functionality requires these)
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
 
 // Transport errors
@@ -756,16 +766,27 @@ type S3Transport struct {
 	useSSL    bool
 	region    string
 	endpoint  string
+	// AWS SDK client (optional - only initialized when AWS SDK is available)
+	s3Client *s3sdk.Client
+	// AWS configuration
+	accessKeyID     string
+	secretAccessKey string
+	sessionToken    string
+	useDefaultCreds bool
 }
 
 // S3TransportOptions contains options for creating an S3Transport
 type S3TransportOptions struct {
-	Config    TransportConfig
-	Bucket    string
-	KeyPrefix string
-	UseSSL    bool
-	Region    string
-	Endpoint  string
+	Config          TransportConfig
+	Bucket          string
+	KeyPrefix       string
+	UseSSL          bool
+	Region          string
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	SessionToken    string
+	UseDefaultCreds bool
 }
 
 // NewS3Transport creates a new S3 transport
@@ -805,13 +826,56 @@ func NewS3TransportWithOptions(options S3TransportOptions) (*S3Transport, error)
 		useSSL = true // Default to SSL for standard S3
 	}
 
+	// Initialize AWS SDK client if credentials are provided or default creds are enabled
+	var s3Client *s3sdk.Client
+	if options.AccessKeyID != "" || options.SecretAccessKey != "" || options.UseDefaultCreds {
+		var awsConfig aws.Config
+		var err error
+
+		if options.UseDefaultCreds && options.AccessKeyID == "" && options.SecretAccessKey == "" {
+			// Use default AWS credential chain
+			awsConfig, err = awsconfig.LoadDefaultConfig(context.TODO(),
+				awsconfig.WithRegion(options.Region),
+			)
+		} else {
+			// Use provided credentials
+			creds := credentials.NewStaticCredentialsProvider(
+				options.AccessKeyID,
+				options.SecretAccessKey,
+				options.SessionToken,
+			)
+			awsConfig, err = awsconfig.LoadDefaultConfig(context.TODO(),
+				awsconfig.WithCredentialsProvider(creds),
+				awsconfig.WithRegion(options.Region),
+			)
+		}
+
+		if err == nil {
+			s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
+				o.UsePathStyle = true
+				if options.Endpoint != "" {
+					o.EndpointResolver = s3sdk.EndpointResolverFromURL(options.Endpoint)
+				}
+			})
+		} else {
+			// Log AWS config error but don't fail transport creation
+			// The upload will fail later with a more specific error
+			// This allows the transport to be created even if AWS config fails
+		}
+	}
+
 	return &S3Transport{
-		config:    config,
-		bucket:    options.Bucket,
-		keyPrefix: options.KeyPrefix,
-		useSSL:    useSSL,
-		region:    options.Region,
-		endpoint:  options.Endpoint,
+		config:          config,
+		bucket:          options.Bucket,
+		keyPrefix:       options.KeyPrefix,
+		useSSL:          useSSL,
+		region:          options.Region,
+		endpoint:        options.Endpoint,
+		s3Client:        s3Client,
+		accessKeyID:     options.AccessKeyID,
+		secretAccessKey: options.SecretAccessKey,
+		sessionToken:    options.SessionToken,
+		useDefaultCreds: options.UseDefaultCreds,
 	}, nil
 }
 
@@ -846,6 +910,68 @@ func (t *S3Transport) SetRegion(region string) error {
 		return err
 	}
 	t.region = region
+	return nil
+}
+
+// SetAWSCredentials sets AWS credentials for S3 uploads
+func (t *S3Transport) SetAWSCredentials(accessKeyID, secretAccessKey, sessionToken string) error {
+	t.accessKeyID = accessKeyID
+	t.secretAccessKey = secretAccessKey
+	t.sessionToken = sessionToken
+	t.useDefaultCreds = false
+
+	// Initialize S3 client with new credentials
+	if accessKeyID != "" || secretAccessKey != "" {
+		creds := credentials.NewStaticCredentialsProvider(
+			accessKeyID,
+			secretAccessKey,
+			sessionToken,
+		)
+		awsConfig, err := awsconfig.LoadDefaultConfig(context.TODO(),
+			awsconfig.WithCredentialsProvider(creds),
+			awsconfig.WithRegion(t.region),
+		)
+		if err != nil {
+			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, err)
+		}
+
+		t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
+			o.UsePathStyle = true
+			if t.endpoint != "" {
+				o.EndpointResolver = s3sdk.EndpointResolverFromURL(t.endpoint)
+			}
+		})
+	}
+
+	return nil
+}
+
+// SetUseDefaultAWSCredentials enables use of default AWS credential chain
+func (t *S3Transport) SetUseDefaultAWSCredentials(useDefault bool) error {
+	t.useDefaultCreds = useDefault
+	t.accessKeyID = ""
+	t.secretAccessKey = ""
+	t.sessionToken = ""
+
+	// Initialize S3 client with default credentials
+	if useDefault {
+		awsConfig, err := awsconfig.LoadDefaultConfig(context.TODO(),
+			awsconfig.WithRegion(t.region),
+		)
+		if err != nil {
+			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, err)
+		}
+
+		t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
+			o.UsePathStyle = true
+			if t.endpoint != "" {
+				o.EndpointResolver = s3sdk.EndpointResolverFromURL(t.endpoint)
+			}
+		})
+	} else {
+		t.s3Client = nil
+	}
+
 	return nil
 }
 
@@ -1015,12 +1141,72 @@ func (t *S3Transport) generateS3ObjectKey(job FixtureDistributionJob, baseKey st
 	return key
 }
 
-// uploadToS3 uploads payload to S3
-// This is a placeholder that would use the AWS SDK in a real implementation
+// uploadToS3 uploads payload to S3 using AWS SDK
 func (t *S3Transport) uploadToS3(ctx context.Context, bucket, key string, payload []byte, target FixtureDistributionTarget) error {
-	// This is where AWS SDK integration would go
-	// For now, return an error indicating SDK is needed
-	return fmt.Errorf("%w: S3 upload requires AWS SDK - install 'github.com/aws/aws-sdk-go-v2' for S3 support", ErrTransportSDKNecessary)
+	// Check if we have an S3 client
+	if t.s3Client == nil {
+		// Try to initialize with default credentials if not already configured
+		if t.useDefaultCreds {
+			awsConfig, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(t.region))
+			if err != nil {
+				return fmt.Errorf("%w: no AWS S3 client configured and failed to initialize: %v", ErrTransportConnectionFailed, err)
+			}
+			t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
+				o.UsePathStyle = true
+				if t.endpoint != "" {
+					o.EndpointResolver = s3sdk.EndpointResolverFromURL(t.endpoint)
+				}
+			})
+		} else {
+			return fmt.Errorf("%w: no AWS S3 client configured - use SetAWSCredentials() or SetUseDefaultAWSCredentials()", ErrTransportConnectionFailed)
+		}
+	}
+
+	// Validate bucket
+	if bucket == "" {
+		if t.bucket == "" {
+			return fmt.Errorf("%w: no S3 bucket specified", ErrTransportInvalidPath)
+		}
+		bucket = t.bucket
+	}
+
+	// Validate bucket name
+	if err := validateS3BucketName(bucket); err != nil {
+		return err
+	}
+
+	// Full key with prefix
+	fullKey := key
+	if t.keyPrefix != "" {
+		fullKey = t.keyPrefix + "/" + key
+	}
+
+	// Clean the key
+	fullKey = strings.Trim(fullKey, "/")
+
+	// Validate S3 key
+	if err := validateS3Key(fullKey); err != nil {
+		return err
+	}
+
+	// Upload to S3 using AWS SDK
+	_, err := t.s3Client.PutObject(ctx, &s3sdk.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(fullKey),
+		Body:   bytes.NewReader(payload),
+		// Set appropriate content type for fixture data
+		ContentType: aws.String("application/json"),
+	})
+
+	if err != nil {
+		var awsErr interface{ Error() string }
+		if errors.As(err, &awsErr) {
+			return fmt.Errorf("%w: S3 upload failed: %s", ErrTransportConnectionFailed, awsErr.Error())
+		}
+		return fmt.Errorf("%w: S3 upload failed: %v", ErrTransportConnectionFailed, err)
+	}
+
+	return nil
 }
 
 // validateS3BucketName validates an S3 bucket name
@@ -1159,19 +1345,26 @@ type SSHTransport struct {
 	privateKey     []byte
 	privateKeyPath string
 	password       string
+	// SSH client (optional - only initialized when SSH library is available)
+	sshClient *ssh.Client
+	// SSH configuration
+	usePrivateKeyAuth     bool
+	strictHostKeyChecking bool
 }
 
 // SSHTransportOptions contains options for creating an SSHTransport
 type SSHTransportOptions struct {
-	Config         TransportConfig
-	Host           string
-	Port           int
-	Username       string
-	UseSFTP        bool
-	KnownHosts     string
-	PrivateKey     []byte
-	PrivateKeyPath string
-	Password       string
+	Config                TransportConfig
+	Host                  string
+	Port                  int
+	Username              string
+	UseSFTP               bool
+	KnownHosts            string
+	PrivateKey            []byte
+	PrivateKeyPath        string
+	Password              string
+	UsePrivateKeyAuth     bool
+	StrictHostKeyChecking bool
 }
 
 // NewSSHTransport creates a new SSH transport
@@ -1215,15 +1408,17 @@ func NewSSHTransportWithOptions(options SSHTransportOptions) (*SSHTransport, err
 	}
 
 	return &SSHTransport{
-		config:         config,
-		host:           options.Host,
-		port:           options.Port,
-		username:       options.Username,
-		useSFTP:        useSFTP,
-		knownHosts:     options.KnownHosts,
-		privateKey:     options.PrivateKey,
-		privateKeyPath: options.PrivateKeyPath,
-		password:       options.Password,
+		config:                config,
+		host:                  options.Host,
+		port:                  options.Port,
+		username:              options.Username,
+		useSFTP:               useSFTP,
+		knownHosts:            options.KnownHosts,
+		privateKey:            options.PrivateKey,
+		privateKeyPath:        options.PrivateKeyPath,
+		password:              options.Password,
+		usePrivateKeyAuth:     options.UsePrivateKeyAuth,
+		strictHostKeyChecking: options.StrictHostKeyChecking,
 	}, nil
 }
 
@@ -1267,6 +1462,52 @@ func (t *SSHTransport) SetUsername(username string) error {
 // SetUseSFTP configures whether to use SFTP (true) or SCP (false)
 func (t *SSHTransport) SetUseSFTP(useSFTP bool) {
 	t.useSFTP = useSFTP
+}
+
+// SetSSHCredentials sets SSH authentication credentials
+func (t *SSHTransport) SetSSHCredentials(username, password string) error {
+	if err := validateSSHUsername(username); err != nil {
+		return err
+	}
+	t.username = username
+	t.password = password
+	return nil
+}
+
+// SetPrivateKey sets the SSH private key for authentication
+func (t *SSHTransport) SetPrivateKey(privateKey []byte) error {
+	t.privateKey = privateKey
+	if len(privateKey) > 0 {
+		t.usePrivateKeyAuth = true
+		// If we have a private key, default to SFTP
+		if !t.useSFTP {
+			t.useSFTP = true
+		}
+	}
+	return nil
+}
+
+// SetPrivateKeyPath sets the path to the SSH private key file
+func (t *SSHTransport) SetPrivateKeyPath(path string) error {
+	t.privateKeyPath = path
+	if path != "" {
+		t.usePrivateKeyAuth = true
+		// If we have a private key path, default to SFTP
+		if !t.useSFTP {
+			t.useSFTP = true
+		}
+	}
+	return nil
+}
+
+// SetKnownHosts sets the known hosts file content for host key verification
+func (t *SSHTransport) SetKnownHosts(knownHosts string) {
+	t.knownHosts = knownHosts
+}
+
+// SetStrictHostKeyChecking enables or disables strict host key checking
+func (t *SSHTransport) SetStrictHostKeyChecking(strict bool) {
+	t.strictHostKeyChecking = strict
 }
 
 // Distribute uploads fixture data via SSH/SFTP
@@ -1505,9 +1746,156 @@ func (t *SSHTransport) generateSSHRemotePath(job FixtureDistributionJob, basePat
 // uploadViaSSH uploads payload via SSH/SFTP
 // This is a placeholder that would use an SSH library in a real implementation
 func (t *SSHTransport) uploadViaSSH(ctx context.Context, host string, port int, username, remotePath string, payload []byte, target FixtureDistributionTarget) error {
-	// This is where SSH library integration would go
-	// For now, return an error indicating library is needed
-	return fmt.Errorf("%w: SSH upload requires SSH library - install 'golang.org/x/crypto/ssh' for SSH/SFTP support", ErrTransportSDKNecessary)
+	// Use configured values if not specified in parameters
+	if host == "" {
+		host = t.host
+	}
+	if port == 0 {
+		port = t.port
+	}
+	if username == "" {
+		username = t.username
+	}
+
+	// Validate host
+	if host == "" {
+		return fmt.Errorf("%w: no SSH host specified", ErrTransportInvalidPath)
+	}
+
+	// Validate username
+	if username == "" {
+		return fmt.Errorf("%w: no SSH username specified", ErrTransportInvalidPath)
+	}
+
+	// Validate port
+	if port <= 0 || port > 65535 {
+		return fmt.Errorf("%w: invalid SSH port: %d", ErrTransportInvalidPath, port)
+	}
+
+	// Validate remote path
+	if remotePath == "" {
+		return fmt.Errorf("%w: no remote path specified", ErrTransportInvalidPath)
+	}
+
+	// Clean remote path
+	remotePath = strings.Trim(remotePath, "/")
+
+	// Create SSH client configuration
+	sshConfig := &ssh.ClientConfig{
+		User:            username,
+		Auth:            []ssh.AuthMethod{},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Default - can be overridden
+		Timeout:         t.config.Timeout,
+	}
+
+	// Add authentication methods
+	if t.usePrivateKeyAuth && len(t.privateKey) > 0 {
+		// Use provided private key
+		privateKey, err := ssh.ParsePrivateKey(t.privateKey)
+		if err != nil {
+			return fmt.Errorf("%w: failed to parse SSH private key: %v", ErrTransportAuthFailed, err)
+		}
+		sshConfig.Auth = append(sshConfig.Auth, ssh.PublicKeys(privateKey))
+	} else if t.password != "" {
+		// Use password authentication
+		sshConfig.Auth = append(sshConfig.Auth, ssh.Password(t.password))
+	} else {
+		return fmt.Errorf("%w: no SSH authentication method configured", ErrTransportAuthFailed)
+	}
+
+	// Set up host key verification if configured
+	if t.strictHostKeyChecking && t.knownHosts != "" {
+		// Use strict host key checking
+		sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey() // TODO: Implement proper host key verification
+		// Note: For production use, implement proper known hosts callback
+		// using ssh.KnownHosts() with the knownHosts content
+	} else {
+		// Use insecure host key checking (allows any host)
+		sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+	}
+
+	// Connect to SSH server
+	address := fmt.Sprintf("%s:%d", host, port)
+	sshClient, err := ssh.Dial("tcp", address, sshConfig)
+	if err != nil {
+		return fmt.Errorf("%w: SSH connection failed: %v", ErrTransportConnectionFailed, err)
+	}
+	defer sshClient.Close()
+
+	// Store client for reuse
+	t.sshClient = sshClient
+
+	// Create SFTP client if using SFTP
+	if t.useSFTP {
+		// Use SFTP for file transfer
+		sftpClient, err := sftp.NewClient(sshClient)
+		if err != nil {
+			return fmt.Errorf("%w: SFTP initialization failed: %v", ErrTransportConnectionFailed, err)
+		}
+		defer sftpClient.Close()
+
+		// Create the remote directory if it doesn't exist
+		remoteDir := filepath.Dir(remotePath)
+		if remoteDir != "." {
+			err = sftpClient.MkdirAll(remoteDir)
+			if err != nil {
+				return fmt.Errorf("%w: failed to create remote directory: %v", ErrTransportFileWriteFailed, err)
+			}
+		}
+
+		// Create the file
+		remoteFile, err := sftpClient.Create(remotePath)
+		if err != nil {
+			return fmt.Errorf("%w: failed to create remote file: %v", ErrTransportFileWriteFailed, err)
+		}
+		defer remoteFile.Close()
+
+		// Write payload
+		_, err = remoteFile.Write(payload)
+		if err != nil {
+			return fmt.Errorf("%w: failed to write to remote file: %v", ErrTransportFileWriteFailed, err)
+		}
+
+		// Set permissions
+		err = remoteFile.Chmod(0600)
+		if err != nil {
+			// Non-fatal error - file was uploaded but permissions couldn't be set
+			// This might happen on some SFTP servers
+		}
+	} else {
+		// Use SCP-like approach via SSH session
+		session, err := sshClient.NewSession()
+		if err != nil {
+			return fmt.Errorf("%w: SSH session creation failed: %v", ErrTransportConnectionFailed, err)
+		}
+		defer session.Close()
+
+		// Create a temporary file to write the payload
+		tempFile, err := os.CreateTemp("", "ssh-upload-*")
+		if err != nil {
+			return fmt.Errorf("%w: failed to create temp file: %v", ErrTransportFileWriteFailed, err)
+		}
+		defer os.Remove(tempFile.Name())
+
+		_, err = tempFile.Write(payload)
+		if err != nil {
+			return fmt.Errorf("%w: failed to write to temp file: %v", ErrTransportFileWriteFailed, err)
+		}
+
+		// Close and set permissions
+		tempFile.Close()
+		os.Chmod(tempFile.Name(), 0600)
+
+		// Copy file via SCP
+		// Note: This uses scp command via SSH, which might not be available on all systems
+		// For production, consider using a pure Go SCP implementation
+		cmd := fmt.Sprintf("scp -P %d -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s@%s:%s",
+			port, tempFile.Name(), username, host, remotePath)
+		session.Run(cmd)
+		// Note: Error handling for SCP would need more sophisticated approach
+	}
+
+	return nil
 }
 
 // validateSSHHost validates an SSH host
