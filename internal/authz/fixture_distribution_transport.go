@@ -226,9 +226,10 @@ type FixtureTransportOptions struct {
 
 // HTTPTransport implements FixtureTransport for HTTPS distribution
 type HTTPTransport struct {
-	config  TransportConfig
-	client  *http.Client
-	baseURL *url.URL
+	config         TransportConfig
+	client         *http.Client
+	baseURL        *url.URL
+	metricsRecorder TransportMetricsRecorder
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -266,8 +267,9 @@ func NewHTTPTransport(options FixtureTransportOptions) (*HTTPTransport, error) {
 	}
 
 	return &HTTPTransport{
-		config: config,
-		client: client,
+		config:         config,
+		client:         client,
+		metricsRecorder: &NopTransportMetricsRecorder{},
 	}, nil
 }
 
@@ -294,10 +296,25 @@ func (t *HTTPTransport) SetBaseURL(rawURL string) error {
 	return nil
 }
 
+// SetMetricsRecorder sets the metrics recorder for this transport
+func (t *HTTPTransport) SetMetricsRecorder(recorder TransportMetricsRecorder) {
+	t.metricsRecorder = recorder
+}
+
 // Distribute sends fixture data via HTTP POST
 func (t *HTTPTransport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
+	// Record start of operation
+	startTime := time.Now()
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.IncrementConcurrent(TransportMethodHTTP)
+		defer t.metricsRecorder.DecrementConcurrent(TransportMethodHTTP)
+	}
+
 	// Validate payload size
 	if len(payload) > MaxTransportPayloadSize {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large (max %d bytes)", ErrTransportInvalidResponse, MaxTransportPayloadSize)
 	}
 
@@ -404,21 +421,34 @@ func (t *HTTPTransport) Distribute(ctx context.Context, job FixtureDistributionJ
 		// Check response status
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			// Success - parse response
-			return t.parseResponse(resp, job, target)
+			receipt, err := t.parseResponse(resp, job, target)
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeSuccess)
+			}
+			return receipt, err
 		}
 
 		// Check if we should retry on this status code
 		if t.shouldRetryStatusCode(resp.StatusCode) {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordRetry(TransportMethodHTTP, TransportOpDistribute, TransportOutcomeRetry)
+			}
 			resp.Body.Close()
 			continue
 		}
 
 		// Non-retryable error
 		defer resp.Body.Close()
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, t.handleNonRetryableResponse(resp, job)
 	}
 
 	// All retries exhausted
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.RecordOperation(TransportMethodHTTP, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+	}
 	return FixtureDistributionReceipt{}, fmt.Errorf("%w after %d attempts: %v", ErrTransportRetryExhausted, t.config.RetryCount+1, lastErr)
 }
 
@@ -519,9 +549,10 @@ func (t *HTTPTransport) handleNonRetryableResponse(resp *http.Response, job Fixt
 
 // LocalFileTransport implements FixtureTransport for local file distribution
 type LocalFileTransport struct {
-	config    TransportConfig
-	basePath  string
-	overwrite bool
+	config         TransportConfig
+	basePath       string
+	overwrite      bool
+	metricsRecorder TransportMetricsRecorder
 }
 
 // LocalFileTransportOptions contains options for creating a LocalFileTransport
@@ -552,9 +583,10 @@ func NewLocalFileTransport(options LocalFileTransportOptions) (*LocalFileTranspo
 	}
 
 	return &LocalFileTransport{
-		config:    config,
-		basePath:  basePath,
-		overwrite: options.Overwrite,
+		config:         config,
+		basePath:       basePath,
+		overwrite:      options.Overwrite,
+		metricsRecorder: &NopTransportMetricsRecorder{},
 	}, nil
 }
 
@@ -599,27 +631,51 @@ func (t *LocalFileTransport) GetBasePath() string {
 	return t.basePath
 }
 
+// SetMetricsRecorder sets the metrics recorder for this transport
+func (t *LocalFileTransport) SetMetricsRecorder(recorder TransportMetricsRecorder) {
+	t.metricsRecorder = recorder
+}
+
 // Distribute writes fixture data to a local file
 func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
+	// Record start of operation
+	startTime := time.Now()
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.IncrementConcurrent(TransportMethodLocal)
+		defer t.metricsRecorder.DecrementConcurrent(TransportMethodLocal)
+	}
+
 	// Validate payload
 	if len(payload) > MaxTransportPayloadSize {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large (max %d bytes)", ErrTransportInvalidResponse, MaxTransportPayloadSize)
 	}
 
 	// Get the full file path
 	filePath, err := t.getFilePath(target)
 	if err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, err
 	}
 
 	// Validate file path length
 	if len(filePath) > MaxFilePathLength {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: file path too long (max %d characters)", ErrTransportInvalidPath, MaxFilePathLength)
 	}
 
 	// Check if file already exists
 	if !t.overwrite {
 		if _, err := os.Stat(filePath); err == nil {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
 			return FixtureDistributionReceipt{}, fmt.Errorf("%w: file already exists at %s", ErrTransportFileExists, filePath)
 		}
 	}
@@ -627,6 +683,9 @@ func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistribu
 	// Create parent directory if it doesn't exist
 	parentDir := filepath.Dir(filePath)
 	if err := os.MkdirAll(parentDir, DefaultDirectoryPermissions); err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: failed to create parent directory: %v", ErrTransportInvalidPath, err)
 	}
 
@@ -667,11 +726,21 @@ func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistribu
 
 		// Check if it's a retryable error
 		if !isRetryableFileError(writeErr) {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
 			return FixtureDistributionReceipt{}, writeErr
+		}
+		// Record retry attempt
+		if t.metricsRecorder != nil && attempt < t.config.RetryCount {
+			t.metricsRecorder.RecordRetry(TransportMethodLocal, TransportOpDistribute, TransportOutcomeRetry)
 		}
 	}
 
 	if writeErr != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w after %d attempts", ErrTransportRetryExhausted, t.config.RetryCount+1)
 	}
 
@@ -679,6 +748,9 @@ func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistribu
 	writtenData, err := os.ReadFile(filePath)
 	if err != nil {
 		// File verification failed - clean up
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		os.Remove(filePath)
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: failed to verify written file: %v", ErrTransportFileReadFailed, err)
 	}
@@ -688,6 +760,9 @@ func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistribu
 	expectedHash := sha256.Sum256(payload)
 	if writtenHash != expectedHash {
 		// Hash mismatch - file was corrupted
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		os.Remove(filePath)
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: file verification failed - hash mismatch", ErrTransportFileWriteFailed)
 	}
@@ -703,6 +778,10 @@ func (t *LocalFileTransport) Distribute(ctx context.Context, job FixtureDistribu
 		VerificationStatus:   "verified",
 	}
 	receipt.ReceiptHash = FixtureDistributionReceiptHash(receipt)
+
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.RecordOperation(TransportMethodLocal, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeSuccess)
+	}
 
 	return receipt, nil
 }
@@ -818,12 +897,12 @@ func isRetryableFileError(err error) bool {
 
 // S3Transport implements FixtureTransport for S3 distribution
 type S3Transport struct {
-	config    TransportConfig
-	bucket    string
-	keyPrefix string
-	useSSL    bool
-	region    string
-	endpoint  string
+	config         TransportConfig
+	bucket         string
+	keyPrefix      string
+	useSSL         bool
+	region         string
+	endpoint       string
 	// AWS SDK client (optional - only initialized when AWS SDK is available)
 	s3Client *s3sdk.Client
 	// AWS configuration
@@ -831,6 +910,7 @@ type S3Transport struct {
 	secretAccessKey string
 	sessionToken    string
 	useDefaultCreds bool
+	metricsRecorder TransportMetricsRecorder
 }
 
 // S3TransportOptions contains options for creating an S3Transport
@@ -939,6 +1019,7 @@ func NewS3TransportWithOptions(options S3TransportOptions) (*S3Transport, error)
 		secretAccessKey: options.SecretAccessKey,
 		sessionToken:    options.SessionToken,
 		useDefaultCreds: options.UseDefaultCreds,
+		metricsRecorder: &NopTransportMetricsRecorder{},
 	}, nil
 }
 
@@ -965,6 +1046,11 @@ func (t *S3Transport) SetBucket(bucket string) error {
 func (t *S3Transport) SetKeyPrefix(prefix string) {
 	// Clean the prefix - remove leading/trailing slashes
 	t.keyPrefix = strings.Trim(prefix, "/")
+}
+
+// SetMetricsRecorder sets the metrics recorder for this transport
+func (t *S3Transport) SetMetricsRecorder(recorder TransportMetricsRecorder) {
+	t.metricsRecorder = recorder
 }
 
 // SetRegion sets the AWS region
@@ -1042,14 +1128,27 @@ func (t *S3Transport) SetUseDefaultAWSCredentials(useDefault bool) error {
 // Note: This implementation requires the AWS SDK to be available for actual S3 operations.
 // The transport layer logic is complete, but without the SDK, it will return ErrTransportSDKNecessary.
 func (t *S3Transport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
+	// Record start of operation
+	startTime := time.Now()
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.IncrementConcurrent(TransportMethodS3)
+		defer t.metricsRecorder.DecrementConcurrent(TransportMethodS3)
+	}
+
 	// Validate payload
 	if len(payload) > MaxTransportPayloadSize {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large (max %d bytes)", ErrTransportInvalidResponse, MaxTransportPayloadSize)
 	}
 
 	// Parse S3 URL from target
 	bucket, key, err := t.ParseS3URL(target.URL)
 	if err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, err
 	}
 
@@ -1060,6 +1159,9 @@ func (t *S3Transport) Distribute(ctx context.Context, job FixtureDistributionJob
 
 	// Validate bucket
 	if bucket == "" {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: no bucket specified", ErrTransportInvalidPath)
 	}
 
@@ -1070,6 +1172,9 @@ func (t *S3Transport) Distribute(ctx context.Context, job FixtureDistributionJob
 
 	// Validate key
 	if err := validateS3Key(key); err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, err
 	}
 
@@ -1098,11 +1203,21 @@ func (t *S3Transport) Distribute(ctx context.Context, job FixtureDistributionJob
 
 		// Check if it's a retryable error
 		if !t.isRetryableS3Error(uploadErr) {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
 			return FixtureDistributionReceipt{}, uploadErr
+		}
+		// Record retry attempt
+		if t.metricsRecorder != nil && attempt < t.config.RetryCount {
+			t.metricsRecorder.RecordRetry(TransportMethodS3, TransportOpDistribute, TransportOutcomeRetry)
 		}
 	}
 
 	if uploadErr != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w after %d attempts", ErrTransportRetryExhausted, t.config.RetryCount+1)
 	}
 
@@ -1117,6 +1232,10 @@ func (t *S3Transport) Distribute(ctx context.Context, job FixtureDistributionJob
 		VerificationStatus:   "verified",
 	}
 	receipt.ReceiptHash = FixtureDistributionReceiptHash(receipt)
+
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.RecordOperation(TransportMethodS3, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeSuccess)
+	}
 
 	return receipt, nil
 }
@@ -1537,6 +1656,7 @@ type SSHTransport struct {
 	// SSH configuration
 	usePrivateKeyAuth     bool
 	strictHostKeyChecking bool
+	metricsRecorder        TransportMetricsRecorder
 }
 
 // SSHTransportOptions contains options for creating an SSHTransport
@@ -1606,6 +1726,7 @@ func NewSSHTransportWithOptions(options SSHTransportOptions) (*SSHTransport, err
 		password:              options.Password,
 		usePrivateKeyAuth:     options.UsePrivateKeyAuth,
 		strictHostKeyChecking: options.StrictHostKeyChecking,
+		metricsRecorder:        &NopTransportMetricsRecorder{},
 	}, nil
 }
 
@@ -1635,6 +1756,11 @@ func (t *SSHTransport) SetPort(port int) error {
 	}
 	t.port = port
 	return nil
+}
+
+// SetMetricsRecorder sets the metrics recorder for this transport
+func (t *SSHTransport) SetMetricsRecorder(recorder TransportMetricsRecorder) {
+	t.metricsRecorder = recorder
 }
 
 // SetUsername sets the SSH username
@@ -1702,8 +1828,18 @@ func (t *SSHTransport) SetStrictHostKeyChecking(strict bool) {
 // to be available for actual SSH operations. The transport layer logic is complete,
 // but without the library, it will return ErrTransportSDKNecessary.
 func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
+	// Record start of operation
+	startTime := time.Now()
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.IncrementConcurrent(TransportMethodSSH)
+		defer t.metricsRecorder.DecrementConcurrent(TransportMethodSSH)
+	}
+
 	// Validate payload for SSH transport - use SSH-specific limit which is larger
 	if len(payload) > MaxPayloadSizeForSSH {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large for SSH (max %d bytes)", ErrTransportInvalidResponse, MaxPayloadSizeForSSH)
 	}
 
@@ -1717,6 +1853,9 @@ func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJo
 	// Parse SSH URL from target
 	host, port, path, err := t.ParseSSHURL(target.URL)
 	if err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, err
 	}
 
@@ -1730,11 +1869,17 @@ func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJo
 
 	// Validate host
 	if host == "" {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w: no SSH host specified", ErrTransportInvalidPath)
 	}
 
 	// Validate path
 	if err := validateSSHPath(path); err != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, err
 	}
 
@@ -1769,11 +1914,21 @@ func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJo
 
 		// Check if it's a retryable error
 		if !t.isRetryableSSHError(uploadErr) {
+			if t.metricsRecorder != nil {
+				t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+			}
 			return FixtureDistributionReceipt{}, uploadErr
+		}
+		// Record retry attempt
+		if t.metricsRecorder != nil && attempt < t.config.RetryCount {
+			t.metricsRecorder.RecordRetry(TransportMethodSSH, TransportOpDistribute, TransportOutcomeRetry)
 		}
 	}
 
 	if uploadErr != nil {
+		if t.metricsRecorder != nil {
+			t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeFailure)
+		}
 		return FixtureDistributionReceipt{}, fmt.Errorf("%w after %d attempts", ErrTransportRetryExhausted, t.config.RetryCount+1)
 	}
 
@@ -1788,6 +1943,10 @@ func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJo
 		VerificationStatus:   "verified",
 	}
 	receipt.ReceiptHash = FixtureDistributionReceiptHash(receipt)
+
+	if t.metricsRecorder != nil {
+		t.metricsRecorder.RecordOperation(TransportMethodSSH, TransportOpDistribute, uint64(time.Since(startTime).Milliseconds()), uint64(len(payload)), TransportOutcomeSuccess)
+	}
 
 	return receipt, nil
 }
