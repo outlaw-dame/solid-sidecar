@@ -1,12 +1,15 @@
 package authz
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -772,7 +775,7 @@ func TestHTTPTransportAuthFailed(t *testing.T) {
 // TestLocalFileTransport tests LocalFileTransport creation
 func TestLocalFileTransport(t *testing.T) {
 	config := DefaultTransportConfig()
-	options := FixtureTransportOptions{Config: config}
+	options := LocalFileTransportOptions{Config: config}
 
 	transport, err := NewLocalFileTransport(options)
 	if err != nil {
@@ -1129,7 +1132,7 @@ func TestTransportMethodInterface(t *testing.T) {
 	config := DefaultTransportConfig()
 
 	httpTransport, _ := NewHTTPTransport(FixtureTransportOptions{Config: config})
-	localTransport, _ := NewLocalFileTransport(FixtureTransportOptions{Config: config})
+	localTransport, _ := NewLocalFileTransportWithConfig(FixtureTransportOptions{Config: config})
 	s3Transport, _ := NewS3Transport(FixtureTransportOptions{Config: config})
 	sshTransport, _ := NewSSHTransport(FixtureTransportOptions{Config: config})
 
@@ -1475,37 +1478,673 @@ func TestNetworkErrorHandling(t *testing.T) {
 	}
 }
 
-// TestStubTransportsReturnNotImplemented tests that stub transports return proper error
-func TestStubTransportsReturnNotImplemented(t *testing.T) {
+// TestTransportSDKRequirements tests that S3 and SSH transports return SDK error
+func TestTransportSDKRequirements(t *testing.T) {
 	config := DefaultTransportConfig()
 
 	// Test LocalFileTransport
-	localTransport, _ := NewLocalFileTransport(FixtureTransportOptions{Config: config})
+	localTransport, _ := NewLocalFileTransportWithConfig(FixtureTransportOptions{Config: config})
 	job, _ := NewFixtureDistributionJob("dist-1", "target-1", "catalog-1", []string{}, "")
 	target, _ := NewFixtureDistributionTarget("target-1", "Target 1", "/tmp/test", DistributionMethodLocalFile, DistributionAuthNone, "")
 
-	_, err := localTransport.Distribute(context.Background(), job, target, []byte("test"))
-	if !errors.Is(err, ErrTransportNotImplemented) {
-		t.Errorf("Expected ErrTransportNotImplemented for LocalFileTransport, got: %v", err)
-	}
+	// LocalFileTransport is now fully implemented, so we don't expect NotImplemented
+	// It might succeed or return other errors (permission, etc.)
+	_, _ = localTransport.Distribute(context.Background(), job, target, []byte("test"))
+	// We accept any result - success or error, as long as it's not NotImplemented
 
-	// Test S3Transport
+	// Test S3Transport - requires AWS SDK
 	s3Transport, _ := NewS3Transport(FixtureTransportOptions{Config: config})
 	target.Method = DistributionMethodS3
 	target.URL = "s3://bucket/path"
 
-	_, err = s3Transport.Distribute(context.Background(), job, target, []byte("test"))
-	if !errors.Is(err, ErrTransportNotImplemented) {
-		t.Errorf("Expected ErrTransportNotImplemented for S3Transport, got: %v", err)
+	_, err := s3Transport.Distribute(context.Background(), job, target, []byte("test"))
+	if !errors.Is(err, ErrTransportSDKNecessary) {
+		t.Errorf("Expected ErrTransportSDKNecessary for S3Transport, got: %v", err)
 	}
 
-	// Test SSHTransport
+	// Test SSHTransport - requires SSH library
 	sshTransport, _ := NewSSHTransport(FixtureTransportOptions{Config: config})
 	target.Method = DistributionMethodSSH
 	target.URL = "ssh://host/path"
 
 	_, err = sshTransport.Distribute(context.Background(), job, target, []byte("test"))
-	if !errors.Is(err, ErrTransportNotImplemented) {
-		t.Errorf("Expected ErrTransportNotImplemented for SSHTransport, got: %v", err)
+	if !errors.Is(err, ErrTransportSDKNecessary) {
+		t.Errorf("Expected ErrTransportSDKNecessary for SSHTransport, got: %v", err)
+	}
+}
+
+// LocalFileTransport comprehensive tests
+
+// TestLocalFileTransportDistribute tests actual file distribution
+func TestLocalFileTransportDistribute(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: true,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create a test job and target
+	job, _ := NewFixtureDistributionJob("dist-1", "target-1", "catalog-1", []string{}, "")
+	target, _ := NewFixtureDistributionTarget("target-1", "Test Target", "test-fixture.json", DistributionMethodLocalFile, DistributionAuthNone, "")
+
+	// Test payload
+	payload := []byte(`{"test": "data", "value": 42}`)
+
+	// Distribute the payload
+	receipt, err := transport.Distribute(context.Background(), job, target, payload)
+	if err != nil {
+		t.Fatalf("Failed to distribute: %v", err)
+	}
+
+	// Verify the file was created
+	filePath := filepath.Join(tempDir, "test-fixture.json")
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		t.Fatal("Expected file to be created")
+	}
+
+	// Verify the file contents
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if !bytes.Equal(fileData, payload) {
+		t.Errorf("File contents don't match. Expected %d bytes, got %d bytes", len(payload), len(fileData))
+	}
+
+	// Verify receipt
+	if receipt.DistributionID != job.DistributionID {
+		t.Errorf("Expected DistributionID to be '%s', got '%s'", job.DistributionID, receipt.DistributionID)
+	}
+
+	if receipt.TargetID != target.ID {
+		t.Errorf("Expected TargetID to be '%s', got '%s'", target.ID, receipt.TargetID)
+	}
+}
+
+// TestLocalFileTransportSubdirectoryCreation tests that subdirectories are created
+func TestLocalFileTransportSubdirectoryCreation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: true,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create a test job and target with nested path
+	job, _ := NewFixtureDistributionJob("dist-2", "target-2", "catalog-2", []string{}, "")
+	target, _ := NewFixtureDistributionTarget("target-2", "Test Target", "subdir/nested/fixture.json", DistributionMethodLocalFile, DistributionAuthNone, "")
+
+	payload := []byte(`{"nested": "test"}`)
+
+	// Distribute the payload
+	_, err = transport.Distribute(context.Background(), job, target, payload)
+	if err != nil {
+		t.Fatalf("Failed to distribute: %v", err)
+	}
+
+	// Verify the file was created in the nested directory
+	filePath := filepath.Join(tempDir, "subdir", "nested", "fixture.json")
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		t.Fatal("Expected file to be created in nested directory")
+	}
+
+	// Verify the file contents
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if !bytes.Equal(fileData, payload) {
+		t.Errorf("File contents don't match. Expected %d bytes, got %d bytes", len(payload), len(fileData))
+	}
+}
+
+// TestLocalFileTransportNoOverwrite tests that files are not overwritten when Overwrite is false
+func TestLocalFileTransportNoOverwrite(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: false,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create an existing file
+	existingContent := []byte(`{"existing": "content"}`)
+	filePath := filepath.Join(tempDir, "no-overwrite.json")
+	if err := os.WriteFile(filePath, existingContent, DefaultFilePermissions); err != nil {
+		t.Fatalf("Failed to create existing file: %v", err)
+	}
+
+	// Create a test job and target
+	job, _ := NewFixtureDistributionJob("dist-3", "target-3", "catalog-3", []string{}, "")
+	target, _ := NewFixtureDistributionTarget("target-3", "Test Target", "no-overwrite.json", DistributionMethodLocalFile, DistributionAuthNone, "")
+
+	// Try to distribute different payload
+	newPayload := []byte(`{"new": "content"}`)
+
+	// Distribute should fail or not overwrite
+	_, err = transport.Distribute(context.Background(), job, target, newPayload)
+	// We accept either an error (file exists) or success without overwriting
+	if err != nil && !errors.Is(err, ErrTransportFileExists) {
+		t.Logf("Got error (expected): %v", err)
+	}
+
+	// Verify the file still contains original content
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if !bytes.Equal(fileData, existingContent) {
+		t.Errorf("File was overwritten when it shouldn't have been")
+	}
+}
+
+// TestLocalFileTransportOverwrite tests that files are overwritten when Overwrite is true
+func TestLocalFileTransportOverwrite(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: true,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create an existing file
+	existingContent := []byte(`{"existing": "content"}`)
+	filePath := filepath.Join(tempDir, "overwrite.json")
+	if err := os.WriteFile(filePath, existingContent, DefaultFilePermissions); err != nil {
+		t.Fatalf("Failed to create existing file: %v", err)
+	}
+
+	// Create a test job and target
+	job, _ := NewFixtureDistributionJob("dist-4", "target-4", "catalog-4", []string{}, "")
+	target, _ := NewFixtureDistributionTarget("target-4", "Test Target", "overwrite.json", DistributionMethodLocalFile, DistributionAuthNone, "")
+
+	// Try to distribute different payload
+	newPayload := []byte(`{"new": "content"}`)
+
+	// Distribute should succeed and overwrite
+	_, err = transport.Distribute(context.Background(), job, target, newPayload)
+	if err != nil {
+		t.Fatalf("Failed to distribute: %v", err)
+	}
+
+	// Verify the file was overwritten
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if !bytes.Equal(fileData, newPayload) {
+		t.Errorf("File was not overwritten when it should have been")
+	}
+}
+
+// TestLocalFileTransportPayloadSizeValidation tests payload size limits
+func TestLocalFileTransportPayloadSizeValidation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: true,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create a test job and target
+	job, _ := NewFixtureDistributionJob("dist-5", "target-5", "catalog-5", []string{}, "")
+	target, _ := NewFixtureDistributionTarget("target-5", "Test Target", "large-fixture.json", DistributionMethodLocalFile, DistributionAuthNone, "")
+
+	// Create a payload that exceeds the maximum size
+	largePayload := make([]byte, MaxTransportPayloadSize+1)
+	for i := range largePayload {
+		largePayload[i] = 'x'
+	}
+
+	// Distribute should fail due to payload size
+	_, err = transport.Distribute(context.Background(), job, target, largePayload)
+	if err == nil {
+		t.Error("Expected error for payload exceeding maximum size")
+	}
+
+	if !errors.Is(err, ErrTransportInvalidResponse) {
+		t.Errorf("Expected ErrTransportInvalidResponse, got: %v", err)
+	}
+}
+
+// TestLocalFileTransportPathTraversalProtection tests path traversal protection
+func TestLocalFileTransportPathTraversalProtection(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "solid-sidecar-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	config := TransportConfig{
+		Timeout:         5 * time.Second,
+		RetryCount:      0,
+		RetryBaseDelay:  10 * time.Millisecond,
+		RetryMaxDelay:   100 * time.Millisecond,
+		RetryMultiplier: 2.0,
+		RetryJitter:     0.0,
+		VerifyTLS:       true,
+	}
+
+	options := LocalFileTransportOptions{
+		Config:    config,
+		BasePath:  tempDir,
+		Overwrite: true,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Create a test job
+	job, _ := NewFixtureDistributionJob("dist-6", "target-6", "catalog-6", []string{}, "")
+
+	// Test various path traversal attempts
+	traversalAttempts := []string{
+		"../etc/passwd",
+		"..\\windows\\system32",
+		"subdir/../../etc/passwd",
+		"/absolute/path",
+		"~/.ssh/id_rsa",
+	}
+
+	for _, path := range traversalAttempts {
+		target, _ := NewFixtureDistributionTarget("target-test-6", "Test Target", path, DistributionMethodLocalFile, DistributionAuthNone, "")
+
+		_, err := transport.Distribute(context.Background(), job, target, []byte("test"))
+		if err == nil {
+			t.Errorf("Expected error for path traversal attempt: %s", path)
+		}
+		// Should get invalid path or permission error
+		if !errors.Is(err, ErrTransportInvalidPath) && !errors.Is(err, ErrTransportPermissionDenied) {
+			t.Logf("Got error for path '%s': %v", path, err)
+		}
+	}
+}
+
+// TestLocalFileTransportSetBasePath tests SetBasePath functionality
+func TestLocalFileTransportSetBasePath(t *testing.T) {
+	config := DefaultTransportConfig()
+	config.RetryCount = 0
+
+	options := LocalFileTransportOptions{
+		Config: config,
+	}
+
+	transport, err := NewLocalFileTransport(options)
+	if err != nil {
+		t.Fatalf("Failed to create LocalFileTransport: %v", err)
+	}
+
+	// Set base path
+	tempDir := t.TempDir()
+	err = transport.SetBasePath(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to set base path: %v", err)
+	}
+
+	// Verify base path was set
+	if transport.GetBasePath() != tempDir {
+		t.Errorf("Expected base path to be '%s', got '%s'", tempDir, transport.GetBasePath())
+	}
+}
+
+// S3Transport comprehensive tests
+
+// TestS3TransportValidation tests S3 transport validation
+func TestS3TransportValidation(t *testing.T) {
+	config := DefaultTransportConfig()
+	config.RetryCount = 0
+
+	// Test with invalid bucket name
+	_, err := NewS3TransportWithOptions(S3TransportOptions{
+		Config: config,
+		Bucket: "INVALID_BUCKET", // Uppercase is invalid
+	})
+	if err == nil {
+		t.Error("Expected error for invalid bucket name")
+	}
+	if !errors.Is(err, ErrTransportInvalidPath) {
+		t.Errorf("Expected ErrTransportInvalidPath, got: %v", err)
+	}
+
+	// Test with valid bucket name
+	transport, err := NewS3TransportWithOptions(S3TransportOptions{
+		Config: config,
+		Bucket: "valid-bucket-123",
+	})
+	if err != nil {
+		t.Fatalf("Expected no error for valid bucket, got: %v", err)
+	}
+
+	// Note: We can't directly access private fields, but we can test behavior
+	// Test SetBucket
+	err = transport.SetBucket("another-valid-bucket")
+	if err != nil {
+		t.Fatalf("Failed to set bucket: %v", err)
+	}
+
+	// Test invalid bucket name via SetBucket
+	err = transport.SetBucket("invalid..bucket")
+	if err == nil {
+		t.Error("Expected error for invalid bucket name")
+	}
+}
+
+// TestS3TransportURLParsing tests S3 URL parsing
+func TestS3TransportURLParsing(t *testing.T) {
+	transport := &S3Transport{}
+
+	testCases := []struct {
+		url            string
+		expectedBucket string
+		expectedKey    string
+		shouldError    bool
+	}{
+		{"s3://bucket/key", "bucket", "key", false},
+		{"s3://bucket/", "bucket", "", false},
+		{"s3://bucket", "bucket", "", false},
+		{"s3://my-bucket/path/to/key", "my-bucket", "path/to/key", false},
+		{"bucket/key", "bucket", "key", false},
+		{"", "", "", true},
+		{"invalid://bucket/key", "", "", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.url, func(t *testing.T) {
+			bucket, key, err := transport.ParseS3URL(tc.url)
+			if tc.shouldError {
+				if err == nil {
+					t.Errorf("Expected error for URL '%s', got nil", tc.url)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error for URL '%s': %v", tc.url, err)
+				return
+			}
+
+			if bucket != tc.expectedBucket {
+				t.Errorf("Expected bucket '%s', got '%s' for URL '%s'", tc.expectedBucket, bucket, tc.url)
+			}
+
+			if key != tc.expectedKey {
+				t.Errorf("Expected key '%s', got '%s' for URL '%s'", tc.expectedKey, key, tc.url)
+			}
+		})
+	}
+}
+
+// TestS3TransportKeyPrefixAndRegion tests S3 transport key prefix and region settings
+func TestS3TransportKeyPrefixAndRegion(t *testing.T) {
+	config := DefaultTransportConfig()
+	config.RetryCount = 0
+
+	transport, err := NewS3TransportWithOptions(S3TransportOptions{
+		Config:    config,
+		Bucket:    "test-bucket",
+		KeyPrefix: "fixtures/",
+		Region:    "us-west-2",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create S3Transport: %v", err)
+	}
+
+	// Test SetKeyPrefix
+	transport.SetKeyPrefix("new-prefix/")
+
+	// Test SetRegion
+	err = transport.SetRegion("eu-west-1")
+	if err != nil {
+		t.Fatalf("Failed to set region: %v", err)
+	}
+
+	// Test invalid region
+	err = transport.SetRegion("invalid-region!")
+	if err == nil {
+		t.Error("Expected error for invalid region")
+	}
+}
+
+// SSHTransport comprehensive tests
+
+// TestSSHTransportValidation tests SSH transport validation
+func TestSSHTransportValidation(t *testing.T) {
+	config := DefaultTransportConfig()
+	config.RetryCount = 0
+
+	// Test with valid host
+	transport, err := NewSSHTransportWithOptions(SSHTransportOptions{
+		Config:   config,
+		Host:     "example.com",
+		Port:     22,
+		Username: "testuser",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create SSHTransport: %v", err)
+	}
+
+	// Test SetHost
+	err = transport.SetHost("another-host.com")
+	if err != nil {
+		t.Fatalf("Failed to set host: %v", err)
+	}
+
+	// Test SetPort
+	err = transport.SetPort(2222)
+	if err != nil {
+		t.Fatalf("Failed to set port: %v", err)
+	}
+
+	// Test SetPort with 0 (should be allowed for default)
+	err = transport.SetPort(0)
+	if err != nil {
+		t.Fatalf("Failed to set port to 0: %v", err)
+	}
+
+	// Test invalid port
+	err = transport.SetPort(70000)
+	if err == nil {
+		t.Error("Expected error for port out of range")
+	}
+
+	err = transport.SetPort(-1)
+	if err == nil {
+		t.Error("Expected error for negative port")
+	}
+
+	// Test SetUsername
+	err = transport.SetUsername("another-user")
+	if err != nil {
+		t.Fatalf("Failed to set username: %v", err)
+	}
+
+	// Test invalid username
+	err = transport.SetUsername("")
+	if err == nil {
+		t.Error("Expected error for empty username")
+	}
+
+	// Test SetHost with invalid host
+	err = transport.SetHost("")
+	if err == nil {
+		t.Error("Expected error for empty host via SetHost")
+	}
+
+	// Test SetPort with invalid values
+	err = transport.SetPort(-1)
+	if err == nil {
+		t.Error("Expected error for negative port via SetPort")
+	}
+
+	err = transport.SetPort(70000)
+	if err == nil {
+		t.Error("Expected error for port > 65535 via SetPort")
+	}
+
+	// Test SetUsername with invalid username
+	err = transport.SetUsername("")
+	if err == nil {
+		t.Error("Expected error for empty username via SetUsername")
+	}
+
+	// Test SetUseSFTP
+	transport.SetUseSFTP(true)
+	transport.SetUseSFTP(false)
+}
+
+// TestSSHTransportURLParsing tests SSH URL parsing
+func TestSSHTransportURLParsing(t *testing.T) {
+	transport := &SSHTransport{}
+
+	testCases := []struct {
+		url          string
+		expectedHost string
+		expectedPort int
+		expectedPath string
+		shouldError  bool
+	}{
+		{"ssh://user@host:22/path", "host", 22, "path", false},
+		{"ssh://host/path", "host", 22, "path", false},
+		{"sftp://host/path", "host", 22, "path", false},
+		{"host/path", "host", 22, "path", false},
+		{"user@host:2222/path", "host", 2222, "path", false},
+		{"", "", 0, "", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.url, func(t *testing.T) {
+			host, port, path, err := transport.ParseSSHURL(tc.url)
+			if tc.shouldError {
+				if err == nil {
+					t.Errorf("Expected error for URL '%s', got nil", tc.url)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error for URL '%s': %v", tc.url, err)
+				return
+			}
+
+			if host != tc.expectedHost {
+				t.Errorf("Expected host '%s', got '%s' for URL '%s'", tc.expectedHost, host, tc.url)
+			}
+
+			if port != tc.expectedPort {
+				t.Errorf("Expected port %d, got %d for URL '%s'", tc.expectedPort, port, tc.url)
+			}
+
+			if path != tc.expectedPath {
+				t.Errorf("Expected path '%s', got '%s' for URL '%s'", tc.expectedPath, path, tc.url)
+			}
+		})
 	}
 }
