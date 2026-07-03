@@ -232,23 +232,11 @@ func isValidDID(did string) bool {
 	return parts[0] != "" && parts[1] != ""
 }
 
-// String returns a string representation of the AgentIdentity (privacy-safe)
+// String returns a privacy-safe string representation of the AgentIdentity.
+// Keep fmt/log output redacted by default; use explicit fields only in local debug tooling
+// after a privacy review.
 func (ai AgentIdentity) String() string {
-	var b strings.Builder
-	b.WriteString("AgentIdentity{")
-	b.WriteString(fmt.Sprintf("WebID: %q, ", ai.WebID))
-	if ai.HasDID() {
-		b.WriteString(fmt.Sprintf("DID: %q, ", ai.DID))
-	}
-	b.WriteString(fmt.Sprintf("Issuer: %q, ", ai.Issuer))
-	b.WriteString(fmt.Sprintf("ClientID: %q, ", ai.ClientID))
-	if ai.HasTokenBinding() {
-		b.WriteString("TokenBinding: [REDACTED], ")
-	}
-	b.WriteString(fmt.Sprintf("Assurance: %s, ", ai.AssuranceLevel))
-	b.WriteString(fmt.Sprintf("Source: %s", ai.VerificationSource))
-	b.WriteString("}")
-	return b.String()
+	return ai.RedactedString()
 }
 
 // RedactedString returns a privacy-safe string representation
