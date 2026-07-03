@@ -2228,3 +2228,327 @@ func TestSSHTransportURLParsing(t *testing.T) {
 		})
 	}
 }
+
+// TestSecurityValidation tests security-related validation functions
+func TestSecurityValidation(t *testing.T) {
+	t.Run("sanitizeError", func(t *testing.T) {
+		// Test nil error
+		if err := sanitizeError(nil); err != nil {
+			t.Errorf("Expected nil error, got: %v", err)
+		}
+
+		// Test error without sensitive data
+		testErr := errors.New("some error message")
+		sanitized := sanitizeError(testErr)
+		if sanitized.Error() != testErr.Error() {
+			t.Errorf("Expected unchanged error, got: %v", sanitized)
+		}
+
+		// Test error with AWS access key
+		awsKeyErr := errors.New("connection failed with AKIAIOSFODNN7EXAMPLE")
+		sanitized = sanitizeError(awsKeyErr)
+		if strings.Contains(sanitized.Error(), "AKIAIOSFODNN7EXAMPLE") {
+			t.Error("Expected AWS key to be redacted")
+		}
+		if !strings.Contains(sanitized.Error(), "[REDACTED]") {
+			t.Error("Expected [REDACTED] in sanitized error")
+		}
+
+		// Test error with private key
+		privateKeyErr := errors.New("failed to parse -----BEGIN PRIVATE KEY-----")
+		sanitized = sanitizeError(privateKeyErr)
+		if strings.Contains(sanitized.Error(), "BEGIN PRIVATE KEY") {
+			t.Error("Expected private key header to be redacted")
+		}
+
+		// Test error with password
+		passwordErr := errors.New("auth failed: password=secret123")
+		sanitized = sanitizeError(passwordErr)
+		if strings.Contains(sanitized.Error(), "secret123") {
+			t.Error("Expected password to be redacted")
+		}
+
+		// Test error with token
+		tokenErr := errors.New("token=abc123xyz")
+		sanitized = sanitizeError(tokenErr)
+		if strings.Contains(sanitized.Error(), "abc123xyz") {
+			t.Error("Expected token to be redacted")
+		}
+
+		// Test with custom sensitive fields
+		customErr := errors.New("api_key=mysecretkey")
+		sanitized = sanitizeError(customErr, "mysecretkey")
+		if strings.Contains(sanitized.Error(), "mysecretkey") {
+			t.Error("Expected custom sensitive field to be redacted")
+		}
+	})
+
+	t.Run("validateS3Key", func(t *testing.T) {
+		testCases := []struct {
+			key         string
+			shouldError bool
+			errType     error
+		}{
+			{"", false, nil},
+			{"valid/key/path.json", false, nil},
+			{"a", false, nil},
+			{strings.Repeat("a", 1024), false, nil},                    // Exactly at limit
+			{strings.Repeat("a", 1025), true, ErrTransportInvalidPath}, // Over limit
+			{"key\x00with\x00null", true, ErrTransportInvalidPath},     // Null byte
+			{"key/../traversal", true, ErrTransportInvalidPath},        // Directory traversal
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.key, func(t *testing.T) {
+				err := validateS3Key(tc.key)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for key '%s', got nil", tc.key)
+					} else if tc.errType != nil && !errors.Is(err, tc.errType) {
+						t.Errorf("Expected error type %v, got %v for key '%s'", tc.errType, err, tc.key)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for key '%s': %v", tc.key, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("validateS3BucketName", func(t *testing.T) {
+		testCases := []struct {
+			bucket      string
+			shouldError bool
+		}{
+			{"", true},
+			{"a", true},                      // Too short
+			{"ab", true},                     // Too short
+			{"abc", false},                   // Valid minimum
+			{"my-valid-bucket", false},       // Valid
+			{"bucket.with.dots", false},      // Valid
+			{strings.Repeat("a", 63), false}, // Max length
+			{strings.Repeat("a", 64), true},  // Too long
+			{"a..b", true},                   // Consecutive periods
+			{"-starts-with-hyphen", true},    // Invalid start
+			{"ends-with-hyphen-", true},      // Invalid end
+			{"UPPERCASE", true},              // Uppercase not allowed
+			{"bucket_name", true},            // Underscore not allowed
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.bucket, func(t *testing.T) {
+				err := validateS3BucketName(tc.bucket)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for bucket '%s', got nil", tc.bucket)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for bucket '%s': %v", tc.bucket, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("validateS3Endpoint", func(t *testing.T) {
+		testCases := []struct {
+			endpoint    string
+			shouldError bool
+			errType     error
+		}{
+			{"", false, nil},                                                       // Empty is OK
+			{"https://s3.amazonaws.com", false, nil},                               // Valid AWS endpoint
+			{"https://my-bucket.s3.amazonaws.com", false, nil},                     // Valid bucket endpoint
+			{"http://localhost:9000", true, ErrTransportSecurityViolation},         // localhost
+			{"http://127.0.0.1:9000", true, ErrTransportSecurityViolation},         // 127.0.0.1
+			{"http://::1:9000", true, ErrTransportSecurityViolation},               // IPv6 loopback
+			{"http://10.0.0.1:9000", true, ErrTransportSecurityViolation},          // Private IP
+			{"http://192.168.1.1:9000", true, ErrTransportSecurityViolation},       // Private IP
+			{"http://172.16.0.1:9000", true, ErrTransportSecurityViolation},        // Private IP
+			{"ftp://example.com", true, ErrTransportInvalidPath},                   // Invalid scheme
+			{"invalid-url", true, ErrTransportInvalidPath},                         // Invalid URL
+			{"https://localhost.localdomain", true, ErrTransportSecurityViolation}, // localhost variation
+			{"https://169.254.1.1:9000", true, ErrTransportSecurityViolation},      // APIPA range
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.endpoint, func(t *testing.T) {
+				err := validateS3Endpoint(tc.endpoint)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for endpoint '%s', got nil", tc.endpoint)
+					} else if tc.errType != nil && !errors.Is(err, tc.errType) {
+						t.Errorf("Expected error type %v, got %v for endpoint '%s'", tc.errType, err, tc.endpoint)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for endpoint '%s': %v", tc.endpoint, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("validateSSHHost", func(t *testing.T) {
+		testCases := []struct {
+			host        string
+			shouldError bool
+			errType     error
+		}{
+			{"", true, ErrTransportInvalidPath},                       // Empty
+			{"valid-host.com", false, nil},                            // Valid hostname
+			{"192.168.1.1", true, ErrTransportSecurityViolation},      // Private IP
+			{"localhost", true, ErrTransportSecurityViolation},        // localhost
+			{"127.0.0.1", true, ErrTransportSecurityViolation},        // loopback
+			{"::1", true, ErrTransportSecurityViolation},              // IPv6 loopback
+			{strings.Repeat("a", 256), true, ErrTransportInvalidPath}, // Too long
+			{"host\x00name", true, ErrTransportInvalidPath},           // Null byte
+			{"host;command", true, ErrTransportSecurityViolation},     // Command injection
+			{"host|command", true, ErrTransportSecurityViolation},     // Command injection
+			{"host$(command)", true, ErrTransportSecurityViolation},   // Command injection
+			{"host`command`", true, ErrTransportSecurityViolation},    // Command injection
+			{"valid-host-name-123", false, nil},                       // Valid with numbers and hyphens
+			{"valid.host.name", false, nil},                           // Valid with dots
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.host, func(t *testing.T) {
+				err := validateSSHHost(tc.host)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for host '%s', got nil", tc.host)
+					} else if tc.errType != nil && !errors.Is(err, tc.errType) {
+						t.Errorf("Expected error type %v, got %v for host '%s'", tc.errType, err, tc.host)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for host '%s': %v", tc.host, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("validateSSHPath", func(t *testing.T) {
+		testCases := []struct {
+			path        string
+			shouldError bool
+			errType     error
+		}{
+			{"", false, nil},                        // Empty is OK
+			{"valid/path", false, nil},              // Valid path
+			{"a", false, nil},                       // Single char
+			{strings.Repeat("a", 4096), false, nil}, // Max length
+			{strings.Repeat("a", 4097), true, ErrTransportInvalidPath}, // Too long
+			{"/absolute/path", true, ErrTransportInvalidPath},          // Absolute path
+			{"~/home/path", true, ErrTransportInvalidPath},             // Home directory
+			{"path\x00with\x00null", true, ErrTransportInvalidPath},    // Null byte
+			{"path/../traversal", true, ErrTransportInvalidPath},       // Directory traversal
+			{"path;command", true, ErrTransportSecurityViolation},      // Command injection
+			{"path|command", true, ErrTransportSecurityViolation},      // Command injection
+			{"path$(command)", true, ErrTransportSecurityViolation},    // Command injection
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.path, func(t *testing.T) {
+				err := validateSSHPath(tc.path)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for path '%s', got nil", tc.path)
+					} else if tc.errType != nil && !errors.Is(err, tc.errType) {
+						t.Errorf("Expected error type %v, got %v for path '%s'", tc.errType, err, tc.path)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for path '%s': %v", tc.path, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("validateSSHUsername", func(t *testing.T) {
+		testCases := []struct {
+			username    string
+			shouldError bool
+		}{
+			{"", true},                        // Empty
+			{"validuser", false},              // Valid
+			{"user123", false},                // Valid with numbers
+			{"user-name", false},              // Valid with hyphen
+			{"user_name", false},              // Valid with underscore
+			{strings.Repeat("a", 255), false}, // Max length
+			{strings.Repeat("a", 256), true},  // Too long
+			{"user\x00name", true},            // Null byte
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.username, func(t *testing.T) {
+				err := validateSSHUsername(tc.username)
+				if tc.shouldError {
+					if err == nil {
+						t.Errorf("Expected error for username '%s', got nil", tc.username)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("Unexpected error for username '%s': %v", tc.username, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("isPrivateIPAddress", func(t *testing.T) {
+		testCases := []struct {
+			host      string
+			isPrivate bool
+		}{
+			{"127.0.0.1", true},
+			{"10.0.0.1", true},
+			{"10.255.255.255", true},
+			{"172.16.0.1", true},
+			{"172.31.255.255", true},
+			{"192.168.0.1", true},
+			{"192.168.255.255", true},
+			{"169.254.0.1", true},
+			{"::1", true},
+			{"fc00::1", true},
+			{"fe80::1", true},
+			{"8.8.8.8", false},
+			{"208.67.222.222", false},
+			{"2001:4860:4860::8888", false},
+			{"localhost", false},   // Not an IP address literal
+			{"example.com", false}, // Not an IP address literal
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.host, func(t *testing.T) {
+				result := isPrivateIPAddress(tc.host)
+				if result != tc.isPrivate {
+					t.Errorf("Expected isPrivateIPAddress(%s) = %v, got %v", tc.host, tc.isPrivate, result)
+				}
+			})
+		}
+	})
+
+	t.Run("SecurityConstants", func(t *testing.T) {
+		// Verify security constants have expected values
+		if MaxS3KeyLength != 1024 {
+			t.Errorf("Expected MaxS3KeyLength = 1024, got %d", MaxS3KeyLength)
+		}
+
+		if MaxSSHPathLength != 4096 {
+			t.Errorf("Expected MaxSSHPathLength = 4096, got %d", MaxSSHPathLength)
+		}
+
+		if MaxSSHHostLength != 255 {
+			t.Errorf("Expected MaxSSHHostLength = 255, got %d", MaxSSHHostLength)
+		}
+
+		if MaxPayloadSizeForSSH != 100*1024*1024 {
+			t.Errorf("Expected MaxPayloadSizeForSSH = 100MB, got %d", MaxPayloadSizeForSSH)
+		}
+	})
+}

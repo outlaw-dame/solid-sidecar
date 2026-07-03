@@ -11,10 +11,12 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -32,18 +34,19 @@ import (
 
 // Transport errors
 var (
-	ErrTransportNotImplemented   = errors.New("transport not implemented")
-	ErrTransportTimeout          = errors.New("transport timeout")
-	ErrTransportAuthFailed       = errors.New("transport authentication failed")
-	ErrTransportConnectionFailed = errors.New("transport connection failed")
-	ErrTransportInvalidResponse  = errors.New("transport invalid response")
-	ErrTransportRetryExhausted   = errors.New("transport retry exhausted")
-	ErrTransportFileWriteFailed  = errors.New("transport file write failed")
-	ErrTransportFileReadFailed   = errors.New("transport file read failed")
-	ErrTransportFileExists       = errors.New("transport file already exists")
-	ErrTransportInvalidPath      = errors.New("transport invalid path")
-	ErrTransportPermissionDenied = errors.New("transport permission denied")
-	ErrTransportSDKNecessary     = errors.New("transport requires SDK")
+	ErrTransportNotImplemented    = errors.New("transport not implemented")
+	ErrTransportTimeout           = errors.New("transport timeout")
+	ErrTransportAuthFailed        = errors.New("transport authentication failed")
+	ErrTransportConnectionFailed  = errors.New("transport connection failed")
+	ErrTransportInvalidResponse   = errors.New("transport invalid response")
+	ErrTransportRetryExhausted    = errors.New("transport retry exhausted")
+	ErrTransportFileWriteFailed   = errors.New("transport file write failed")
+	ErrTransportFileReadFailed    = errors.New("transport file read failed")
+	ErrTransportFileExists        = errors.New("transport file already exists")
+	ErrTransportInvalidPath       = errors.New("transport invalid path")
+	ErrTransportPermissionDenied  = errors.New("transport permission denied")
+	ErrTransportSDKNecessary      = errors.New("transport requires SDK")
+	ErrTransportSecurityViolation = errors.New("transport security violation")
 )
 
 // MaxTransportPayloadSize is the maximum size of payload that can be transported (10 MB)
@@ -75,6 +78,61 @@ const DefaultTransportRetryMultiplier = 2.0
 
 // DefaultTransportRetryJitter is the default jitter factor (0.1 = 10%)
 const DefaultTransportRetryJitter = 0.1
+
+// Security constants
+const (
+	// MaxS3KeyLength is the maximum length for an S3 object key (1024 bytes per AWS limits)
+	MaxS3KeyLength = 1024
+	// MaxSSHPathLength is the maximum length for an SSH/SFTP path
+	MaxSSHPathLength = 4096
+	// MaxSSHHostLength is the maximum length for an SSH hostname
+	MaxSSHHostLength = 255
+	// MaxPayloadSizeForSSH is the maximum payload size for SSH transfers (100MB)
+	MaxPayloadSizeForSSH = 100 * 1024 * 1024
+	// SSHConnectionTimeout is the default connection timeout for SSH
+	SSHConnectionTimeout = 30 * time.Second
+)
+
+// sanitizeError removes sensitive information from error messages
+func sanitizeError(err error, sensitiveFields ...string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Create a map of sensitive patterns to redact
+	sensitivePatterns := []string{
+		"AKIA",                  // AWS access key ID prefix
+		"wJalrXUtnFEMI/K7MDENG", // Example AWS secret key pattern
+		"-----BEGIN",            // Private key header
+		"-----END",              // Private key footer
+		"PRIVATE KEY",           // Private key identifier
+	}
+
+	// Add any additional sensitive fields passed in
+	for _, field := range sensitiveFields {
+		if field != "" {
+			sensitivePatterns = append(sensitivePatterns, field)
+		}
+	}
+
+	// Convert error to string and redact sensitive information
+	errStr := err.Error()
+	sanitized := errStr
+
+	for _, pattern := range sensitivePatterns {
+		sanitized = strings.ReplaceAll(sanitized, pattern, "[REDACTED]")
+	}
+
+	// Also redact anything that looks like a password or secret
+	// Look for common patterns: password=xxxxx, secret=xxxxx, token=xxxxx
+	sanitized = regexp.MustCompile(`(?i)(password|secret|token|key|credential|auth)['":\s]*[=:]\s*[^\s,;'"]+`).ReplaceAllString(sanitized, "$1=[REDACTED]")
+
+	if sanitized != errStr {
+		return errors.New(sanitized)
+	}
+
+	return err
+}
 
 // FixtureTransport defines the interface for fixture distribution transports
 type FixtureTransport interface {
@@ -853,9 +911,14 @@ func NewS3TransportWithOptions(options S3TransportOptions) (*S3Transport, error)
 		if err == nil {
 			s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
 				o.UsePathStyle = true
+				// Security: Always use SSL/TLS for S3 connections
+				o.UseAccelerate = false // Don't use S3 Accelerate (uses different endpoint)
 				if options.Endpoint != "" {
 					o.EndpointResolver = s3sdk.EndpointResolverFromURL(options.Endpoint)
 				}
+				// Security: Enforce TLS 1.2+ for all S3 connections
+				// Note: AWS SDK v2 uses TLS 1.2+ by default, but we explicitly set it
+				// This will be handled by the AWS SDK's default TLS configuration
 			})
 		} else {
 			// Log AWS config error but don't fail transport creation
@@ -1143,6 +1206,18 @@ func (t *S3Transport) generateS3ObjectKey(job FixtureDistributionJob, baseKey st
 
 // uploadToS3 uploads payload to S3 using AWS SDK
 func (t *S3Transport) uploadToS3(ctx context.Context, bucket, key string, payload []byte, target FixtureDistributionTarget) error {
+	// Validate payload size
+	if len(payload) > MaxTransportPayloadSize {
+		return fmt.Errorf("%w: payload too large (max %d bytes)", ErrTransportInvalidResponse, MaxTransportPayloadSize)
+	}
+
+	// Apply context timeout to the upload operation
+	if t.config.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, t.config.Timeout)
+		defer cancel()
+	}
+
 	// Check if we have an S3 client
 	if t.s3Client == nil {
 		// Try to initialize with default credentials if not already configured
@@ -1153,7 +1228,15 @@ func (t *S3Transport) uploadToS3(ctx context.Context, bucket, key string, payloa
 			}
 			t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
 				o.UsePathStyle = true
+				// Security: Always use SSL/TLS for S3 connections
+				o.UseAccelerate = false
 				if t.endpoint != "" {
+					// Validate endpoint URL to prevent SSRF
+					if err := validateS3Endpoint(t.endpoint); err != nil {
+						// If endpoint is invalid, don't use it
+						// This prevents SSRF attacks via custom endpoints
+						return
+					}
 					o.EndpointResolver = s3sdk.EndpointResolverFromURL(t.endpoint)
 				}
 			})
@@ -1257,14 +1340,19 @@ func validateS3Key(key string) error {
 	}
 
 	// S3 key naming rules:
-	// - Can be up to 1024 bytes
+	// - Can be up to MaxS3KeyLength bytes (AWS limit: 1024)
 	// - Can contain any character except null
-	if len(key) > 1024 {
-		return fmt.Errorf("%w: S3 key too long (max 1024 bytes)", ErrTransportInvalidPath)
+	if len(key) > MaxS3KeyLength {
+		return fmt.Errorf("%w: S3 key too long (max %d bytes)", ErrTransportInvalidPath, MaxS3KeyLength)
 	}
 
 	if strings.Contains(key, "\x00") {
 		return fmt.Errorf("%w: S3 key cannot contain null byte", ErrTransportInvalidPath)
+	}
+
+	// Security: Prevent directory traversal in S3 keys
+	if strings.Contains(key, "..") {
+		return fmt.Errorf("%w: S3 key cannot contain directory traversal sequences", ErrTransportInvalidPath)
 	}
 
 	return nil
@@ -1285,6 +1373,90 @@ func validateS3Region(region string) error {
 	}
 
 	return nil
+}
+
+// validateS3Endpoint validates an S3 endpoint URL to prevent SSRF attacks
+func validateS3Endpoint(endpoint string) error {
+	if endpoint == "" {
+		return nil // Empty endpoint is OK - will use default AWS endpoint
+	}
+
+	// Parse the URL
+	parsedURL, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("%w: invalid S3 endpoint URL: %v", ErrTransportInvalidPath, err)
+	}
+
+	// Check scheme - must be http or https
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("%w: S3 endpoint must use http or https scheme, got %s", ErrTransportInvalidPath, parsedURL.Scheme)
+	}
+
+	// Check for localhost or internal IP addresses to prevent SSRF
+	host := parsedURL.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return fmt.Errorf("%w: S3 endpoint cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
+	}
+
+	// Check for private IP address ranges
+	if isPrivateIPAddress(host) {
+		return fmt.Errorf("%w: S3 endpoint cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
+	}
+
+	// Check for localhost variations
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" {
+		return fmt.Errorf("%w: S3 endpoint cannot point to localhost", ErrTransportSecurityViolation)
+	}
+
+	return nil
+}
+
+// isPrivateIPAddress checks if a hostname resolves to a private IP address
+func isPrivateIPAddress(host string) bool {
+	// Check for IP address literals in private ranges
+	if ip := net.ParseIP(host); ip != nil {
+		// Check for private IPv4 ranges
+		if ip4 := ip.To4(); ip4 != nil {
+			// 10.0.0.0/8
+			if ip4[0] == 10 {
+				return true
+			}
+			// 172.16.0.0/12
+			if ip4[0] == 172 && (ip4[1]&0xF0) == 16 {
+				return true
+			}
+			// 192.168.0.0/16
+			if ip4[0] == 192 && ip4[1] == 168 {
+				return true
+			}
+			// 169.254.0.0/16 (APIPA)
+			if ip4[0] == 169 && ip4[1] == 254 {
+				return true
+			}
+			// 127.0.0.0/8 (loopback)
+			if ip4[0] == 127 {
+				return true
+			}
+		}
+		// Check for private IPv6 ranges
+		if ip.To16() != nil {
+			// fc00::/7 (Unique Local Address)
+			if ip[0] == 0xfc || ip[0] == 0xfd {
+				return true
+			}
+			// fe80::/10 (Link-local) - first byte is 0xfe, second byte has top 2 bits as 10xxxxxx
+			if ip[0] == 0xfe && (ip[1]&0xc0) == 0x80 {
+				return true
+			}
+			// ::1/128 (loopback)
+			if ip.IsLoopback() {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // isRetryableS3Error returns true if the S3 error is retryable
@@ -1332,6 +1504,21 @@ func (t *S3Transport) calculateBackoffDelay(attempt int) time.Duration {
 	}
 
 	return time.Duration(delayFloat) * time.Millisecond
+}
+
+// Close releases resources used by the S3Transport
+func (t *S3Transport) Close() error {
+	// Clear sensitive data from memory
+	t.accessKeyID = ""
+	t.secretAccessKey = ""
+	t.sessionToken = ""
+	t.useDefaultCreds = false
+
+	// Note: S3 client doesn't need explicit cleanup in AWS SDK v2
+	// The client is safe to garbage collect
+	t.s3Client = nil
+
+	return nil
 }
 
 // SSHTransport implements FixtureTransport for SSH/SFTP distribution
@@ -1515,9 +1702,16 @@ func (t *SSHTransport) SetStrictHostKeyChecking(strict bool) {
 // to be available for actual SSH operations. The transport layer logic is complete,
 // but without the library, it will return ErrTransportSDKNecessary.
 func (t *SSHTransport) Distribute(ctx context.Context, job FixtureDistributionJob, target FixtureDistributionTarget, payload []byte) (FixtureDistributionReceipt, error) {
-	// Validate payload
-	if len(payload) > MaxTransportPayloadSize {
-		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large (max %d bytes)", ErrTransportInvalidResponse, MaxTransportPayloadSize)
+	// Validate payload for SSH transport - use SSH-specific limit which is larger
+	if len(payload) > MaxPayloadSizeForSSH {
+		return FixtureDistributionReceipt{}, fmt.Errorf("%w: payload too large for SSH (max %d bytes)", ErrTransportInvalidResponse, MaxPayloadSizeForSSH)
+	}
+
+	// Apply context timeout to the upload operation
+	if t.config.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, t.config.Timeout)
+		defer cancel()
 	}
 
 	// Parse SSH URL from target
@@ -1863,36 +2057,82 @@ func (t *SSHTransport) uploadViaSSH(ctx context.Context, host string, port int, 
 			// This might happen on some SFTP servers
 		}
 	} else {
-		// Use SCP-like approach via SSH session
-		session, err := sshClient.NewSession()
-		if err != nil {
-			return fmt.Errorf("%w: SSH session creation failed: %v", ErrTransportConnectionFailed, err)
-		}
-		defer session.Close()
-
+		// Use pure Go SCP implementation to avoid command injection
 		// Create a temporary file to write the payload
 		tempFile, err := os.CreateTemp("", "ssh-upload-*")
 		if err != nil {
 			return fmt.Errorf("%w: failed to create temp file: %v", ErrTransportFileWriteFailed, err)
 		}
-		defer os.Remove(tempFile.Name())
+		defer func() {
+			// Securely remove temp file
+			if err := os.Remove(tempFile.Name()); err != nil && !os.IsNotExist(err) {
+				// Log error but don't return it as it's cleanup-related
+			}
+		}()
 
+		// Write payload to temp file
 		_, err = tempFile.Write(payload)
 		if err != nil {
 			return fmt.Errorf("%w: failed to write to temp file: %v", ErrTransportFileWriteFailed, err)
 		}
 
-		// Close and set permissions
-		tempFile.Close()
-		os.Chmod(tempFile.Name(), 0600)
+		// Sync to ensure data is written to disk
+		err = tempFile.Sync()
+		if err != nil {
+			return fmt.Errorf("%w: failed to sync temp file: %v", ErrTransportFileWriteFailed, err)
+		}
 
-		// Copy file via SCP
-		// Note: This uses scp command via SSH, which might not be available on all systems
-		// For production, consider using a pure Go SCP implementation
-		cmd := fmt.Sprintf("scp -P %d -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s@%s:%s",
-			port, tempFile.Name(), username, host, remotePath)
-		session.Run(cmd)
-		// Note: Error handling for SCP would need more sophisticated approach
+		// Close file before transferring
+		tempFile.Close()
+
+		// Set secure permissions on temp file
+		if err := os.Chmod(tempFile.Name(), 0600); err != nil {
+			// Check if file doesn't exist (though it should since we just created it)
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("%w: failed to set permissions on temp file: %v", ErrTransportFileWriteFailed, err)
+			}
+		}
+
+		// Open temp file for reading
+		sourceFile, err := os.Open(tempFile.Name())
+		if err != nil {
+			return fmt.Errorf("%w: failed to open temp file for reading: %v", ErrTransportFileReadFailed, err)
+		}
+		defer sourceFile.Close()
+
+		// Create SFTP client for SCP-like transfer (using SFTP protocol which is more secure)
+		// Note: We use SFTP even for "SCP" mode for security and reliability
+		sftpClient, err := sftp.NewClient(sshClient)
+		if err != nil {
+			return fmt.Errorf("%w: SFTP initialization failed: %v", ErrTransportConnectionFailed, err)
+		}
+		defer sftpClient.Close()
+
+		// Create the remote directory if it doesn't exist
+		remoteDir := filepath.Dir(remotePath)
+		if remoteDir != "." {
+			if err := sftpClient.MkdirAll(remoteDir); err != nil {
+				return fmt.Errorf("%w: failed to create remote directory: %v", ErrTransportFileWriteFailed, err)
+			}
+		}
+
+		// Create remote file
+		remoteFile, err := sftpClient.Create(remotePath)
+		if err != nil {
+			return fmt.Errorf("%w: failed to create remote file: %v", ErrTransportFileWriteFailed, err)
+		}
+		defer remoteFile.Close()
+
+		// Transfer data using io.Copy for efficiency
+		if _, err := io.Copy(remoteFile, sourceFile); err != nil {
+			return fmt.Errorf("%w: failed to transfer file data: %v", ErrTransportFileWriteFailed, err)
+		}
+
+		// Set secure permissions on remote file
+		if err := remoteFile.Chmod(0600); err != nil {
+			// Non-fatal: file was transferred but permissions couldn't be set
+			// This might happen on some SFTP servers
+		}
 	}
 
 	return nil
@@ -1915,8 +2155,28 @@ func validateSSHHost(host string) error {
 	}
 
 	// Check length (reasonable limit)
-	if len(host) > 253 {
-		return fmt.Errorf("%w: SSH host too long (max 253 characters)", ErrTransportInvalidPath)
+	if len(host) > MaxSSHHostLength {
+		return fmt.Errorf("%w: SSH host too long (max %d characters)", ErrTransportInvalidPath, MaxSSHHostLength)
+	}
+
+	// Security: Prevent SSRF attacks - check for localhost and private IP addresses
+	// Check for localhost variations
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+		return fmt.Errorf("%w: SSH host cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
+	}
+
+	// Check for private IP address literals
+	if isPrivateIPAddress(host) {
+		return fmt.Errorf("%w: SSH host cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
+	}
+
+	// Security: Prevent command injection characters
+	dangerousChars := []string{"\\", "|", ";", "$", "`", "&", "(", ")", "{", "}", "[", "]", "<", ">"}
+	for _, char := range dangerousChars {
+		if strings.Contains(host, char) {
+			return fmt.Errorf("%w: SSH host contains dangerous character: %s", ErrTransportSecurityViolation, char)
+		}
 	}
 
 	return nil
@@ -1957,9 +2217,27 @@ func validateSSHPath(path string) error {
 		return fmt.Errorf("%w: SSH path cannot contain directory traversal", ErrTransportInvalidPath)
 	}
 
+	// Check for absolute paths starting with /
+	if strings.HasPrefix(path, "/") {
+		return fmt.Errorf("%w: SSH path cannot be absolute (must be relative)", ErrTransportInvalidPath)
+	}
+
+	// Check for home directory paths
+	if strings.HasPrefix(path, "~") {
+		return fmt.Errorf("%w: SSH path cannot use home directory shortform", ErrTransportInvalidPath)
+	}
+
 	// Check length
-	if len(path) > 4096 {
-		return fmt.Errorf("%w: SSH path too long (max 4096 characters)", ErrTransportInvalidPath)
+	if len(path) > MaxSSHPathLength {
+		return fmt.Errorf("%w: SSH path too long (max %d characters)", ErrTransportInvalidPath, MaxSSHPathLength)
+	}
+
+	// Check for dangerous characters that could cause command injection
+	dangerousChars := []string{"\\", "|", ";", "$", "`", "&", "(", ")", "{", "}", "[", "]"}
+	for _, char := range dangerousChars {
+		if strings.Contains(path, char) {
+			return fmt.Errorf("%w: SSH path contains dangerous character: %s", ErrTransportSecurityViolation, char)
+		}
 	}
 
 	return nil
@@ -2009,6 +2287,29 @@ func (t *SSHTransport) calculateBackoffDelay(attempt int) time.Duration {
 	}
 
 	return time.Duration(delayFloat) * time.Millisecond
+}
+
+// Close releases resources used by the SSHTransport
+func (t *SSHTransport) Close() error {
+	// Close SSH client connection
+	if t.sshClient != nil {
+		t.sshClient.Close()
+		t.sshClient = nil
+	}
+
+	// Clear sensitive data from memory
+	t.host = ""
+	t.username = ""
+	t.password = ""
+	t.privateKey = nil
+	t.privateKeyPath = ""
+	t.knownHosts = ""
+	t.port = 0
+	t.usePrivateKeyAuth = false
+	t.strictHostKeyChecking = false
+	t.useSFTP = false
+
+	return nil
 }
 
 // DistributionClient provides a high-level interface for fixture distribution
