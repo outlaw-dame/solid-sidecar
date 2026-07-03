@@ -69,29 +69,29 @@ type TransportMetricsSnapshot struct {
 // TransportMetrics provides metrics collection for fixture distribution transports
 type TransportMetrics struct {
 	mu sync.RWMutex
-	
+
 	// Counters
 	operationsTotal map[TransportMetricsKey]uint64
-	
+
 	// Histograms (for duration and payload size)
 	// We use fixed buckets: [0, 10, 50, 100, 500, 1000, 5000, 10000, 30000, 60000, +inf]
 	durationBucketsMs []uint64
 	payloadBuckets    []uint64
-	
+
 	// Operation duration histogram data
 	// Key: TransportMetricsKey, Value: count per bucket
 	operationDurations map[TransportMetricsKey][]uint64
-	
+
 	// Payload size histogram data
 	// Key: TransportMethod, Value: count per bucket
 	payloadSizes map[TransportMethod][]uint64
-	
+
 	// Gauges
 	concurrentOperations map[TransportMethod]int64
-	
+
 	// Retry counters
 	retryAttemptsTotal map[TransportMetricsKey]uint64
-	
+
 	// Timestamp
 	timestampUnix time.Time
 }
@@ -101,49 +101,49 @@ func NewTransportMetrics() *TransportMetrics {
 	// Initialize with standard histogram buckets (in ms for duration, in bytes for payload)
 	// Duration buckets: 0ms, 10ms, 50ms, 100ms, 500ms, 1s, 5s, 10s, 30s, 60s, +inf
 	durationBuckets := []uint64{0, 10, 50, 100, 500, 1000, 5000, 10000, 30000, 60000}
-	
+
 	// Payload buckets: 0B, 1KB, 10KB, 100KB, 1MB, 10MB, +inf
 	payloadBuckets := []uint64{0, 1024, 10240, 102400, 1048576, 10485760}
-	
+
 	return &TransportMetrics{
-		operationsTotal:   make(map[TransportMetricsKey]uint64),
-		operationDurations: make(map[TransportMetricsKey][]uint64),
-		payloadSizes:      make(map[TransportMethod][]uint64),
+		operationsTotal:      make(map[TransportMetricsKey]uint64),
+		operationDurations:   make(map[TransportMetricsKey][]uint64),
+		payloadSizes:         make(map[TransportMethod][]uint64),
 		concurrentOperations: make(map[TransportMethod]int64),
-		retryAttemptsTotal: make(map[TransportMetricsKey]uint64),
-		durationBucketsMs:  durationBuckets,
-		payloadBuckets:     payloadBuckets,
-		timestampUnix:     time.Now().UTC(),
+		retryAttemptsTotal:   make(map[TransportMetricsKey]uint64),
+		durationBucketsMs:    durationBuckets,
+		payloadBuckets:       payloadBuckets,
+		timestampUnix:        time.Now().UTC(),
 	}
 }
 
 // RecordOperation records a transport operation with timing and outcome
-func (m *TransportMetrics) RecordOperation(method TransportMethod, operation TransportOperation, 
+func (m *TransportMetrics) RecordOperation(method TransportMethod, operation TransportOperation,
 	durationMs uint64, payloadBytes uint64, outcome TransportOutcome) {
-	
+
 	if m == nil {
 		return
 	}
-	
+
 	key := TransportMetricsKey{
 		Method:    method,
 		Operation: operation,
 		Outcome:   outcome,
 	}
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Increment operation counter
 	m.operationsTotal[key]++
-	
+
 	// Record duration in histogram
 	if m.operationDurations[key] == nil {
 		m.operationDurations[key] = make([]uint64, len(m.durationBucketsMs)+1)
 	}
 	bucket := m.findDurationBucket(durationMs)
 	m.operationDurations[key][bucket]++
-	
+
 	// Record payload size in histogram
 	if payloadBytes > 0 {
 		if m.payloadSizes[method] == nil {
@@ -152,7 +152,7 @@ func (m *TransportMetrics) RecordOperation(method TransportMethod, operation Tra
 		payloadBucket := m.findPayloadBucket(payloadBytes)
 		m.payloadSizes[method][payloadBucket]++
 	}
-	
+
 	// Update timestamp
 	m.timestampUnix = time.Now().UTC()
 }
@@ -198,52 +198,52 @@ func (m *TransportMetrics) RecordRetry(method TransportMethod, operation Transpo
 func (m *TransportMetrics) Snapshot() TransportMetricsSnapshot {
 	if m == nil {
 		return TransportMetricsSnapshot{
-			OperationsTotal:    make(map[TransportMetricsKey]uint64),
-			OperationDurationMs: make(map[TransportMetricsKey][]uint64),
-			PayloadBytes:       make(map[TransportMethod][]uint64),
+			OperationsTotal:      make(map[TransportMetricsKey]uint64),
+			OperationDurationMs:  make(map[TransportMetricsKey][]uint64),
+			PayloadBytes:         make(map[TransportMethod][]uint64),
 			ConcurrentOperations: make(map[TransportMethod]int64),
-			RetryAttemptsTotal:  make(map[TransportMetricsKey]uint64),
-			TimestampUnix:      time.Now().UTC(),
+			RetryAttemptsTotal:   make(map[TransportMetricsKey]uint64),
+			TimestampUnix:        time.Now().UTC(),
 		}
 	}
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	snapshot := TransportMetricsSnapshot{
-		OperationsTotal:    make(map[TransportMetricsKey]uint64),
-		OperationDurationMs: make(map[TransportMetricsKey][]uint64),
-		PayloadBytes:       make(map[TransportMethod][]uint64),
+		OperationsTotal:      make(map[TransportMetricsKey]uint64),
+		OperationDurationMs:  make(map[TransportMetricsKey][]uint64),
+		PayloadBytes:         make(map[TransportMethod][]uint64),
 		ConcurrentOperations: make(map[TransportMethod]int64),
-		RetryAttemptsTotal:  make(map[TransportMetricsKey]uint64),
-		TimestampUnix:      m.timestampUnix,
+		RetryAttemptsTotal:   make(map[TransportMetricsKey]uint64),
+		TimestampUnix:        m.timestampUnix,
 	}
-	
+
 	// Copy counters
 	for key, value := range m.operationsTotal {
 		snapshot.OperationsTotal[key] = value
 	}
-	
+
 	// Copy duration histograms
 	for key, buckets := range m.operationDurations {
 		snapshot.OperationDurationMs[key] = append([]uint64(nil), buckets...)
 	}
-	
+
 	// Copy payload histograms
 	for method, buckets := range m.payloadSizes {
 		snapshot.PayloadBytes[method] = append([]uint64(nil), buckets...)
 	}
-	
+
 	// Copy gauges
 	for method, count := range m.concurrentOperations {
 		snapshot.ConcurrentOperations[method] = count
 	}
-	
+
 	// Copy retry counters
 	for key, value := range m.retryAttemptsTotal {
 		snapshot.RetryAttemptsTotal[key] = value
 	}
-	
+
 	return snapshot
 }
 
@@ -254,7 +254,7 @@ func (m *TransportMetrics) Reset() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.operationsTotal = make(map[TransportMetricsKey]uint64)
 	m.operationDurations = make(map[TransportMetricsKey][]uint64)
 	m.payloadSizes = make(map[TransportMethod][]uint64)
@@ -301,8 +301,9 @@ type TransportMetricsRecorder interface {
 type NopTransportMetricsRecorder struct{}
 
 // RecordOperation does nothing
-func (n *NopTransportMetricsRecorder) RecordOperation(method TransportMethod, operation TransportOperation, 
-	durationMs uint64, payloadBytes uint64, outcome TransportOutcome) {}
+func (n *NopTransportMetricsRecorder) RecordOperation(method TransportMethod, operation TransportOperation,
+	durationMs uint64, payloadBytes uint64, outcome TransportOutcome) {
+}
 
 // IncrementConcurrent does nothing
 func (n *NopTransportMetricsRecorder) IncrementConcurrent(method TransportMethod) {}
@@ -311,17 +312,18 @@ func (n *NopTransportMetricsRecorder) IncrementConcurrent(method TransportMethod
 func (n *NopTransportMetricsRecorder) DecrementConcurrent(method TransportMethod) {}
 
 // RecordRetry does nothing
-func (n *NopTransportMetricsRecorder) RecordRetry(method TransportMethod, operation TransportOperation, outcome TransportOutcome) {}
+func (n *NopTransportMetricsRecorder) RecordRetry(method TransportMethod, operation TransportOperation, outcome TransportOutcome) {
+}
 
 // Snapshot returns empty snapshot
 func (n *NopTransportMetricsRecorder) Snapshot() TransportMetricsSnapshot {
 	return TransportMetricsSnapshot{
-		OperationsTotal:    make(map[TransportMetricsKey]uint64),
-		OperationDurationMs: make(map[TransportMetricsKey][]uint64),
-		PayloadBytes:       make(map[TransportMethod][]uint64),
+		OperationsTotal:      make(map[TransportMetricsKey]uint64),
+		OperationDurationMs:  make(map[TransportMetricsKey][]uint64),
+		PayloadBytes:         make(map[TransportMethod][]uint64),
 		ConcurrentOperations: make(map[TransportMethod]int64),
-		RetryAttemptsTotal:  make(map[TransportMetricsKey]uint64),
-		TimestampUnix:      time.Now().UTC(),
+		RetryAttemptsTotal:   make(map[TransportMetricsKey]uint64),
+		TimestampUnix:        time.Now().UTC(),
 	}
 }
 
@@ -342,7 +344,7 @@ func GetDefaultTransportMetricsRecorder() TransportMetricsRecorder {
 }
 
 // RecordTransportOperation records an operation using the default recorder
-func RecordTransportOperation(method TransportMethod, operation TransportOperation, 
+func RecordTransportOperation(method TransportMethod, operation TransportOperation,
 	durationMs uint64, payloadBytes uint64, outcome TransportOutcome) {
 	defaultTransportMetricsRecorder.RecordOperation(method, operation, durationMs, payloadBytes, outcome)
 }

@@ -226,9 +226,9 @@ type FixtureTransportOptions struct {
 
 // HTTPTransport implements FixtureTransport for HTTPS distribution
 type HTTPTransport struct {
-	config         TransportConfig
-	client         *http.Client
-	baseURL        *url.URL
+	config          TransportConfig
+	client          *http.Client
+	baseURL         *url.URL
 	metricsRecorder TransportMetricsRecorder
 }
 
@@ -267,8 +267,8 @@ func NewHTTPTransport(options FixtureTransportOptions) (*HTTPTransport, error) {
 	}
 
 	return &HTTPTransport{
-		config:         config,
-		client:         client,
+		config:          config,
+		client:          client,
 		metricsRecorder: &NopTransportMetricsRecorder{},
 	}, nil
 }
@@ -549,9 +549,9 @@ func (t *HTTPTransport) handleNonRetryableResponse(resp *http.Response, job Fixt
 
 // LocalFileTransport implements FixtureTransport for local file distribution
 type LocalFileTransport struct {
-	config         TransportConfig
-	basePath       string
-	overwrite      bool
+	config          TransportConfig
+	basePath        string
+	overwrite       bool
 	metricsRecorder TransportMetricsRecorder
 }
 
@@ -583,9 +583,9 @@ func NewLocalFileTransport(options LocalFileTransportOptions) (*LocalFileTranspo
 	}
 
 	return &LocalFileTransport{
-		config:         config,
-		basePath:       basePath,
-		overwrite:      options.Overwrite,
+		config:          config,
+		basePath:        basePath,
+		overwrite:       options.Overwrite,
 		metricsRecorder: &NopTransportMetricsRecorder{},
 	}, nil
 }
@@ -897,12 +897,12 @@ func isRetryableFileError(err error) bool {
 
 // S3Transport implements FixtureTransport for S3 distribution
 type S3Transport struct {
-	config         TransportConfig
-	bucket         string
-	keyPrefix      string
-	useSSL         bool
-	region         string
-	endpoint       string
+	config    TransportConfig
+	bucket    string
+	keyPrefix string
+	useSSL    bool
+	region    string
+	endpoint  string
 	// AWS SDK client (optional - only initialized when AWS SDK is available)
 	s3Client *s3sdk.Client
 	// AWS configuration
@@ -1656,7 +1656,7 @@ type SSHTransport struct {
 	// SSH configuration
 	usePrivateKeyAuth     bool
 	strictHostKeyChecking bool
-	metricsRecorder        TransportMetricsRecorder
+	metricsRecorder       TransportMetricsRecorder
 }
 
 // SSHTransportOptions contains options for creating an SSHTransport
@@ -1726,7 +1726,7 @@ func NewSSHTransportWithOptions(options SSHTransportOptions) (*SSHTransport, err
 		password:              options.Password,
 		usePrivateKeyAuth:     options.UsePrivateKeyAuth,
 		strictHostKeyChecking: options.StrictHostKeyChecking,
-		metricsRecorder:        &NopTransportMetricsRecorder{},
+		metricsRecorder:       &NopTransportMetricsRecorder{},
 	}, nil
 }
 

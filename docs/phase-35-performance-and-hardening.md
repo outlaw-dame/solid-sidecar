@@ -104,12 +104,12 @@ Add metrics using the existing observability framework:
 
 ## Files to Create/Modify
 
-1. `internal/authz/transport_metrics.go` - Transport metrics definitions
-2. `internal/authz/transport_metrics_test.go` - Metrics tests
-3. `internal/authz/transport_performance_test.go` - Performance benchmarks
-4. `internal/authz/transport_security_audit.md` - Security audit documentation
-5. `internal/test/load/transport_load_test.go` - Load tests
-6. `.github/workflows/transport-benchmark.yml` - CI benchmark workflow (optional)
+1. `internal/authz/fixture_transport_metrics.go` - Transport metrics definitions ✅
+2. `internal/authz/fixture_transport_metrics_test.go` - Metrics tests ✅
+3. `internal/authz/transport_performance_test.go` - Performance benchmarks ✅
+4. `internal/authz/fixture_distribution_transport.go` - Integrated metrics into all transports ✅
+5. `internal/authz/transport_security_audit.md` - Security audit documentation (Phase 35 continued)
+6. `internal/test/load/transport_load_test.go` - Load tests (Phase 35 continued)
 
 ## Dependencies
 
@@ -121,11 +121,11 @@ Add metrics using the existing observability framework:
 ## Acceptance Criteria for Phase 35 Completion
 
 ### Must Have
-- [ ] Performance benchmarks for all transports
-- [ ] Security audit of transport implementations
-- [ ] Monitoring metrics for all transport operations
-- [ ] All CI tests passing including new benchmarks
-- [ ] Documentation of performance characteristics
+- [x] Performance benchmarks for all transports (transport_performance_test.go)
+- [x] Monitoring metrics for all transport operations (fixture_transport_metrics.go)
+- [x] All CI tests passing including new benchmarks
+- [ ] Security audit of transport implementations (Phase 35 continued)
+- [ ] Documentation of performance characteristics (Phase 35 continued)
 
 ### Should Have
 - [ ] Load tests integrated into CI
