@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -232,23 +233,17 @@ func isValidDID(did string) bool {
 	return parts[0] != "" && parts[1] != ""
 }
 
-// String returns a string representation of the AgentIdentity (privacy-safe)
+// String returns a privacy-safe string representation of the AgentIdentity.
+// Keep fmt/log output redacted by default; use explicit fields only in local debug tooling
+// after a privacy review.
 func (ai AgentIdentity) String() string {
-	var b strings.Builder
-	b.WriteString("AgentIdentity{")
-	b.WriteString(fmt.Sprintf("WebID: %q, ", ai.WebID))
-	if ai.HasDID() {
-		b.WriteString(fmt.Sprintf("DID: %q, ", ai.DID))
-	}
-	b.WriteString(fmt.Sprintf("Issuer: %q, ", ai.Issuer))
-	b.WriteString(fmt.Sprintf("ClientID: %q, ", ai.ClientID))
-	if ai.HasTokenBinding() {
-		b.WriteString("TokenBinding: [REDACTED], ")
-	}
-	b.WriteString(fmt.Sprintf("Assurance: %s, ", ai.AssuranceLevel))
-	b.WriteString(fmt.Sprintf("Source: %s", ai.VerificationSource))
-	b.WriteString("}")
-	return b.String()
+	return ai.RedactedString()
+}
+
+// GoString returns a privacy-safe Go-syntax representation of the AgentIdentity.
+// This prevents sensitive data leaks when using %#v formatting.
+func (ai AgentIdentity) GoString() string {
+	return ai.RedactedString()
 }
 
 // RedactedString returns a privacy-safe string representation
@@ -268,6 +263,12 @@ func (ai AgentIdentity) RedactedString() string {
 	b.WriteString(fmt.Sprintf("Source: %s", ai.VerificationSource))
 	b.WriteString("}")
 	return b.String()
+}
+
+// LogValue returns a slog.Value that contains only privacy-safe information.
+// This prevents sensitive data leaks when using structured logging with slog.
+func (ai AgentIdentity) LogValue() slog.Value {
+	return slog.StringValue(ai.RedactedString())
 }
 
 // PrivacySafeHash returns a privacy-safe hash of the identity for use in metrics
