@@ -83,6 +83,9 @@ func isUnsafeResolutionHost(host string) bool {
 	if lower == "" || lower == "localhost" || strings.HasSuffix(lower, ".localhost") || strings.HasSuffix(lower, ".local") {
 		return true
 	}
+	if !strings.Contains(lower, ".") && !strings.Contains(lower, ":") {
+		return true
+	}
 	if ip := net.ParseIP(lower); ip != nil {
 		return isUnsafeResolutionIP(ip)
 	}
