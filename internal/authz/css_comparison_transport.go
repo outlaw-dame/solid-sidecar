@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	neturl "net/url"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"sync"
 	"time"
@@ -19,59 +19,59 @@ import (
 type CSSComparisonTransportResult struct {
 	// Unique identifier for this comparison
 	ComparisonID string
-	
+
 	// Transport operation details
 	TransportType TransportMethod
 	Operation     string
 	Target        FixtureDistributionTarget
-	
+
 	// CSS result (direct call to CSS or baseline)
 	CSSResult TransportResult
-	
+
 	// Sidecar result (through solid-sidecar)
 	SidecarResult TransportResult
-	
+
 	// Comparison outcome
-	Match  bool
-	Diffs  []string
-	Score  float64 // 0.0 to 1.0, where 1.0 is perfect match
-	
+	Match bool
+	Diffs []string
+	Score float64 // 0.0 to 1.0, where 1.0 is perfect match
+
 	// Timing information
-	CSSDuration    time.Duration
+	CSSDuration     time.Duration
 	SidecarDuration time.Duration
-	
+
 	// Metadata
-	Timestamp time.Time
+	Timestamp   time.Time
 	PayloadSize int
 }
 
 // CSSComparisonTransportReport contains aggregated comparison results
 type CSSComparisonTransportReport struct {
 	mu sync.RWMutex
-	
+
 	// Report metadata
-	ReportID     string
-	GeneratedAt  time.Time
+	ReportID    string
+	GeneratedAt time.Time
 	Environment string
-	
+
 	// Individual comparison results
 	Results []CSSComparisonTransportResult
-	
+
 	// Aggregate statistics
-	TotalComparisons  int
-	MatchCount        int
-	MismatchCount     int
-	MatchRate         float64
-	
+	TotalComparisons int
+	MatchCount       int
+	MismatchCount    int
+	MatchRate        float64
+
 	// Statistics by transport type
 	ByTransport map[TransportMethod]*TransportComparisonStats
-	
+
 	// Performance statistics
-	AvgCSSDuration    time.Duration
+	AvgCSSDuration     time.Duration
 	AvgSidecarDuration time.Duration
-	P95CSSDuration    time.Duration
+	P95CSSDuration     time.Duration
 	P95SidecarDuration time.Duration
-	
+
 	// Error statistics
 	CSSErrors     int
 	SidecarErrors int
@@ -82,19 +82,19 @@ type CSSComparisonTransportReport struct {
 type TransportComparisonStats struct {
 	TransportType TransportMethod
 	Total         int
-	Matches      int
-	Mismatches   int
-	MatchRate    float64
-	AvgScore     float64
-	
+	Matches       int
+	Mismatches    int
+	MatchRate     float64
+	AvgScore      float64
+
 	// Timing
-	AvgCSSDuration    time.Duration
+	AvgCSSDuration     time.Duration
 	AvgSidecarDuration time.Duration
-	MinCSSDuration    time.Duration
-	MaxCSSDuration    time.Duration
+	MinCSSDuration     time.Duration
+	MaxCSSDuration     time.Duration
 	MinSidecarDuration time.Duration
 	MaxSidecarDuration time.Duration
-	
+
 	// Common diffs
 	CommonDiffs map[string]int
 }
@@ -113,16 +113,16 @@ func newCSSComparisonTransportReport() *CSSComparisonTransportReport {
 func (r *CSSComparisonTransportReport) AddResult(result CSSComparisonTransportResult) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.Results = append(r.Results, result)
 	r.TotalComparisons++
-	
+
 	if result.Match {
 		r.MatchCount++
 	} else {
 		r.MismatchCount++
 	}
-	
+
 	// Update transport-specific stats
 	stats, exists := r.ByTransport[result.TransportType]
 	if !exists {
@@ -132,11 +132,11 @@ func (r *CSSComparisonTransportReport) AddResult(result CSSComparisonTransportRe
 		}
 		r.ByTransport[result.TransportType] = stats
 	}
-	
+
 	stats.Total++
 	stats.AvgCSSDuration += result.CSSDuration
 	stats.AvgSidecarDuration += result.SidecarDuration
-	
+
 	if result.Match {
 		stats.Matches++
 		stats.AvgScore += result.Score
@@ -146,11 +146,11 @@ func (r *CSSComparisonTransportReport) AddResult(result CSSComparisonTransportRe
 			stats.CommonDiffs[diff]++
 		}
 	}
-	
+
 	// Update overall timing
 	r.AvgCSSDuration += result.CSSDuration
 	r.AvgSidecarDuration += result.SidecarDuration
-	
+
 	// Update error counts
 	if result.CSSResult.Success == false && result.CSSResult.Error != "" {
 		r.CSSErrors++
@@ -167,13 +167,13 @@ func (r *CSSComparisonTransportReport) AddResult(result CSSComparisonTransportRe
 func (r *CSSComparisonTransportReport) Finalize() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if r.TotalComparisons > 0 {
 		r.MatchRate = float64(r.MatchCount) / float64(r.TotalComparisons)
 		r.AvgCSSDuration = r.AvgCSSDuration / time.Duration(r.TotalComparisons)
 		r.AvgSidecarDuration = r.AvgSidecarDuration / time.Duration(r.TotalComparisons)
 	}
-	
+
 	// Calculate per-transport stats
 	for _, stats := range r.ByTransport {
 		if stats.Total > 0 {
@@ -194,24 +194,24 @@ type TransportResult struct {
 	Headers http.Header
 	Body    []byte
 	Error   string
-	
+
 	// Transport-specific metadata
 	TransportType TransportMethod
 	Operation     string
-	Duration     time.Duration
+	Duration      time.Duration
 }
 
 // CSSClient interface for making direct CSS requests
 type CSSClient interface {
 	// DoRequest performs a request directly to CSS
 	DoRequest(ctx context.Context, method, url string, headers http.Header, body []byte) (*TransportResult, error)
-	
+
 	// GetResource retrieves a resource from CSS
 	GetResource(ctx context.Context, url string) (*TransportResult, error)
-	
+
 	// PutResource uploads a resource to CSS
 	PutResource(ctx context.Context, url string, contentType string, body []byte) (*TransportResult, error)
-	
+
 	// Close closes the client
 	Close() error
 }
@@ -219,9 +219,9 @@ type CSSClient interface {
 // DefaultCSSClient implements CSSClient using http.Client
 type DefaultCSSClient struct {
 	client      *http.Client
-	baseURL    string
+	baseURL     string
 	accessToken string
-	tlsConfig  *tls.Config
+	tlsConfig   *tls.Config
 }
 
 // NewDefaultCSSClient creates a new CSS client
@@ -249,13 +249,13 @@ func NewDefaultCSSClientWithToken(baseURL, accessToken string) *DefaultCSSClient
 // DoRequest performs a request directly to CSS
 func (c *DefaultCSSClient) DoRequest(ctx context.Context, method, url string, headers http.Header, body []byte) (*TransportResult, error) {
 	start := time.Now()
-	
+
 	// Parse URL
 	parsedURL, err := neturl.Parse(url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
-	
+
 	// Resolve relative URLs against base
 	if parsedURL.Scheme == "" || parsedURL.Host == "" {
 		base, err := neturl.Parse(c.baseURL)
@@ -264,54 +264,54 @@ func (c *DefaultCSSClient) DoRequest(ctx context.Context, method, url string, he
 		}
 		parsedURL = base.ResolveReference(parsedURL)
 	}
-	
+
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Copy headers
 	for key, values := range headers {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
-	
+
 	// Add authorization if token is set
 	if c.accessToken != "" {
 		req.Header.Set("Authorization", "DPoP "+c.accessToken)
 	}
-	
+
 	// Perform request
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return &TransportResult{
-			Success: false,
-			Error:   err.Error(),
+			Success:  false,
+			Error:    err.Error(),
 			Duration: time.Since(start),
 		}, err
 	}
 	defer resp.Body.Close()
-	
+
 	// Read body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return &TransportResult{
-			Success: false,
-			Status:  resp.StatusCode,
-			Headers: resp.Header.Clone(),
-			Error:   err.Error(),
+			Success:  false,
+			Status:   resp.StatusCode,
+			Headers:  resp.Header.Clone(),
+			Error:    err.Error(),
 			Duration: time.Since(start),
 		}, err
 	}
-	
+
 	return &TransportResult{
-		Success:   true,
-		Status:    resp.StatusCode,
-		Headers:   resp.Header.Clone(),
-		Body:      bodyBytes,
-		Duration:  time.Since(start),
+		Success:  true,
+		Status:   resp.StatusCode,
+		Headers:  resp.Header.Clone(),
+		Body:     bodyBytes,
+		Duration: time.Since(start),
 	}, nil
 }
 
@@ -326,8 +326,8 @@ func (c *DefaultCSSClient) GetResource(ctx context.Context, url string) (*Transp
 // PutResource uploads a resource to CSS
 func (c *DefaultCSSClient) PutResource(ctx context.Context, url, contentType string, body []byte) (*TransportResult, error) {
 	headers := http.Header{
-		"Content-Type":   []string{contentType},
-		"Accept":         []string{"text/turtle", "application/ld+json", "*/*"},
+		"Content-Type": []string{contentType},
+		"Accept":       []string{"text/turtle", "application/ld+json", "*/*"},
 	}
 	return c.DoRequest(ctx, http.MethodPut, url, headers, body)
 }
@@ -352,13 +352,13 @@ func NewDefaultSidecarClient(sidecarURL string) *DefaultCSSClient {
 
 // CSSTransportComparator compares transport operations between CSS and sidecar
 type CSSTransportComparator struct {
-	cssClient    CSSClient
+	cssClient     CSSClient
 	sidecarClient SidecarClient
-	
+
 	// Configuration
 	compareHeaders bool
-	compareBody   bool
-	
+	compareBody    bool
+
 	// Metrics
 	report *CSSComparisonTransportReport
 }
@@ -389,11 +389,11 @@ func NewCSSTransportComparator(cssClient CSSClient, sidecarClient SidecarClient,
 		compareBody:    false, // Body comparison is often not needed for transport ops
 		report:         newCSSComparisonTransportReport(),
 	}
-	
+
 	for _, opt := range opts {
 		opt(comparator)
 	}
-	
+
 	return comparator
 }
 
@@ -405,39 +405,39 @@ func (c *CSSTransportComparator) CompareFixtureDistribution(
 	payload []byte,
 ) CSSComparisonTransportResult {
 	start := time.Now()
-	
+
 	// Convert DistributionMethod to TransportMethod for consistency
 	transportMethod := convertDistributionMethodToTransportMethod(target.Method)
-	
+
 	result := CSSComparisonTransportResult{
-		ComparisonID:   fmt.Sprintf("fixture-%s-%d", job.DistributionID, start.UnixNano()),
+		ComparisonID:  fmt.Sprintf("fixture-%s-%d", job.DistributionID, start.UnixNano()),
 		TransportType: transportMethod,
 		Operation:     "distribute",
 		Target:        target,
 		Timestamp:     start,
 		PayloadSize:   len(payload),
 	}
-	
+
 	// Perform CSS operation (baseline)
 	cssResult, _ := c.performCSSOperation(ctx, job, target, payload)
 	cssDuration := time.Since(start)
-	
+
 	// Perform sidecar operation
 	sidecarStart := time.Now()
 	sidecarResult, _ := c.performSidecarOperation(ctx, job, target, payload)
 	sidecarDuration := time.Since(sidecarStart)
-	
+
 	result.CSSDuration = cssDuration
 	result.SidecarDuration = sidecarDuration
 	result.CSSResult = *cssResult
 	result.SidecarResult = *sidecarResult
-	
+
 	// Compare results
 	result.Match, result.Diffs, result.Score = c.compareResults(*cssResult, *sidecarResult)
-	
+
 	// Add to report
 	c.report.AddResult(result)
-	
+
 	return result
 }
 
@@ -454,18 +454,18 @@ func (c *CSSTransportComparator) performCSSOperation(
 	// In practice, this might be:
 	// 1. PUT the fixture to a known location
 	// 2. Return success/failure
-	
+
 	// Since CSS doesn't have native fixture distribution, we'll use the sidecar
 	// as a proxy to CSS for the baseline, but without the transport layer
-	
+
 	// For now, we'll just return a simulated result
 	// In a real implementation, this would call CSS directly
 	return &TransportResult{
-		Success:   true,
-		Status:    http.StatusOK,
-		Headers:   make(http.Header),
-		Duration:  10 * time.Millisecond, // Simulated
-		Error:     "",
+		Success:       true,
+		Status:        http.StatusOK,
+		Headers:       make(http.Header),
+		Duration:      10 * time.Millisecond, // Simulated
+		Error:         "",
 		TransportType: convertDistributionMethodToTransportMethod(target.Method),
 		Operation:     "distribute",
 	}, nil
@@ -481,11 +481,11 @@ func (c *CSSTransportComparator) performSidecarOperation(
 	// Get the appropriate transport based on target method
 	var transport FixtureTransport
 	var err error
-	
+
 	// Create a temporary transport for this comparison
 	// In production, this would use the actual transport from the sidecar
 	config := DefaultTransportConfig()
-	
+
 	switch target.Method {
 	case DistributionMethodHTTPS:
 		transport, err = NewHTTPTransport(FixtureTransportOptions{Config: config})
@@ -515,29 +515,29 @@ func (c *CSSTransportComparator) performSidecarOperation(
 	default:
 		return nil, fmt.Errorf("unsupported transport method: %s", target.Method)
 	}
-	
+
 	// Perform the distribute operation
 	start := time.Now()
 	_, err = transport.Distribute(ctx, job, target, payload)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		return &TransportResult{
-			Success:      false,
-			Error:        err.Error(),
+			Success:       false,
+			Error:         err.Error(),
 			TransportType: convertDistributionMethodToTransportMethod(target.Method),
-			Operation:    "distribute",
-			Duration:     duration,
+			Operation:     "distribute",
+			Duration:      duration,
 		}, err
 	}
-	
+
 	return &TransportResult{
-		Success:      true,
-		Status:       http.StatusOK,
-		Headers:      make(http.Header),
-		Duration:     duration,
+		Success:       true,
+		Status:        http.StatusOK,
+		Headers:       make(http.Header),
+		Duration:      duration,
 		TransportType: convertDistributionMethodToTransportMethod(target.Method),
-		Operation:    "distribute",
+		Operation:     "distribute",
 	}, nil
 }
 
@@ -545,14 +545,14 @@ func (c *CSSTransportComparator) performSidecarOperation(
 func (c *CSSTransportComparator) compareResults(cssResult, sidecarResult TransportResult) (bool, []string, float64) {
 	diffs := make([]string, 0)
 	score := 1.0
-	
+
 	// Compare success status
 	if cssResult.Success != sidecarResult.Success {
 		diffs = append(diffs, fmt.Sprintf("success mismatch: CSS=%v, sidecar=%v", cssResult.Success, sidecarResult.Success))
 		score -= 0.4
 		return false, diffs, score
 	}
-	
+
 	// If both failed, compare error types
 	if !cssResult.Success && !sidecarResult.Success {
 		if cssResult.Error != sidecarResult.Error {
@@ -562,13 +562,13 @@ func (c *CSSTransportComparator) compareResults(cssResult, sidecarResult Transpo
 		}
 		return true, diffs, score
 	}
-	
+
 	// Compare status codes (if available)
 	if cssResult.Status != sidecarResult.Status {
 		diffs = append(diffs, fmt.Sprintf("status code mismatch: CSS=%d, sidecar=%d", cssResult.Status, sidecarResult.Status))
 		score -= 0.3
 	}
-	
+
 	// Compare headers if enabled
 	if c.compareHeaders {
 		headerDiffs := c.compareHeadersMap(cssResult.Headers, sidecarResult.Headers)
@@ -578,7 +578,7 @@ func (c *CSSTransportComparator) compareResults(cssResult, sidecarResult Transpo
 			score -= 0.05 * float64(len(headerDiffs))
 		}
 	}
-	
+
 	// Compare body if enabled
 	if c.compareBody && cssResult.Body != nil && sidecarResult.Body != nil {
 		if !bytes.Equal(cssResult.Body, sidecarResult.Body) {
@@ -586,21 +586,21 @@ func (c *CSSTransportComparator) compareResults(cssResult, sidecarResult Transpo
 			score -= 0.2
 		}
 	}
-	
+
 	return score >= 0.95, diffs, score
 }
 
 // compareHeadersMap compares two HTTP header maps
 func (c *CSSTransportComparator) compareHeadersMap(cssHeaders, sidecarHeaders http.Header) []string {
 	diffs := make([]string, 0)
-	
+
 	// Check for headers in CSS but not in sidecar
 	for key := range cssHeaders {
 		if _, exists := sidecarHeaders[key]; !exists {
 			diffs = append(diffs, fmt.Sprintf("header missing in sidecar: %s", key))
 		}
 	}
-	
+
 	// Check for headers in sidecar but not in CSS
 	for key := range sidecarHeaders {
 		if _, exists := cssHeaders[key]; !exists {
@@ -611,7 +611,7 @@ func (c *CSSTransportComparator) compareHeadersMap(cssHeaders, sidecarHeaders ht
 			}
 		}
 	}
-	
+
 	// Check for header value differences
 	for key := range cssHeaders {
 		if _, exists := sidecarHeaders[key]; exists {
@@ -625,7 +625,7 @@ func (c *CSSTransportComparator) compareHeadersMap(cssHeaders, sidecarHeaders ht
 			}
 		}
 	}
-	
+
 	return diffs
 }
 
@@ -754,23 +754,23 @@ type TransportCompareOperation struct {
 // This is a convenience function for testing
 func RunTransportComparison(cssURL, sidecarURL string, operations []TransportCompareOperation) (*CSSComparisonTransportReport, error) {
 	ctx := context.Background()
-	
+
 	// Create clients
 	cssClient := NewDefaultCSSClient(cssURL)
 	sidecarClient := NewDefaultCSSClient(sidecarURL)
-	
+
 	// Create harness
 	harness := NewCSSComparisonTransportHarness(cssClient, sidecarClient)
-	
+
 	// Run comparison
 	err := harness.RunComparison(ctx, operations)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Get and finalize report
 	report := harness.GetReport()
 	report.Environment = fmt.Sprintf("CSS=%s, Sidecar=%s", cssURL, sidecarURL)
-	
+
 	return report, nil
 }

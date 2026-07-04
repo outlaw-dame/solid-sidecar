@@ -61,19 +61,19 @@ func createTestServer() *httptest.Server {
 			w.Header().Set("Link", "<http://www.w3.org/ns/ldp#BasicContainer>; rel=\"type\"")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("@prefix ldp: <http://www.w3.org/ns/ldp#>.\n@prefix solid: <http://www.w3.org/ns/solid/terms#>.\n<> a ldp:BasicContainer, ldp:Container."))
-		
+
 		case "/.well-known/solid":
 			// Solid metadata
 			w.Header().Set("Content-Type", "application/ld+json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"@context": "https://www.w3.org/ns/solid/terms.jsonld", "features": []}`))
-		
+
 		case "/.well-known/webid":
 			// WebID discovery
 			w.Header().Set("Content-Type", "application/ld+json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"@context": "https://www.w3.org/ns/solid/terms.jsonld", "subject": {"@id": "https://example.org/profile/card#me"}}`))
-		
+
 		case "/profile/card":
 			// Profile document
 			w.Header().Set("Content-Type", "text/turtle")
@@ -91,7 +91,7 @@ func createTestServer() *httptest.Server {
   solid:webId <https://example.org/profile/card#me>.
 `
 			w.Write([]byte(profileDoc))
-		
+
 		default:
 			// For other paths, return 404
 			w.WriteHeader(http.StatusNotFound)
@@ -338,10 +338,10 @@ func TestSolidClientAuthentication(t *testing.T) {
 func testDPoPTokenFormat(t *testing.T) {
 	// DPoP tokens have specific format: base64url-encoded JWT
 	// Test that sidecar can handle DPoP Authorization header
-	
+
 	// Create a mock DPoP token (not a real token, just for format testing)
 	dpopToken := "eyJhbGciOiJkaXBob25lc19wcm90ZWN0ZWQiLCJ0eXAiOiJkcG9wIn0.eyJpc3MiOiJodHRwczovL2F1dGgtc2VydmVyLmV4YW1wbGUuY29tIiwiYXVkIjoiaHR0cHM6Ly9zdWJkLmV4YW1wbGUuY29tIiwiaWF0IjoxMjM0NTY3ODkwfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-	
+
 	// Verify the format is valid base64url
 	parts := strings.Split(dpopToken, ".")
 	if len(parts) != 3 {
@@ -355,7 +355,7 @@ func testDPoPTokenFormat(t *testing.T) {
 func testBearerTokenFormat(t *testing.T) {
 	// Bearer tokens can be any opaque string
 	bearerToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-	
+
 	// Verify it's a valid JWT format
 	parts := strings.Split(bearerToken, ".")
 	if len(parts) != 3 {
@@ -380,7 +380,7 @@ func testWebIDHeader(t *testing.T) {
 		if !strings.Contains(webID, "#") {
 			t.Errorf("WebID should contain fragment identifier, got: %s", webID)
 		}
-		
+
 		if !strings.HasPrefix(webID, "http") {
 			t.Errorf("WebID should be a valid URL, got: %s", webID)
 		}
@@ -506,7 +506,7 @@ func TestSolidClientContentNegotiation(t *testing.T) {
 // TestSolidClientHeaders tests Solid-specific headers
 func TestSolidClientHeaders(t *testing.T) {
 	// Test that sidecar properly handles Solid-specific headers
-	
+
 	// Headers that Solid clients might send
 	solidHeaders := []string{
 		"DPoP",
@@ -532,14 +532,14 @@ func isValidHTTPHeader(header string) bool {
 	if header == "" {
 		return false
 	}
-	
+
 	// HTTP header names must be tokens (no special chars except hyphen)
 	for _, r := range header {
 		if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '-' || r == '_') {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -687,16 +687,16 @@ func TestSolidClientTimeout(t *testing.T) {
 // TestSolidClientCompression tests compression support
 func TestSolidClientCompression(t *testing.T) {
 	// Test that sidecar properly handles compression headers
-	
+
 	// Create a handler that supports compression
 	compressionHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if client accepts compression
 		acceptEncoding := r.Header.Get("Accept-Encoding")
-		
+
 		if strings.Contains(acceptEncoding, "gzip") {
 			w.Header().Set("Content-Encoding", "gzip")
 		}
-		
+
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("test content"))
@@ -747,21 +747,21 @@ func TestSolidClientCompression(t *testing.T) {
 
 // SolidClientCompatibilityReport contains compatibility test results
 type SolidClientCompatibilityReport struct {
-	ClientName       string
-	TotalTests      int
-	PassedTests     int
-	FailedTests     int
-	PassRate        float64
+	ClientName         string
+	TotalTests         int
+	PassedTests        int
+	FailedTests        int
+	PassRate           float64
 	CompatibilityScore float64
-	TestResults     []SolidClientTestResult
+	TestResults        []SolidClientTestResult
 }
 
 // SolidClientTestResult contains a single test result
 type SolidClientTestResult struct {
-	TestName   string
-	Passed     bool
-	Error      string
-	Duration   time.Duration
+	TestName string
+	Passed   bool
+	Error    string
+	Duration time.Duration
 }
 
 // GenerateCompatibilityReport generates a compatibility report
@@ -779,7 +779,7 @@ func (r *SolidClientCompatibilityReport) ExportReportToJSON() ([]byte, error) {
 // RunAllCompatibilityTests runs all compatibility tests and returns a report
 func RunAllCompatibilityTests() SolidClientCompatibilityReport {
 	report := GenerateCompatibilityReport()
-	
+
 	// Run tests for each client
 	clients := []struct {
 		name string
@@ -790,28 +790,28 @@ func RunAllCompatibilityTests() SolidClientCompatibilityReport {
 		{"SolidFileClient", func(t *testing.T) { TestSolidClientCompatibility(t) }},
 		{"GenericHTTP", func(t *testing.T) { TestSolidClientCompatibility(t) }},
 	}
-	
+
 	for _, client := range clients {
 		// Run tests for this client
 		// Note: In a real implementation, we'd run each client's tests separately
 		// For this example, we'll just record that the tests were run
-		
+
 		result := SolidClientTestResult{
 			TestName: client.name + " Compatibility",
-			Passed:  true,
+			Passed:   true,
 			Duration: 100 * time.Millisecond,
 		}
-		
+
 		report.TestResults = append(report.TestResults, result)
 		report.TotalTests++
 		report.PassedTests++
 	}
-	
+
 	// Calculate scores
 	if report.TotalTests > 0 {
 		report.PassRate = float64(report.PassedTests) / float64(report.TotalTests)
 		report.CompatibilityScore = report.PassRate
 	}
-	
+
 	return report
 }
