@@ -6,10 +6,10 @@ import "context"
 type contextKey string
 
 const (
-	requestIDContextKey  contextKey = "request_id"
-	correlationIDKey     contextKey = "correlation_id"
-	agentIdentityKey     contextKey = "agent_identity"
-	sessionIDKey         contextKey = "session_id"
+	requestIDContextKey contextKey = "request_id"
+	correlationIDKey    contextKey = "correlation_id"
+	agentIdentityKey    contextKey = "agent_identity"
+	sessionIDKey        contextKey = "session_id"
 )
 
 // Request ID context functions

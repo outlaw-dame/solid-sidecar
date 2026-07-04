@@ -12,9 +12,9 @@ import (
 
 // HealthStatus represents the health status of a component
 type HealthStatus struct {
-	Status      string            `json:"status"`
+	Status     string                     `json:"status"`
 	Components map[string]ComponentHealth `json:"components,omitempty"`
-	Checks     map[string]CheckResult `json:"checks,omitempty"`
+	Checks     map[string]CheckResult     `json:"checks,omitempty"`
 }
 
 // ComponentHealth represents the health of a single component
@@ -41,7 +41,7 @@ type HealthChecker interface {
 // HealthCheckRegistry manages a collection of health checks
 type HealthCheckRegistry struct {
 	mu          sync.RWMutex
-	checkers   map[string]HealthChecker
+	checkers    map[string]HealthChecker
 	checkStatus map[string]CheckResult
 	lastChecked time.Time
 }
@@ -49,7 +49,7 @@ type HealthCheckRegistry struct {
 // NewHealthCheckRegistry creates a new health check registry
 func NewHealthCheckRegistry() *HealthCheckRegistry {
 	return &HealthCheckRegistry{
-		checkers:   make(map[string]HealthChecker),
+		checkers:    make(map[string]HealthChecker),
 		checkStatus: make(map[string]CheckResult),
 		lastChecked: time.Now(),
 	}
@@ -79,7 +79,7 @@ func (r *HealthCheckRegistry) RunAll(ctx context.Context) HealthStatus {
 	r.mu.RUnlock()
 
 	status := HealthStatus{
-		Status:      "healthy",
+		Status:     "healthy",
 		Components: make(map[string]ComponentHealth),
 		Checks:     make(map[string]CheckResult),
 	}
@@ -120,8 +120,8 @@ func (r *HealthCheckRegistry) GetStatus() HealthStatus {
 	defer r.mu.RUnlock()
 
 	status := HealthStatus{
-		Status:      "healthy",
-		Checks:     make(map[string]CheckResult),
+		Status: "healthy",
+		Checks: make(map[string]CheckResult),
 	}
 
 	for name, result := range r.checkStatus {
@@ -231,8 +231,8 @@ type simpleHealthChecker struct {
 
 func LivenessCheck() HealthChecker {
 	return &simpleHealthChecker{
-		name:   "liveness",
-		status: "healthy",
+		name:    "liveness",
+		status:  "healthy",
 		message: "server is running",
 	}
 }
