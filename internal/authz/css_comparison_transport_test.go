@@ -673,8 +673,6 @@ func BenchmarkCSSComparisonReportExport(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		// Clone report for each iteration
-		clonedReport := *report
-		_, _ = clonedReport.ExportReportToJSON()
+		_, _ = report.ExportReportToJSON()
 	}
 }
