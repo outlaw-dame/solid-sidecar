@@ -1,0 +1,242 @@
+# Phase 36: Staging Configuration for solid-sidecar
+# This configuration is designed for staging environment with:
+# - Shadow mode authorization (non-enforcing)
+# - All fixture distribution transports enabled
+# - Comprehensive monitoring and logging
+# - Rate limiting and security hardening
+
+# Server configuration
+server:
+  address: ":8443"
+  read_header_timeout: "10s"
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+  shutdown_timeout: "15s"
+  max_header_bytes: 1048576
+
+# Backend CSS configuration
+backend:
+  url: "http://css-staging:3000"
+  health_path: "/"
+  timeout: "30s"
+
+# Request limits
+limits:
+  max_body_bytes: 33554432  # 32 MiB
+
+# Rate limiting for staging
+rate_limit:
+  enabled: true
+  requests_per_window: 1000
+  window: "1m"
+
+# Security configuration
+security:
+  # Enforce Origin header validation in staging
+  allowed_origins: "https://staging.example.org,https://solid-staging.example.org"
+
+# Authentication configuration for staging
+auth:
+  preflight_enabled: true
+  require_dpop_for_dpop_authorization: true
+  validate_dpop_signature: true
+  max_clock_skew: "5m"
+  replay_window: "10m"
+  public_base_url: "https://solid-sidecar-staging.example.org"
+  allowed_issuers:
+    - "https://staging-issuer.example.org"
+    - "https://solid-staging-idp.example.org"
+
+# Authorization configuration - SHADOW MODE for staging
+authz:
+  # Shadow mode: sidecar observes but does not enforce authorization
+  # CSS remains authoritative
+  shadow_enabled: true
+  
+  # Use local evaluator for shadow mode
+  evaluator: "local"
+  
+  # Public base URL for resource URI construction
+  public_base_url: "https://solid-sidecar-staging.example.org"
+  
+  # External evaluator configuration (disabled in staging for now)
+  external_command: ""
+  external_args: ""
+  external_timeout: "2s"
+  external_max_output_bytes: 65536
+  external_backoff_base_delay: "500ms"
+  external_backoff_max_delay: "30s"
+  
+  # Policy discovery configuration
+  policy_discovery:
+    enabled: true
+    cache_ttl: "5m"
+    max_fetch_retries: 3
+    fetch_timeout: "10s"
+
+# Fixture distribution transport configuration
+transport:
+  fixture_distribution:
+    enabled: true
+    
+    # Global transport defaults
+    rate_limit_per_second: 100
+    timeout_seconds: 30
+    max_retries: 3
+    retry_base_delay: 1
+    retry_max_delay: 30
+    retry_multiplier: 2.0
+    retry_jitter: 0.1
+    
+    # Individual transport configurations
+    transports:
+      http:
+        enabled: true
+        base_url: "https://fixture-dist-staging.example.org"
+        timeout_seconds: 30
+        rate_limit_per_second: 50
+        max_connections: 100
+        user_agent: "solid-sidecar-staging/1.0"
+        
+      s3:
+        enabled: true
+        bucket: "solid-fixtures-staging"
+        region: "us-east-1"
+        endpoint: "s3.amazonaws.com"
+        timeout_seconds: 60
+        rate_limit_per_second: 20
+        use_path_style: false
+        # AWS credentials should be provided via environment variables or IAM roles
+        # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+        # Or use AWS_SDK_LOAD_CONFIG=1 with ~/.aws/config
+        
+      ssh:
+        enabled: true
+        host: "fixture-server-staging.example.org"
+        port: 22
+        username: "fixture-user"
+        timeout_seconds: 30
+        rate_limit_per_second: 10
+        strict_host_key_checking: true
+        # SSH credentials should be provided via environment variables or mounted files
+        # For password auth: SSH_PASSWORD
+        # For key auth: SSH_PRIVATE_KEY_PATH
+        known_hosts: |
+          fixture-server-staging.example.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... [TRUNCATED]
+          fixture-server-staging.example.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNT... [TRUNCATED]
+          fixture-server-staging.example.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... [TRUNCATED]
+        
+      local:
+        enabled: true
+        base_path: "/var/lib/solid/fixtures"
+        timeout_seconds: 30
+        rate_limit_per_second: 200
+        overwrite: false
+        permissions: 0600
+        directory_permissions: 0700
+
+# Observability configuration
+observability:
+  metrics:
+    enabled: true
+    # Metrics will be exposed on /metrics endpoint
+    path: "/metrics"
+    
+  logging:
+    level: "debug"  # Debug level for staging to capture all information
+    format: "json"  # Structured logging for easier parsing
+    include_request_id: true
+    include_timestamp: true
+    
+  tracing:
+    enabled: false  # Can be enabled if distributed tracing infrastructure is available
+    
+  health:
+    enabled: true
+    path: "/healthz"
+    
+  readiness:
+    enabled: true
+    path: "/readyz"
+    # Check backend health for readiness
+    check_backend: true
+
+# Enforcement gates configuration
+enforcement:
+  mode: "shadow"  # Shadow mode for staging - non-enforcing
+  
+  # Emergency bypass configuration
+  bypass:
+    enabled: true
+    tokens: []  # No bypass tokens configured in staging
+    
+  # Resource allowlist for canary testing
+  canary:
+    enabled: false
+    resource_patterns: []
+
+# CORS configuration for staging
+cors:
+  enabled: true
+  allowed_origins:
+    - "https://staging.example.org"
+    - "https://solid-staging.example.org"
+    - "https://localhost:3000"
+    - "https://127.0.0.1:3000"
+  allowed_methods:
+    - "GET"
+    - "HEAD"
+    - "OPTIONS"
+    - "PUT"
+    - "POST"
+    - "PATCH"
+    - "DELETE"
+  allowed_headers:
+    - "*"
+  exposed_headers:
+    - "Link"
+    - "WWW-Authenticate"
+  max_age: 86400
+  allow_credentials: true
+
+# Feature flags for staging
+features:
+  compression: true
+  fixture_distribution: true
+  policy_cache: true
+  
+---
+# Environment Variables Reference
+# 
+# Required for staging deployment:
+# - SOLID_SIDECAR_BACKEND_URL: Backend CSS URL
+# - SOLID_SIDECAR_CONFIG_PATH: Path to this config file
+# 
+# Optional for S3 transport:
+# - AWS_ACCESS_KEY_ID: AWS access key
+# - AWS_SECRET_ACCESS_KEY: AWS secret key
+# - AWS_DEFAULT_REGION: AWS region
+# 
+# Optional for SSH transport:
+# - SSH_PASSWORD: SSH password (if using password auth)
+# - SSH_PRIVATE_KEY_PATH: Path to SSH private key (if using key auth)
+# 
+# Optional for monitoring:
+# - PROMETHEUS_PORT: Prometheus metrics port (if different from default)
+# - OTEL_EXPORTER_OTLP_ENDPOINT: OpenTelemetry endpoint (if tracing enabled)
+
+---
+# Usage:
+# 
+# Start the sidecar with this configuration:
+# docker run -d \
+#   --name solid-sidecar-staging \
+#   -p 8443:8443 \
+#   -v /path/to/this/file:/etc/solid-sidecar/sidecar.yaml:ro \
+#   -e SOLID_SIDECAR_BACKEND_URL=http://css-staging:3000 \
+#   -e SOLID_SIDECAR_CONFIG_PATH=/etc/solid-sidecar/sidecar.yaml \
+#   solid-sidecar:latest
+#
+# Or use Docker Compose:
+# docker-compose -f deploy/compose/docker-compose.staging.yml up -d

@@ -1,0 +1,232 @@
+# Phase 36: Staging Docker Compose Configuration
+# 
+# This configuration deploys:
+# - Community Solid Server (CSS) as the backend
+# - solid-sidecar in front of CSS with shadow mode authorization
+# - All fixture distribution transports configured
+#
+# Usage:
+#   docker-compose -f docker-compose.staging.yml up -d
+#   docker-compose -f docker-compose.staging.yml down
+#
+# Environment variables can be set in a .env file or passed directly:
+#   AWS_ACCESS_KEY_ID=xxx AWS_SECRET_ACCESS_KEY=yyy docker-compose -f docker-compose.staging.yml up -d
+
+version: '3.8'
+
+services:
+  # Community Solid Server - Backend
+  css:
+    image: solidproject/community-server:latest
+    container_name: css-staging
+    command:
+      - --baseUrl
+      - http://localhost:3000
+      - --multiUser
+      - "true"
+      - --sparqlEndpoint
+      - http://localhost:3000/.sparql
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Persist CSS data
+      - css-data:/data
+      # Mount configuration if needed
+      - ./css-config:/config:ro
+    environment:
+      NODE_ENV: production
+      SOLID_MULTIUSER: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - solid-network
+
+  # solid-sidecar - Frontend
+  sidecar:
+    image: solid-sidecar:latest
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.sidecar
+      args:
+        # Build arguments
+        GOPROXY: https://proxy.golang.org,direct
+        GOFLAGS: -buildvcs=false
+    container_name: solid-sidecar-staging
+    command:
+      - -config
+      - /etc/solid-sidecar/sidecar.yaml
+    ports:
+      # Public HTTPS port
+      - "0.0.0.0:8443:8443"
+      # Metrics port (optional)
+      - "127.0.0.1:9090:9090"
+    volumes:
+      # Mount staging configuration
+      - ../../configs/sidecar.staging.yaml:/etc/solid-sidecar/sidecar.yaml:ro
+      # Optional: Mount custom logs directory
+      - sidecar-logs:/var/log/solid-sidecar
+      # Optional: Mount SSH known_hosts
+      - ./ssh/known_hosts:/etc/ssh/known_hosts:ro
+      # Optional: Mount SSH private key (if using key auth)
+      - ./ssh/id_rsa:/root/.ssh/id_rsa:ro
+    environment:
+      # Backend URL - points to CSS service
+      SOLID_SIDECAR_BACKEND_URL: http://css:3000
+      SOLID_SIDECAR_CONFIG_PATH: /etc/solid-sidecar/sidecar.yaml
+      
+      # S3 Transport credentials (optional - can use IAM roles instead)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      
+      # SSH Transport credentials (optional)
+      SSH_PASSWORD: ${SSH_PASSWORD:-}
+      SSH_PRIVATE_KEY_PATH: ${SSH_PRIVATE_KEY_PATH:-/root/.ssh/id_rsa}
+      
+      # General settings
+      SOLID_SIDECAR_LOG_LEVEL: debug
+      SOLID_SIDECAR_LOG_FORMAT: json
+    depends_on:
+      css:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8443/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - solid-network
+
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.cors.origin=*'
+    restart: unless-stopped
+    networks:
+      - solid-network
+
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - solid-network
+
+volumes:
+  # CSS data volume
+  css-data:
+    driver: local
+  
+  # Sidecar logs volume
+  sidecar-logs:
+    driver: local
+  
+  # Prometheus data volume
+  prometheus-data:
+    driver: local
+  
+  # Grafana data volume
+  grafana-data:
+    driver: local
+
+networks:
+  solid-network:
+    driver: bridge
+    name: solid-staging-network
+
+---
+# Example Prometheus configuration (prometheus.yml)
+# Save this to deploy/compose/prometheus.yml:
+#
+# global:
+#   scrape_interval: 15s
+#   evaluation_interval: 15s
+#
+# scrape_configs:
+#   - job_name: 'solid-sidecar'
+#     static_configs:
+#       - targets: ['sidecar:9090']
+#     metrics_path: '/metrics'
+#     scrape_interval: 10s
+#
+#   - job_name: 'prometheus'
+#     static_configs:
+#       - targets: ['localhost:9090']
+
+---
+# Example .env file for staging:
+#
+# # AWS credentials for S3 transport
+# AWS_ACCESS_KEY_ID=your_access_key
+# AWS_SECRET_ACCESS_KEY=your_secret_key
+# AWS_DEFAULT_REGION=us-east-1
+#
+# # SSH credentials for SSH transport
+# SSH_PASSWORD=your_ssh_password
+# # or
+# SSH_PRIVATE_KEY_PATH=/root/.ssh/id_rsa
+#
+# # Grafana admin password
+# GRAFANA_ADMIN_PASSWORD=secure_password
+
+---
+# Deployment Steps:
+#
+# 1. Create directories for persistent data:
+#    mkdir -p ssh
+#    chmod 700 ssh
+#    touch ssh/known_hosts
+#    chmod 600 ssh/known_hosts
+#
+# 2. (Optional) Create prometheus.yml for metrics collection
+#
+# 3. Start the stack:
+#    docker-compose -f deploy/compose/docker-compose.staging.yml up -d
+#
+# 4. Verify health:
+#    curl -k https://localhost:8443/healthz
+#    curl -k https://localhost:8443/readyz
+#
+# 5. Test basic proxying:
+#    curl -k -i https://localhost:8443/
+#
+# 6. Access monitoring:
+#    - Prometheus: http://localhost:9090
+#    - Grafana: http://localhost:3000 (admin/admin)
+#
+# 7. To stop:
+#    docker-compose -f deploy/compose/docker-compose.staging.yml down
+#
+# 8. To rebuild sidecar:
+#    docker-compose -f deploy/compose/docker-compose.staging.yml build sidecar
+#    docker-compose -f deploy/compose/docker-compose.staging.yml up -d --no-deps sidecar
