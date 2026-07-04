@@ -1,0 +1,245 @@
+# Production configuration for solid-sidecar
+# This configuration is designed for production deployments with all features
+# enabled and hardened for security and reliability.
+
+gateway:
+  listen_addr: ":443"
+  backend_url: "http://css-production:3000"
+  
+  # TLS configuration for production
+  tls:
+    enabled: true
+    cert_file: "/etc/ssl/certs/solid-sidecar.crt"
+    key_file: "/etc/ssl/private/solid-sidecar.key"
+    client_auth: optional  # Enable for mutual TLS if required
+    min_version: "TLS1.2"
+    cipher_suites:
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+
+# Authorization configuration
+authz:
+  # Start in shadow mode for production, transition to enforce after validation
+  mode: shadow
+  
+  # Authorization cache settings
+  cache:
+    enabled: true
+    ttl: 5m
+    max_size: 10000
+    
+  # Policy evaluation timeout
+  evaluation_timeout: 10s
+  
+  # Maximum policy size to prevent DoS
+  max_policy_size: 1048576  # 1MB
+
+# Authentication configuration
+authn:
+  enabled: true
+  
+  # Allowed OAuth/OIDC issuers for production
+  allowed_issuers:
+    - "https://production-issuer.example.org"
+    - "https://backup-issuer.example.org"
+  
+  # Required assurance level for production
+  required_assurance: high
+  
+  # DPoP proof validation
+  dpop:
+    enabled: true
+    required: true
+    max_age: 300  # 5 minutes
+  
+  # JWT validation settings
+  jwt:
+    max_age: 3600  # 1 hour
+    clock_skew_allowance: 30  # 30 seconds
+
+# Fixture Distribution Transport configuration
+transport:
+  fixture_distribution:
+    enabled: true
+    
+    # Timeout for all transport operations
+    global_timeout: 60s
+    max_retries: 3
+    retry_delay: 1s
+    retry_multiplier: 2
+    
+    transports:
+      # HTTP Transport
+      http:
+        enabled: true
+        base_url: "https://fixture-dist.example.org"
+        timeout: 30s
+        retries: 3
+        connect_timeout: 5s
+        read_timeout: 30s
+        
+      # S3 Transport with SSRF protection
+      s3:
+        enabled: true
+        bucket: "solid-fixtures-production"
+        region: "us-east-1"
+        endpoint: "https://s3.amazonaws.com"
+        ssrf_protection: true
+        allowed_buckets:
+          - "solid-fixtures-production"
+          - "solid-fixtures-backup"
+        
+      # SSH Transport with strict host key verification
+      ssh:
+        enabled: true
+        host: "fixture-server.example.org"
+        port: 22
+        username: "fixture-user"
+        strict_host_key_checking: true
+        known_hosts_file: "/etc/solid/ssh_known_hosts"
+        connect_timeout: 10s
+        operation_timeout: 30s
+        
+      # Local Transport (disabled in production)
+      local:
+        enabled: false
+        base_path: "/var/lib/solid/fixtures"
+
+# Observability configuration
+observability:
+  metrics:
+    enabled: true
+    endpoint: "http://prometheus-production:9090/api/v1/write"
+    interval: 15s
+    include_defaults: true
+    
+    custom:
+      - name: sidecar_request_duration_seconds
+        type: histogram
+        buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+      
+      - name: sidecar_requests_total
+        type: counter
+        labels: [method, path, status_code, authz_decision]
+      
+      - name: sidecar_authz_decisions_total
+        type: counter
+        labels: [decision, policy_type, transport_type]
+      
+      - name: sidecar_active_sessions
+        type: gauge
+        labels: [assurance_level]
+      
+      - name: sidecar_session_duration_seconds
+        type: histogram
+        buckets: [60, 120, 300, 600, 1800, 3600, 7200, 14400, 28800, 57600]
+
+  logging:
+    level: info
+    format: json
+    output: stdout
+    
+    # Fields to include in structured logs
+    include:
+      - timestamp
+      - level
+      - message
+      - request_id
+      - correlation_id
+      - agent_identity_hash
+      - method
+      - path
+      - status_code
+      - duration_ms
+    
+    # Privacy: Never log these fields
+    redact:
+      - authorization
+      - cookie
+      - dpop
+      - access_token
+      - id_token
+
+  tracing:
+    enabled: true
+    sample_rate: 0.1  # 10% of requests
+    endpoint: "http://jaeger-production:14268/api/traces"
+    
+    # Trace configuration
+    max_attributes: 32
+    max_events: 128
+    max_links: 32
+
+# Rate limiting configuration
+rate_limit:
+  enabled: true
+  
+  global:
+    requests_per_second: 1000
+    burst_size: 100
+    
+  per_ip:
+    requests_per_second: 100
+    burst_size: 20
+    
+  per_agent:
+    requests_per_second: 50
+    burst_size: 10
+
+# Safety configuration
+safety:
+  circuit_breaker:
+    enabled: true
+    error_threshold: 0.5  # 50% error rate triggers circuit break
+    reset_timeout: 30s
+    max_half_open_requests: 10
+    
+  panic_recovery:
+    enabled: true
+    stack_trace_logging: true
+    max_recoveries: 100
+    
+  request_size_limit:
+    body: 10485760  # 10MB
+    header: 8192  # 8KB
+    
+  response_size_limit:
+    body: 10485760  # 10MB
+
+# Feature flags for production
+feature_flags:
+  enforce_authz: false  # Will be enabled after validation
+  sae_support: false    # Will be enabled after Phase 38
+  wac_evaluation: true
+  acp_evaluation: true
+  shadow_mode: true
+  
+# Health check configuration
+health:
+  liveness:
+    path: /health/live
+    port: 9090
+    interval: 30s
+    timeout: 5s
+    
+  readiness:
+    path: /health/ready
+    port: 9090
+    interval: 5s
+    timeout: 2s
+    
+  startup:
+    path: /health/startup
+    port: 9090
+    interval: 10s
+    timeout: 5s
+    failure_threshold: 30
+
+# Debug configuration (disabled in production)
+debug:
+  enabled: false
+  pprof:
+    enabled: false
+    port: 6060

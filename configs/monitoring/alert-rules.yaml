@@ -1,0 +1,247 @@
+groups:
+- name: solid-sidecar-alerts
+  rules:
+
+  # ======================================================================
+  # CRITICAL ALERTS - Page on-call 24/7
+  # ======================================================================
+
+  - alert: SidecarDown
+    expr: up{job="solid-sidecar"} == 0
+    for: 5m
+    labels:
+      severity: critical
+      category: availability
+      team: platform
+      page: true
+    annotations:
+      summary: "Solid Sidecar is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      runbook: "https://github.com/outlaw-dame/solid-sidecar/blob/main/docs/runbook-production.md#sidecar-down"
+      impact: "All requests to solid-sidecar are failing, users cannot access Solid resources"
+
+  - alert: CSSDown
+    expr: up{job="css-production"} == 0
+    for: 5m
+    labels:
+      severity: critical
+      category: availability
+      team: platform
+      page: true
+    annotations:
+      summary: "Community Solid Server is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      impact: "Backend Solid server is unavailable, sidecar cannot proxy requests"
+
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{job="solid-sidecar", status_code=~"5.."}[5m]) / rate(http_requests_total{job="solid-sidecar"}[5m]) > 0.1
+    for: 5m
+    labels:
+      severity: critical
+      category: errors
+      team: platform
+      page: true
+    annotations:
+      summary: "High error rate for Solid Sidecar ({{ $value }}%)"
+      description: "{{ $labels.instance }} has error rate of {{ $value }}% (threshold: 10%)"
+      runbook: "https://github.com/outlaw-dame/solid-sidecar/blob/main/docs/runbook-production.md#high-error-rate"
+      impact: "More than 10% of requests are failing with server errors"
+
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="solid-sidecar"}[5m])) by (le)) > 2
+    for: 10m
+    labels:
+      severity: critical
+      category: performance
+      team: platform
+      page: true
+    annotations:
+      summary: "High latency for Solid Sidecar ({{ $value }}s)"
+      description: "{{ $labels.instance }} has 95th percentile latency of {{ $value }}s (threshold: 2s)"
+      runbook: "https://github.com/outlaw-dame/solid-sidecar/blob/main/docs/runbook-production.md#performance-degradation"
+      impact: "95% of requests are taking more than 2 seconds, severe performance degradation"
+
+  - alert: PrometheusDown
+    expr: up{job="prometheus"} == 0
+    for: 5m
+    labels:
+      severity: critical
+      category: monitoring
+      team: platform
+      page: true
+    annotations:
+      summary: "Prometheus is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      impact: "No metrics are being collected, monitoring is blind"
+
+  - alert: AlertmanagerDown
+    expr: up{job="alertmanager"} == 0
+    for: 5m
+    labels:
+      severity: critical
+      category: monitoring
+      team: platform
+      page: true
+    annotations:
+      summary: "Alertmanager is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      impact: "No alerts are being sent, incidents may go unnoticed"
+
+  # ======================================================================
+  # WARNING ALERTS - Ticket during business hours
+  # ======================================================================
+
+  - alert: MemoryHigh
+    expr: (container_memory_working_set_bytes{container="solid-sidecar-production"} / container_memory_limit_bytes{container="solid-sidecar-production"}) * 100 > 90
+    for: 10m
+    labels:
+      severity: warning
+      category: resources
+      team: platform
+      page: false
+    annotations:
+      summary: "High memory usage for Solid Sidecar ({{ $value }}%)"
+      description: "{{ $labels.instance }} has memory usage of {{ $value }}% (threshold: 90%)"
+      impact: "Sidecar may be approaching memory limits, risk of OOM kill"
+
+  - alert: CPUHigh
+    expr: (rate(container_cpu_usage_seconds_total{container="solid-sidecar-production"}[5m]) / container_cpu_quota{container="solid-sidecar-production"} * 100) > 80
+    for: 10m
+    labels:
+      severity: warning
+      category: resources
+      team: platform
+      page: false
+    annotations:
+      summary: "High CPU usage for Solid Sidecar ({{ $value }}%)"
+      description: "{{ $labels.instance }} has CPU usage of {{ $value }}% (threshold: 80%)"
+      impact: "Sidecar is using most of its CPU allocation, performance may degrade"
+
+  - alert: AuthZMismatchDetected
+    expr: increase(solid_sidecar_authz_mismatches_total[5m]) > 0
+    labels:
+      severity: warning
+      category: correctness
+      team: authz
+      page: false
+    annotations:
+      summary: "Authorization mismatch detected"
+      description: "{{ $labels.instance }} detected {{ $value }} authz mismatches in last 5m"
+      runbook: "https://github.com/outlaw-dame/solid-sidecar/blob/main/docs/runbook-production.md#authorization-mismatch"
+      impact: "Sidecar authz decisions differ from CSS, may cause access issues when enforced"
+
+  - alert: FixtureSyncFailure
+    expr: increase(solid_sidecar_fixture_sync_failures_total[5m]) > 0
+    labels:
+      severity: warning
+      category: data
+      team: platform
+      page: false
+    annotations:
+      summary: "Fixture sync failure detected"
+      description: "{{ $labels.instance }} had {{ $value }} fixture sync failures in last 5m"
+      impact: "Fixtures may not be up to date, some transports may fail"
+
+  - alert: LowCacheHitRate
+    expr: rate(solid_sidecar_cache_hits_total[5m]) / rate(solid_sidecar_cache_requests_total[5m]) < 0.5
+    for: 15m
+    labels:
+      severity: warning
+      category: performance
+      team: authz
+      page: false
+    annotations:
+      summary: "Low cache hit rate ({{ $value }})"
+      description: "{{ $labels.instance }} cache hit rate is {{ $value }} (threshold: 50%)"
+      impact: "Cache effectiveness is low, increased load on policy evaluation"
+
+  - alert: CircuitBreakerOpen
+    expr: solid_sidecar_circuit_breaker_state{state="open"} == 1
+    for: 5m
+    labels:
+      severity: warning
+      category: safety
+      team: platform
+      page: false
+    annotations:
+      summary: "Circuit breaker is open"
+      description: "{{ $labels.instance }} circuit breaker for {{ $labels.service }} is open"
+      impact: "Requests to {{ $labels.service }} are being rejected to prevent cascading failures"
+
+  - alert: RateLimitTriggered
+    expr: increase(solid_sidecar_rate_limit_rejected_total[5m]) > 0
+    labels:
+      severity: warning
+      category: safety
+      team: platform
+      page: false
+    annotations:
+      summary: "Rate limit triggered"
+      description: "{{ $labels.instance }} rejected {{ $value }} requests due to rate limiting"
+      impact: "Some clients may be experiencing rate limiting"
+
+  - alert: GrafanaDown
+    expr: up{job="grafana"} == 0
+    for: 5m
+    labels:
+      severity: warning
+      category: monitoring
+      team: platform
+      page: false
+    annotations:
+      summary: "Grafana is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      impact: "Dashboards are unavailable, cannot visualize metrics"
+
+  - alert: JaegerDown
+    expr: up{job="jaeger"} == 0
+    for: 5m
+    labels:
+      severity: warning
+      category: monitoring
+      team: platform
+      page: false
+    annotations:
+      summary: "Jaeger is down"
+      description: "{{ $labels.instance }} has been down for more than 5 minutes"
+      impact: "Distributed tracing is unavailable, cannot debug request flows"
+
+  # ======================================================================
+  # INFO ALERTS - For awareness
+  # ======================================================================
+
+  - alert: SidecarRestart
+    expr: increase(container_start_time_seconds{container="solid-sidecar-production"}[1h]) > 0
+    labels:
+      severity: info
+      category: availability
+      team: platform
+      page: false
+    annotations:
+      summary: "Solid Sidecar container restarted"
+      description: "{{ $labels.instance }} container restarted {{ $value }} time(s) in last hour"
+      impact: "Minor: Container restarted, may have caused brief service interruption"
+
+  - alert: HighRequestVolume
+    expr: rate(http_requests_total{job="solid-sidecar"}[5m]) > 1000
+    labels:
+      severity: info
+      category: traffic
+      team: platform
+      page: false
+    annotations:
+      summary: "High request volume ({{ $value }} req/s)"
+      description: "{{ $labels.instance }} is receiving {{ $value }} requests per second (threshold: 1000)"
+      impact: "High traffic volume, monitor for performance issues"
+
+  - alert: NewClient
+    expr: increase(solid_sidecar_unique_clients_total[1h]) > 0
+    labels:
+      severity: info
+      category: clients
+      team: platform
+      page: false
+    annotations:
+      summary: "New clients detected"
+      description: "{{ $value }} new unique clients connected in the last hour"
+      impact: "Informational: New clients may need monitoring"
