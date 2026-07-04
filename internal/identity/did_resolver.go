@@ -512,3 +512,10 @@ func (c *DIDCache) Delete(did string) {
 	defer c.mu.Unlock()
 	delete(c.entries, did)
 }
+
+// Clear removes all entries from the cache
+func (c *DIDCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string]DIDDocumentMetadata)
+}
