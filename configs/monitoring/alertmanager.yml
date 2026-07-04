@@ -1,0 +1,207 @@
+global:
+  # Resolve timeout for alerts
+  resolve_timeout: 5m
+  
+  # SMTP configuration for email notifications
+  # Uncomment and configure if using email
+  #smtp_smarthost: 'smtp.example.org:587'
+  #smtp_from: 'alertmanager@solid-sidecar.example.org'
+  #smtp_auth_username: 'username'
+  #smtp_auth_password: 'password'
+  #smtp_require_tls: true
+
+# Templates for notifications
+# Can reference template files for custom notification formats
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route configuration
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+  
+  # Group by these labels to batch alerts
+  group_by: ['alertname', 'severity', 'category']
+  
+  # Wait this long to buffer alerts of the same group
+  group_wait: 30s
+  
+  # Wait this long before sending a grouped alert
+  group_interval: 5m
+  
+  # Repeat this interval if alerts still firing
+  repeat_interval: 3h
+  
+  # Only send alerts that match these labels
+  # match:
+  #   severity: 'critical'
+  
+  # Routes for specific alerts
+  routes:
+    # Critical alerts - page on-call
+    - match:
+        severity: 'critical'
+      receiver: 'oncall-page'
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 5m
+    
+    # Warning alerts - ticket during business hours
+    - match:
+        severity: 'warning'
+      receiver: 'oncall-ticket'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+      # Only send during business hours (8am-8pm UTC)
+      active_time_intervals:
+        - weekdays: ['monday:friday']
+          times:
+            - start_time: '08:00'
+              end_time: '20:00'
+    
+    # Info alerts - low priority
+    - match:
+        severity: 'info'
+      receiver: 'team-notifications'
+      group_wait: 1m
+      group_interval: 15m
+      repeat_interval: 1h
+    
+    # Availability alerts
+    - match:
+        category: 'availability'
+      receiver: 'oncall-page'
+    
+    # Monitoring alerts
+    - match:
+        category: 'monitoring'
+      receiver: 'platform-team'
+
+# Receivers configuration
+receivers:
+  # Default receiver (catch-all)
+  - name: 'default-receiver'
+    # Fall through to other receivers
+    # This is a catch-all for alerts that don't match any specific route
+
+  # On-call pager for SEV-1
+  - name: 'oncall-page'
+    pagerduty_configs:
+      - service_key: 'PAGERDUTY_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        details:
+          incident_id: '{{ .CommonLabels.alertname }}-{{ .CommonLabels.severity }}'
+          severity: '{{ .CommonLabels.severity }}'
+          summary: '{{ .CommonAnnotations.summary }}'
+          description: '{{ .CommonAnnotations.description }}'
+          impact: '{{ .CommonAnnotations.impact }}'
+          runbook: '{{ .CommonAnnotations.runbook }}'
+    
+    # Slack for immediate notification
+    slack_configs:
+      - api_url: 'SLACK_WEBHOOK_URL'
+        send_resolved: true
+        channel: '#solid-sidecar-incidents'
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.severity | toUpper }}: {{ .CommonLabels.alertname }}'
+        text: '{{ template "slack.text" . }}'
+        icon_emoji: '{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }}'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+    
+    # Email for documentation
+    email_configs:
+      - to: 'oncall@solid-sidecar.example.org'
+        send_resolved: true
+        headers:
+          subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.severity | toUpper }}: {{ .CommonLabels.alertname }}'
+        html: '{{ template "email.html" . }}'
+
+  # On-call ticket for SEV-2 (business hours)
+  - name: 'oncall-ticket'
+    slack_configs:
+      - api_url: 'SLACK_WEBHOOK_URL'
+        send_resolved: true
+        channel: '#solid-sidecar-incidents'
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.severity | toUpper }}: {{ .CommonLabels.alertname }}'
+        text: '{{ template "slack.text" . }}'
+        icon_emoji: '{{ if eq .Status "firing" }}:warning:{{ else }}:white_check_mark:{{ end }}'
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+    
+    email_configs:
+      - to: 'oncall@solid-sidecar.example.org'
+        send_resolved: true
+        headers:
+          subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.severity | toUpper }}: {{ .CommonLabels.alertname }}'
+
+  # Platform team notifications
+  - name: 'platform-team'
+    slack_configs:
+      - api_url: 'SLACK_WEBHOOK_URL'
+        send_resolved: true
+        channel: '#solid-sidecar-platform'
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.severity | toUpper }}: {{ .CommonLabels.alertname }}'
+        text: '{{ template "slack.text" . }}'
+    
+    email_configs:
+      - to: 'platform@solid-sidecar.example.org'
+        send_resolved: true
+
+  # Team notifications for info alerts
+  - name: 'team-notifications'
+    slack_configs:
+      - api_url: 'SLACK_WEBHOOK_URL'
+        send_resolved: true
+        channel: '#solid-sidecar-alerts'
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: '{{ .CommonAnnotations.summary }} - {{ .CommonAnnotations.description }}'
+
+# Inhibition rules
+# Suppress notifications for lower-severity alerts if higher-severity alert is firing
+inhibit_rules:
+  # If a critical alert is firing, suppress warning alerts for the same group
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'group', 'namespace']
+  
+  # If a critical alert is firing, suppress info alerts for the same group
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'group', 'namespace']
+  
+  # If a warning alert is firing, suppress info alerts for the same group
+  - source_match:
+      severity: 'warning'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'group', 'namespace']
+
+# Time intervals for business hours (UTC)
+time_intervals:
+  - name: 'business-hours'
+    weekdays: ['monday:friday']
+    times:
+      - start_time: '08:00'
+        end_time: '20:00'
+  
+  - name: 'off-hours'
+    weekdays: ['monday:friday']
+    times:
+      - start_time: '20:00'
+        end_time: '08:00'
+  
+  - name: 'weekend'
+    weekdays: ['saturday', 'sunday']
+    times:
+      - start_time: '00:00'
+        end_time: '24:00'
+
+# Templates for notifications
+templates:
+- '/etc/alertmanager/templates/slack.tmpl'
+- '/etc/alertmanager/templates/email.tmpl'
+- '/etc/alertmanager/templates/pagerduty.tmpl'

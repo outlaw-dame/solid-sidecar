@@ -1,0 +1,205 @@
+global:
+  # Scrape interval for all targets
+  scrape_interval: 15s
+  
+  # Evaluation interval for rules
+  evaluation_interval: 15s
+  
+  # Scrape timeout
+  scrape_timeout: 10s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files for alerting
+rule_files:
+  - /etc/prometheus/alert-rules.yaml
+
+# Scrape configurations
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    
+    # Metrics path
+    metrics_path: '/metrics'
+    
+    # Scrape interval (overrides global)
+    scrape_interval: 60s
+    
+    # Scrape timeout
+    scrape_timeout: 5s
+
+  # Scrape solid-sidecar
+  - job_name: 'solid-sidecar'
+    static_configs:
+      - targets: ['solid-sidecar:9090']
+    
+    # Metrics path
+    metrics_path: '/metrics'
+    
+    # Scrape interval
+    scrape_interval: 15s
+    
+    # Scrape timeout
+    scrape_timeout: 10s
+    
+    # Relabel configuration
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __scheme__
+        replacement: 'http'
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.*):\d+'
+        replacement: '$1'
+    
+    # Metric relabeling
+    metric_relabel_configs:
+      # Drop high-cardinality labels
+      - source_labels: [request_id, correlation_id]
+        regex: '.*'
+        action: drop
+
+  # Scrape CSS backend (if exposing metrics)
+  - job_name: 'css-backend'
+    static_configs:
+      - targets: ['css-production:3000']
+    
+    # Metrics path (CSS uses /metrics if enabled)
+    metrics_path: '/metrics'
+    
+    # Scrape interval
+    scrape_interval: 30s
+    
+    # Scrape timeout
+    scrape_timeout: 10s
+
+  # Scrape node exporter (if available)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    
+    # Scrape interval
+    scrape_interval: 30s
+    
+    # Scrape timeout
+    scrape_timeout: 10s
+
+  # Scrape cadvisor (if available)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    
+    # Scrape interval
+    scrape_interval: 30s
+    
+    # Scrape timeout
+    scrape_timeout: 10s
+
+# Remote write configuration (for long-term storage)
+# Uncomment and configure if using remote storage
+#remote_write:
+#  - url: 'https://remote-write-endpoint/api/v1/write'
+#    basic_auth:
+#      username: 'username'
+#      password: 'password'
+#    queue_config:
+#      max_samples_per_send: 1000
+#      max_shards: 200
+#    write_relabel_configs:
+#      - source_labels: [__name__]
+#        regex: '.*'
+#        action: keep
+
+# Storage configuration
+storage:
+  tsdb:
+    # Retention period
+    retention.time: 30d
+    
+    # Block ranges
+    retention.size: "50GB"
+    
+    # WAL settings
+    wal_compression: true
+    
+    # Compaction
+    compaction:
+      enabled: true
+      interval: 1h
+
+# Web configuration
+web:
+  # Enable admin APIs
+  enable_admin_api: false
+  
+  # Enable lifecycle API
+  enable_lifecycle: true
+  
+  # Console libraries
+  console.libraries:
+    - /etc/prometheus/console_libraries
+  
+  # Console templates
+  console.templates:
+    - /etc/prometheus/consoles
+  
+  # Page title
+  page_title: 'Solid Sidecar - Prometheus'
+
+# Recording rules (pre-computed metrics for efficiency)
+recording_rules:
+  - name: 'solid-sidecar.rules'
+    interval: 60s
+    rules:
+      # Request rate
+      - record: job:solid_sidecar:request_rate_5m
+        expr: rate(http_requests_total{job="solid-sidecar"}[5m])
+      
+      # Error rate
+      - record: job:solid_sidecar:error_rate_5m
+        expr: rate(http_requests_total{job="solid-sidecar", status_code=~"5.."}[5m])
+      
+      # Success rate
+      - record: job:solid_sidecar:success_rate_5m
+        expr: rate(http_requests_total{job="solid-sidecar", status_code=~"2.."}[5m])
+      
+      # Latency percentiles
+      - record: job:solid_sidecar:latency_p50_5m
+        expr: histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job="solid-sidecar"}[5m])) by (le))
+      
+      - record: job:solid_sidecar:latency_p95_5m
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="solid-sidecar"}[5m])) by (le))
+      
+      - record: job:solid_sidecar:latency_p99_5m
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="solid-sidecar"}[5m])) by (le))
+      
+      # AuthZ metrics
+      - record: job:solid_sidecar:authz_decisions_5m
+        expr: rate(solid_sidecar_authz_decisions_total[5m])
+      
+      - record: job:solid_sidecar:authz_allow_rate_5m
+        expr: rate(solid_sidecar_authz_decisions_total{decision="allow"}[5m])
+      
+      - record: job:solid_sidecar:authz_deny_rate_5m
+        expr: rate(solid_sidecar_authz_decisions_total{decision="deny"}[5m])
+      
+      - record: job:solid_sidecar:authz_abstain_rate_5m
+        expr: rate(solid_sidecar_authz_decisions_total{decision="abstain"}[5m])
+      
+      # Cache metrics
+      - record: job:solid_sidecar:cache_hit_rate_5m
+        expr: rate(solid_sidecar_cache_hits_total[5m]) / rate(solid_sidecar_cache_requests_total[5m])
+      
+      # Transport metrics
+      - record: job:solid_sidecar:transport_requests_5m
+        expr: rate(solid_sidecar_transport_requests_total[5m])
+      
+      - record: job:solid_sidecar:transport_failures_5m
+        expr: rate(solid_sidecar_transport_failures_total[5m])
