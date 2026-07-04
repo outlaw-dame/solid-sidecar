@@ -236,21 +236,29 @@ See `docs/solid-platform-maturity-phases.md` for Phases 18-31.
 
 ## Execution Priority
 
-Based on the repository audit and current state, the recommended execution order is:
+Based on the repository audit and current state, the recommended execution order follows the natural phase sequence:
 
 1. **Phase 15** - Native Go/Rust Solid runtime path
    - Required for migration from CSS
-   - Currently partial
+   - Currently partial (gateway scaffolding exists, needs storage abstraction, policy engine, migration path)
    - **CURRENT PRIORITY**
    
-2. **Phase 16-17** - Notifications, live updates, and production hardening
+2. **Phase 16** - Notifications, live updates, and indexing
+   - Required for production operations
+   - Currently not started
+   
+3. **Phase 17** - Production hardening
    - Required for production operations
    - Currently partial
-   
-3. **Phase 18-31** - Platform Maturity Phases
-   - See `docs/solid-platform-maturity-phases.md` for details
 
-**Note**: Phase 38 (Security Audit and Formal Hardening) and Phase 13 (Decision Cache and Invalidation) are now COMPLETE.
+**Phases 1-14**: All complete. The sidecar has full authentication, policy discovery, compression, caching, and enforcement gates.
+**Phases 32-38**: All complete. Fixture distribution, performance, deployment, and security audit are all done.
+
+The project now has two complete tracks:
+- Core runtime (Phases 1-14) - Solid authorization foundation
+- Infrastructure (Phases 32-38) - Transport, deployment, security
+
+Remaining work focuses on the native runtime path and production readiness (Phases 15-17).
 
 ## Blockers
 
