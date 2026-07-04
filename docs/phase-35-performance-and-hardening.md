@@ -124,8 +124,8 @@ Add metrics using the existing observability framework:
 - [x] Performance benchmarks for all transports (transport_performance_test.go)
 - [x] Monitoring metrics for all transport operations (fixture_transport_metrics.go)
 - [x] All CI tests passing including new benchmarks
-- [ ] Security audit of transport implementations (Phase 35 continued)
-- [ ] Documentation of performance characteristics (Phase 35 continued)
+- [x] Security audit of transport implementations (internal/authz/transport_security_audit.md)
+- [x] Documentation of performance characteristics (docs/phase-35-performance-characteristics.md)
 
 ### Should Have
 - [ ] Load tests integrated into CI
