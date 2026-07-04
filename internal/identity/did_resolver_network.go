@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"fmt"
 	"mime"
 	"net"
@@ -14,12 +15,47 @@ func newResolverHTTPClient(timeoutSeconds int) *http.Client {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = DefaultResolverOptions().TimeoutSeconds
 	}
+	dialer := &net.Dialer{
+		Timeout:   time.Duration(timeoutSeconds) * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+			return dialValidatedResolutionAddress(ctx, dialer, network, addr)
+		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 	return &http.Client{
-		Timeout: time.Duration(timeoutSeconds) * time.Second,
+		Timeout:   time.Duration(timeoutSeconds) * time.Second,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+}
+
+func dialValidatedResolutionAddress(ctx context.Context, dialer *net.Dialer, network string, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%w: no IP addresses found for resolver host", ErrUnsafeDID)
+	}
+	for _, ip := range ips {
+		if isUnsafeResolutionIP(ip) {
+			return nil, fmt.Errorf("%w: resolved resolver IP is not allowed", ErrUnsafeDID)
+		}
+	}
+	return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 }
 
 func validateOutboundResolutionURL(u *url.URL) error {
