@@ -303,30 +303,24 @@ func (r *Resolver) validateWebIDProfileBacklink(ctx context.Context, did DID, we
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		// In shadow mode, we don't fail hard - just log and return a warning
-		r.logResolutionWarning(fmt.Sprintf("failed to fetch WebID profile: %v", err))
-		return nil // WebID-only identity can still be valid
+		return fmt.Errorf("%w: failed to fetch WebID profile: %v", ErrWebIDBacklinkMissing, err)
 	}
 	defer resp.Body.Close()
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		// In shadow mode, don't fail hard
-		r.logResolutionWarning(fmt.Sprintf("WebID profile returned status %d", resp.StatusCode))
-		return nil
+		return fmt.Errorf("%w: WebID profile returned status %d", ErrWebIDBacklinkMissing, resp.StatusCode)
 	}
 
 	// Read response body with size limit
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(r.options.MaxDocumentBytes)+1))
 	if err != nil {
-		r.logResolutionWarning(fmt.Sprintf("failed to read WebID profile: %v", err))
-		return nil
+		return fmt.Errorf("%w: failed to read WebID profile: %v", ErrWebIDBacklinkMissing, err)
 	}
 
 	// Check size
 	if len(body) > r.options.MaxDocumentBytes {
-		r.logResolutionWarning("WebID profile exceeds maximum size")
-		return nil
+		return fmt.Errorf("%w: WebID profile exceeds maximum size", ErrWebIDBacklinkMissing)
 	}
 
 	// Parse the WebID profile to find the backlink
