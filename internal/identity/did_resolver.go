@@ -124,16 +124,17 @@ func (r *Resolver) resolveViaHTTPS(ctx context.Context, did DID) (DIDDocumentMet
 	if err != nil {
 		return DIDDocumentMetadata{}, fmt.Errorf("invalid resolution URL: %w", err)
 	}
+	if err := validateOutboundResolutionURL(parsedURL); err != nil {
+		return DIDDocumentMetadata{}, err
+	}
 
 	// Check context deadline
 	if err := ctx.Err(); err != nil {
 		return DIDDocumentMetadata{}, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: time.Duration(r.options.TimeoutSeconds) * time.Second,
-	}
+	// Create HTTP client with timeout and no redirects
+	client := newResolverHTTPClient(r.options.TimeoutSeconds)
 
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
@@ -159,7 +160,7 @@ func (r *Resolver) resolveViaHTTPS(ctx context.Context, did DID) (DIDDocumentMet
 
 	// Check content type
 	contentType := resp.Header.Get("Content-Type")
-	if contentType != "application/did+json" && contentType != "application/json" {
+	if !isAllowedDIDDocumentContentType(contentType) {
 		return DIDDocumentMetadata{}, fmt.Errorf("unexpected content type: %s", contentType)
 	}
 
@@ -271,10 +272,8 @@ func (r *Resolver) ValidateWebIDBacklink(ctx context.Context, didString string, 
 
 // validateWebIDProfileBacklink fetches a WebID profile and verifies it links back to the DID
 func (r *Resolver) validateWebIDProfileBacklink(ctx context.Context, did DID, webID string) error {
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: time.Duration(r.options.TimeoutSeconds) * time.Second,
-	}
+	// Create HTTP client with timeout and no redirects
+	client := newResolverHTTPClient(r.options.TimeoutSeconds)
 
 	// Parse WebID URL
 	webIDURL, err := url.Parse(webID)
@@ -287,9 +286,8 @@ func (r *Resolver) validateWebIDProfileBacklink(ctx context.Context, did DID, we
 		return fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Only fetch HTTPS URLs
-	if webIDURL.Scheme != "https" {
-		return fmt.Errorf("%w: WebID must use HTTPS", ErrWebIDBacklinkMissing)
+	if err := validateOutboundResolutionURL(webIDURL); err != nil {
+		return fmt.Errorf("%w: WebID profile URL is not allowed", err)
 	}
 
 	// Create request
@@ -305,30 +303,24 @@ func (r *Resolver) validateWebIDProfileBacklink(ctx context.Context, did DID, we
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		// In shadow mode, we don't fail hard - just log and return a warning
-		r.logResolutionWarning(fmt.Sprintf("failed to fetch WebID profile '%s': %v", webID, err))
-		return nil // WebID-only identity can still be valid
+		return fmt.Errorf("%w: failed to fetch WebID profile: %v", ErrWebIDBacklinkMissing, err)
 	}
 	defer resp.Body.Close()
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		// In shadow mode, don't fail hard
-		r.logResolutionWarning(fmt.Sprintf("WebID profile '%s' returned status %d", webID, resp.StatusCode))
-		return nil
+		return fmt.Errorf("%w: WebID profile returned status %d", ErrWebIDBacklinkMissing, resp.StatusCode)
 	}
 
 	// Read response body with size limit
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(r.options.MaxDocumentBytes)+1))
 	if err != nil {
-		r.logResolutionWarning(fmt.Sprintf("failed to read WebID profile '%s': %v", webID, err))
-		return nil
+		return fmt.Errorf("%w: failed to read WebID profile: %v", ErrWebIDBacklinkMissing, err)
 	}
 
 	// Check size
 	if len(body) > r.options.MaxDocumentBytes {
-		r.logResolutionWarning(fmt.Sprintf("WebID profile '%s' exceeds maximum size", webID))
-		return nil
+		return fmt.Errorf("%w: WebID profile exceeds maximum size", ErrWebIDBacklinkMissing)
 	}
 
 	// Parse the WebID profile to find the backlink
@@ -405,7 +397,7 @@ func toLower(r byte) byte {
 func (r *Resolver) logResolutionError(did string, err error) {
 	if r.logger != nil {
 		r.logger.Error("DID resolution error",
-			"did", did,
+			"did_method", "solid",
 			"error", err,
 		)
 	}
@@ -518,21 +510,12 @@ func (c *DIDCache) Set(did string, metadata DIDDocumentMetadata) {
 func (c *DIDCache) Delete(did string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	delete(c.entries, did)
 }
 
-// Clear clears all entries from the cache
+// Clear removes all entries from the cache
 func (c *DIDCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	c.entries = make(map[string]DIDDocumentMetadata)
-}
-
-// InvalidateDeactivated invalidates all cached DID documents that are deactivated
-// This is a placeholder - in a real implementation, this would be more sophisticated
-func (c *DIDCache) InvalidateDeactivated() {
-	// This would require checking each cached document, which is expensive
-	// In production, we would have a more sophisticated invalidation mechanism
 }
