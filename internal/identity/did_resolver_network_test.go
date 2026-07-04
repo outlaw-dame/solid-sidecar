@@ -16,6 +16,8 @@ func TestValidateOutboundResolutionURLRejectsUnsafeTargets(t *testing.T) {
 		"http://example.com/.well-known/did/solid.json",
 		"https://localhost/.well-known/did/solid.json",
 		"https://service.local/.well-known/did/solid.json",
+		"https://singlelabel/.well-known/did/solid.json",
+		"https://internalname/.well-known/did/solid.json",
 		"https://127.0.0.1/.well-known/did/solid.json",
 		"https://[::1]/.well-known/did/solid.json",
 		"https://10.0.0.1/.well-known/did/solid.json",
