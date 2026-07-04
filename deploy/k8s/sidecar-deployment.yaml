@@ -1,0 +1,471 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: solid-sidecar
+  namespace: solid
+  labels:
+    app: solid-sidecar
+    component: proxy
+    tier: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 15%
+  selector:
+    matchLabels:
+      app: solid-sidecar
+  template:
+    metadata:
+      labels:
+        app: solid-sidecar
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        # Recreate pods on config changes
+        checksum/config: {{ include (print $.Template.BasePath "/sidecar-configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: solid-sidecar
+      automountServiceAccountToken: false
+      containers:
+      - name: solid-sidecar
+        image: ghcr.io/outlaw-dame/solid-sidecar:v1.0.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_BIND_SERVICE
+        ports:
+        - name: https
+          containerPort: 443
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        - name: debug
+          containerPort: 6060
+          protocol: TCP
+        env:
+        - name: SIDECARE_CONFIG
+          value: "/etc/solid/config.yaml"
+        - name: SIDECARE_LOG_LEVEL
+          value: "info"
+        - name: SIDECARE_LOG_FORMAT
+          value: "json"
+        - name: SIDECARE_ENVIRONMENT
+          value: "production"
+        - name: GOMAXPROCS
+          value: "4"
+        - name: GOMEMLIMIT
+          value: "512MiB"
+        - name: TZ
+          value: "UTC"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/solid
+          readOnly: true
+        - name: tls-certs
+          mountPath: /etc/ssl/certs
+          readOnly: true
+        - name: tls-private
+          mountPath: /etc/ssl/private
+          readOnly: true
+        - name: ssh-known-hosts
+          mountPath: /etc/solid/ssh_known_hosts
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /var/cache/solid
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 9090
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9090
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /health/startup
+            port: 9090
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+          successThreshold: 1
+        terminationMessagePath: /tmp/termination-log
+        terminationMessagePolicy: File
+      volumes:
+      - name: config
+        configMap:
+          name: solid-sidecar-config
+          defaultMode: 0644
+      - name: tls-certs
+        secret:
+          secretName: solid-sidecar-tls-certs
+          defaultMode: 0644
+      - name: tls-private
+        secret:
+          secretName: solid-sidecar-tls-private
+          defaultMode: 0600
+      - name: ssh-known-hosts
+        configMap:
+          name: solid-sidecar-ssh-known-hosts
+          defaultMode: 0644
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir:
+          sizeLimit: 100Mi
+      # Node affinity for better performance
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/worker
+                operator: Exists
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - solid-sidecar
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: solid-sidecar-config
+  namespace: solid
+  labels:
+    app: solid-sidecar
+    component: config
+data:
+  config.yaml: |
+    gateway:
+      listen_addr: ":443"
+      backend_url: "http://community-solid-server.solid.svc.cluster.local:3000"
+      tls:
+        enabled: true
+        cert_file: "/etc/ssl/certs/tls.crt"
+        key_file: "/etc/ssl/private/tls.key"
+        min_version: "TLS1.2"
+    authz:
+      mode: shadow
+      cache:
+        enabled: true
+        ttl: 5m
+        max_size: 10000
+    authn:
+      enabled: true
+      allowed_issuers:
+        - "https://production-issuer.example.org"
+      required_assurance: high
+      dpop:
+        enabled: true
+        required: true
+    transport:
+      fixture_distribution:
+        enabled: true
+        global_timeout: 60s
+        max_retries: 3
+        transports:
+          http:
+            enabled: true
+            base_url: "https://fixture-dist.example.org"
+            timeout: 30s
+          s3:
+            enabled: true
+            bucket: "solid-fixtures-production"
+            region: "us-east-1"
+            endpoint: "https://s3.amazonaws.com"
+            ssrf_protection: true
+          ssh:
+            enabled: true
+            host: "fixture-server.example.org"
+            port: 22
+            username: "fixture-user"
+            strict_host_key_checking: true
+            known_hosts_file: "/etc/solid/ssh_known_hosts"
+          local:
+            enabled: false
+    observability:
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+        interval: 15s
+      logging:
+        level: info
+        format: json
+      tracing:
+        enabled: true
+        sample_rate: 0.1
+        endpoint: "http://jaeger-collector.monitoring.svc.cluster.local:14268"
+    rate_limit:
+      enabled: true
+      global:
+        requests_per_second: 1000
+        burst_size: 100
+      per_ip:
+        requests_per_second: 100
+        burst_size: 20
+    safety:
+      circuit_breaker:
+        enabled: true
+        error_threshold: 0.5
+        reset_timeout: 30s
+      panic_recovery:
+        enabled: true
+    feature_flags:
+      enforce_authz: false
+      sae_support: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: solid-sidecar-ssh-known-hosts
+  namespace: solid
+  labels:
+    app: solid-sidecar
+    component: ssh
+data:
+  ssh_known_hosts: |
+    fixture-server.example.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...=
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: solid-sidecar
+  namespace: solid
+  labels:
+    app: solid-sidecar
+    component: proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: solid-sidecar
+  ports:
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: solid-sidecar-hpa
+  namespace: solid
+  labels:
+    app: solid-sidecar
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: solid-sidecar
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: sidecar_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: 500
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+      selectPolicy: Max
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: solid-sidecar-pdb
+  namespace: solid
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: solid-sidecar
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: solid-sidecar-ingress
+  namespace: solid
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify-depth: "2"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+spec:
+  tls:
+  - hosts:
+    - solid.example.org
+    secretName: solid-sidecar-tls-secret
+  rules:
+  - host: solid.example.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: solid-sidecar
+            port:
+              number: 443
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ServiceAccount
+metadata:
+  name: solid-sidecar
+  namespace: solid
+  labels:
+    app: solid-sidecar
+automountServiceAccountToken: false
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: solid-sidecar-ingress
+  namespace: solid
+spec:
+  podSelector:
+    matchLabels:
+      app: solid-sidecar
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: community-solid-server
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 9090
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: solid-sidecar-egress
+  namespace: solid
+spec:
+  podSelector:
+    matchLabels:
+      app: solid-sidecar
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: community-solid-server
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 14268
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
