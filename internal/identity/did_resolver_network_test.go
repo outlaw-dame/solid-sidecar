@@ -1,7 +1,9 @@
 package identity
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,6 +54,24 @@ func TestResolverHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	originalReq := httptest.NewRequest(http.MethodGet, "https://example.com/source", nil)
 	if err := client.CheckRedirect(redirectReq, []*http.Request{originalReq}); !errors.Is(err, http.ErrUseLastResponse) {
 		t.Fatalf("expected redirects to be disabled, got %v", err)
+	}
+}
+
+func TestDialValidatedResolutionAddressRejectsUnsafeResolvedIP(t *testing.T) {
+	t.Parallel()
+	dialer := &net.Dialer{}
+	_, err := dialValidatedResolutionAddress(context.Background(), dialer, "tcp", "localhost:443")
+	if !errors.Is(err, ErrUnsafeDID) {
+		t.Fatalf("expected unsafe localhost resolution to be rejected, got %v", err)
+	}
+}
+
+func TestDialValidatedResolutionAddressRejectsMissingPort(t *testing.T) {
+	t.Parallel()
+	dialer := &net.Dialer{}
+	_, err := dialValidatedResolutionAddress(context.Background(), dialer, "tcp", "example.com")
+	if err == nil {
+		t.Fatal("expected missing port to be rejected")
 	}
 }
 
