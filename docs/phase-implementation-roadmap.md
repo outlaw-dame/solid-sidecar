@@ -94,11 +94,12 @@ This document provides a unified view of all phase implementations, their curren
 - ETag/Content-Length correctness
 
 ### Phase 13: Decision cache and invalidation
-**Status: ⚠️ PARTIAL**
-- Cache key design documented
-- Bounded TTL implementation needed
-- Stale decision rules needed
-- Policy-change invalidation needed
+**Status: ✅ COMPLETE**
+**Document: `docs/phase-13-completion.md`**
+- Cache key design documented and implemented
+- Bounded TTL implementation with comprehensive configuration
+- Stale decision rules implemented (StaleDecisionChecker)
+- Policy-change invalidation implemented (InvalidatePolicy, InvalidateResource, InvalidateAgent)
 
 ### Phase 14: Enforcement gates and canary
 **Status: ✅ COMPLETE**
@@ -237,21 +238,19 @@ See `docs/solid-platform-maturity-phases.md` for Phases 18-31.
 
 Based on the repository audit and current state, the recommended execution order is:
 
-1. **Phase 38** - Security Audit and Formal Hardening
-   - Address audit findings
-   - Required for production security
-   - **CURRENT PRIORITY**
-   
-2. **Phase 13** - Decision cache and invalidation
-   - Required for enforcement readiness
-   - Currently partial
-   
-3. **Phase 15** - Native Go/Rust Solid runtime path
+1. **Phase 15** - Native Go/Rust Solid runtime path
    - Required for migration from CSS
    - Currently partial
+   - **CURRENT PRIORITY**
    
-4. **Phase 16-17** - Notifications, live updates, and production hardening
+2. **Phase 16-17** - Notifications, live updates, and production hardening
    - Required for production operations
+   - Currently partial
+   
+3. **Phase 18-31** - Platform Maturity Phases
+   - See `docs/solid-platform-maturity-phases.md` for details
+
+**Note**: Phase 38 (Security Audit and Formal Hardening) and Phase 13 (Decision Cache and Invalidation) are now COMPLETE.
 
 ## Blockers
 
@@ -262,8 +261,8 @@ The following must be resolved before enforcement can be enabled:
 3. ⚠️ **RDF parser boundary** - Scaffolding exists, needs completion
 4. ⚠️ **WAC/ACP parsers** - Complete, need enforcement mode
 5. ⚠️ **CSS comparison harness** - Complete
-6. ❌ **Decision cache** - Needs implementation
-7. ❌ **Enforcement gates** - Scaffolding exists, needs testing
+6. ✅ **Decision cache** - Fully implemented and tested
+7. ✅ **Enforcement gates** - Complete with emergency bypass
 8. ⚠️ **Logs privacy review** - AgentIdentity redaction complete, needs broader review
 
 ## Current Safety Boundary
@@ -279,6 +278,7 @@ The following must be resolved before enforcement can be enabled:
 - ✅ WAC/ACP parser/evaluator can be compared against CSS
 - ❌ Mismatch rate needs to be measured
 - ✅ Enforcement gates and emergency bypass exist
+- ✅ Decision cache implemented for enforcement performance
 - ⚠️ Logs need privacy review (AgentIdentity redaction complete)
 
 ## Quick Status Check
@@ -308,8 +308,11 @@ gh run list --limit 5 -s failure
 - `docs/solid-platform-maturity-phases.md` - Phase 18-31 roadmap
 - `docs/repository-audit-2026-07-02.md` - Current audit and reconciliation
 - `docs/implementation-status.md` - Current implementation status
+- `docs/phase-13-completion.md` - Phase 13 completion (Decision Cache)
 - `docs/phase-33-completion.md` - Phase 33 completion
 - `docs/phase-34-completion.md` - Phase 34 completion
 - `docs/phase-35-performance-and-hardening.md` - Phase 35 definition
 - `docs/phase-36-staging-deployment.md` - Phase 36 definition
 - `docs/phase-37-production-deployment.md` - Phase 37 definition
+- `docs/phase-38-security-audit.md` - Phase 38 definition
+- `docs/phase-38-completion.md` - Phase 38 completion
