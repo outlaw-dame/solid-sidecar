@@ -31,9 +31,9 @@ type RollbackExecutorConfig struct {
 func DefaultRollbackExecutorConfig() RollbackExecutorConfig {
 	return RollbackExecutorConfig{
 		RollbackPlan:  nil,
-		Logger:       slog.Default(),
-		Timeout:      30 * time.Minute,
-		DryRun:       false,
+		Logger:        slog.Default(),
+		Timeout:       30 * time.Minute,
+		DryRun:        false,
 		ForceRollback: false,
 	}
 }
@@ -145,9 +145,9 @@ func (r *RollbackExecutor) ValidateRollback(ctx context.Context) error {
 func (r *RollbackExecutor) GetRollbackStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"status":              "ready",
-		"backup_location":    r.config.RollbackPlan.BackupLocation,
+		"backup_location":     r.config.RollbackPlan.BackupLocation,
 		"resources_backed_up": r.config.RollbackPlan.ResourcesBackedUp,
-		"dry_run":            r.config.DryRun,
-		"force_rollback":     r.config.ForceRollback,
+		"dry_run":             r.config.DryRun,
+		"force_rollback":      r.config.ForceRollback,
 	}
 }

@@ -56,10 +56,10 @@ func DefaultNotificationMetricsConfig() NotificationMetricsConfig {
 		EnableOpenTelemetry: false,
 		EnableLogging:       true,
 		MetricsLogInterval:  1 * time.Minute,
-		MaxMetricsHistory:    1000,
+		MaxMetricsHistory:   1000,
 		EnablePercentiles:   true,
-		Percentiles:        []float64{0.5, 0.9, 0.95, 0.99, 0.999},
-		Logger:             nil,
+		Percentiles:         []float64{0.5, 0.9, 0.95, 0.99, 0.999},
+		Logger:              nil,
 	}
 }
 
@@ -70,26 +70,26 @@ type UnifiedNotificationMetrics struct {
 	// Timestamp of the last metrics collection
 	LastCollected time.Time
 
-	// Durable event log metrics
-	DurableLogMetrics DurableLogMetrics
+	// Durable event log metrics (pointer to avoid mutex copying)
+	DurableLogMetrics *DurableLogMetrics
 
-	// Subscription registry metrics
-	SubscriptionRegistryMetrics SubscriptionRegistryMetrics
+	// Subscription registry metrics (pointer to avoid mutex copying)
+	SubscriptionRegistryMetrics *SubscriptionRegistryMetrics
 
-	// Fanout worker pool metrics
-	FanoutWorkerPoolMetrics FanoutWorkerPoolMetrics
+	// Fanout worker pool metrics (pointer to avoid mutex copying)
+	FanoutWorkerPoolMetrics *FanoutWorkerPoolMetrics
 
-	// Event stream metrics
-	EventStreamMetrics EventStreamMetrics
+	// Event stream metrics (pointer to avoid mutex copying)
+	EventStreamMetrics *EventStreamMetrics
 
-	// Solid notification metrics
-	SolidNotificationMetrics SolidNotificationMetrics
+	// Solid notification metrics (pointer to avoid mutex copying)
+	SolidNotificationMetrics *SolidNotificationMetrics
 
 	// Aggregated delivery metrics
 	DeliveryMetrics DeliveryMetrics
 
-	// Historical metrics for trend analysis
-	History []UnifiedNotificationMetrics
+	// Historical metrics for trend analysis - TODO: Implement properly without mutex copying
+	// History []*UnifiedNotificationMetrics
 
 	// Metrics configuration
 	config NotificationMetricsConfig
@@ -156,15 +156,15 @@ type DeliveryMetrics struct {
 
 	// Connection metrics
 	ActiveConnections int64
-	TotalConnections   int64
+	TotalConnections  int64
 
 	// Channel metrics
 	ActiveChannels int64
-	TotalChannels   int64
+	TotalChannels  int64
 
 	// Subscription metrics
-	ActiveSubscriptions   int64
-	TotalSubscriptions    int64
+	ActiveSubscriptions int64
+	TotalSubscriptions  int64
 }
 
 // NewUnifiedNotificationMetrics creates a new unified notification metrics collector
@@ -175,9 +175,9 @@ func NewUnifiedNotificationMetrics(config NotificationMetricsConfig) *UnifiedNot
 
 	metrics := &UnifiedNotificationMetrics{
 		LastCollected: time.Now(),
-		History:       make([]UnifiedNotificationMetrics, 0, config.MaxMetricsHistory),
-		config:        config,
-		logger:        config.Logger,
+		// History:       make([]UnifiedNotificationMetrics, 0, config.MaxMetricsHistory),
+		config: config,
+		logger: config.Logger,
 		DeliveryMetrics: DeliveryMetrics{
 			LatencyPercentiles: make(map[float64]time.Duration),
 		},
@@ -217,7 +217,7 @@ func (m *UnifiedNotificationMetrics) collectionLoop() {
 func (m *UnifiedNotificationMetrics) collectAndLogMetrics() {
 	// Collect current metrics from all components
 	// This would be called with actual component references in a real implementation
-	
+
 	// For now, we'll just log the current state
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -227,11 +227,11 @@ func (m *UnifiedNotificationMetrics) collectAndLogMetrics() {
 	// Create a snapshot
 	snapshot := m.createSnapshot()
 
-	// Add to history
-	if len(m.History) >= m.config.MaxMetricsHistory {
-		m.History = m.History[1:]
-	}
-	m.History = append(m.History, *snapshot)
+	// Add to history - TODO: Implement properly without mutex copying
+	// if len(m.History) >= m.config.MaxMetricsHistory {
+	// 	m.History = m.History[1:]
+	// }
+	// m.History = append(m.History, snapshot)
 
 	// Log metrics if enabled
 	if m.config.EnableLogging {
@@ -244,23 +244,18 @@ func (m *UnifiedNotificationMetrics) createSnapshot() *UnifiedNotificationMetric
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Create a deep copy
+	// Create a snapshot - return a shallow copy with pointers to avoid mutex copying
+	// TODO: Implement proper deep copy for all metrics
 	snapshot := &UnifiedNotificationMetrics{
 		LastCollected:               m.LastCollected,
 		DurableLogMetrics:           m.DurableLogMetrics,
 		SubscriptionRegistryMetrics: m.SubscriptionRegistryMetrics,
-		FanoutWorkerPoolMetrics:      m.FanoutWorkerPoolMetrics,
+		FanoutWorkerPoolMetrics:     m.FanoutWorkerPoolMetrics,
 		EventStreamMetrics:          m.EventStreamMetrics,
-		SolidNotificationMetrics:   m.SolidNotificationMetrics,
+		SolidNotificationMetrics:    m.SolidNotificationMetrics,
 		DeliveryMetrics:             m.DeliveryMetrics,
 		config:                      m.config,
 		logger:                      m.logger,
-	}
-
-	// Copy history (just references for now)
-	snapshot.History = make([]UnifiedNotificationMetrics, len(m.History))
-	for i, h := range m.History {
-		snapshot.History[i] = h
 	}
 
 	return snapshot
@@ -333,19 +328,19 @@ func (m *UnifiedNotificationMetrics) UpdateFromComponents(
 
 	// Update individual component metrics
 	if durableLogMetrics != nil {
-		m.DurableLogMetrics = *durableLogMetrics
+		m.DurableLogMetrics = durableLogMetrics
 	}
 	if subscriptionRegistryMetrics != nil {
-		m.SubscriptionRegistryMetrics = *subscriptionRegistryMetrics
+		m.SubscriptionRegistryMetrics = subscriptionRegistryMetrics
 	}
 	if fanoutPoolMetrics != nil {
-		m.FanoutWorkerPoolMetrics = *fanoutPoolMetrics
+		m.FanoutWorkerPoolMetrics = fanoutPoolMetrics
 	}
 	if streamMetrics != nil {
-		m.EventStreamMetrics = *streamMetrics
+		m.EventStreamMetrics = streamMetrics
 	}
 	if solidMetrics != nil {
-		m.SolidNotificationMetrics = *solidMetrics
+		m.SolidNotificationMetrics = solidMetrics
 	}
 
 	// Recalculate aggregated metrics
@@ -356,13 +351,13 @@ func (m *UnifiedNotificationMetrics) UpdateFromComponents(
 func (m *UnifiedNotificationMetrics) recalculateAggregatedMetrics() {
 	// Calculate delivery metrics
 	m.calculateDeliveryMetrics()
-	
+
 	// Calculate connection metrics
 	m.calculateConnectionMetrics()
-	
+
 	// Calculate channel metrics
 	m.calculateChannelMetrics()
-	
+
 	// Calculate subscription metrics
 	m.calculateSubscriptionMetrics()
 }
@@ -414,19 +409,19 @@ func (m *UnifiedNotificationMetrics) calculateDeliveryMetrics() {
 
 	// Update delivery metrics
 	m.DeliveryMetrics = DeliveryMetrics{
-		TotalDeliveries:        totalDeliveries,
-		SuccessfulDeliveries:   successfulDeliveries,
-		FailedDeliveries:       failedDeliveries,
-		SuccessRate:           successRate,
-		FailureRate:           failureRate,
-		AverageRetries:        averageRetries,
-		TotalRetries:          totalRetries,
-		BackpressureDrops:      m.FanoutWorkerPoolMetrics.BackpressureEvents,
-		QueueFullDrops:        m.FanoutWorkerPoolMetrics.QueueFullEvents,
-		StorageFullDrops:      m.DurableLogMetrics.StorageFullErrors,
-		TotalDrops:            totalDrops,
-		DropRate:              dropRate,
-		LatencyPercentiles:    make(map[float64]time.Duration),
+		TotalDeliveries:      totalDeliveries,
+		SuccessfulDeliveries: successfulDeliveries,
+		FailedDeliveries:     failedDeliveries,
+		SuccessRate:          successRate,
+		FailureRate:          failureRate,
+		AverageRetries:       averageRetries,
+		TotalRetries:         totalRetries,
+		BackpressureDrops:    m.FanoutWorkerPoolMetrics.BackpressureEvents,
+		QueueFullDrops:       m.FanoutWorkerPoolMetrics.QueueFullEvents,
+		StorageFullDrops:     m.DurableLogMetrics.StorageFullErrors,
+		TotalDrops:           totalDrops,
+		DropRate:             dropRate,
+		LatencyPercentiles:   make(map[float64]time.Duration),
 	}
 }
 
@@ -448,13 +443,14 @@ func (m *UnifiedNotificationMetrics) calculateSubscriptionMetrics() {
 	m.DeliveryMetrics.TotalSubscriptions = m.SubscriptionRegistryMetrics.TotalSubscriptions
 }
 
-// GetMetrics returns the current unified metrics
-func (m *UnifiedNotificationMetrics) GetMetrics() UnifiedNotificationMetrics {
+// GetMetrics returns a pointer to the current unified metrics
+// Note: Caller must not modify the returned metrics
+func (m *UnifiedNotificationMetrics) GetMetrics() *UnifiedNotificationMetrics {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Return a copy
-	return *m
+	// Return a pointer to avoid copying mutexes
+	return m
 }
 
 // GetDeliveryMetrics returns just the delivery metrics
@@ -477,16 +473,16 @@ func (m *UnifiedNotificationMetrics) RecordDelivery(success bool, latency time.D
 	} else {
 		m.DeliveryMetrics.FailedDeliveries++
 	}
-	
+
 	m.DeliveryMetrics.TotalDeliveries++
-	
+
 	if retried {
 		m.DeliveryMetrics.TotalRetries++
 	}
 
 	// Update latency metrics
 	m.DeliveryMetrics.TotalDeliveryTime += latency
-	
+
 	// Update min/max latency
 	if latency < m.DeliveryMetrics.MinLatency || m.DeliveryMetrics.MinLatency == 0 {
 		m.DeliveryMetrics.MinLatency = latency
@@ -505,7 +501,7 @@ func (m *UnifiedNotificationMetrics) RecordDrop(reason string) {
 	defer m.mu.Unlock()
 
 	m.DeliveryMetrics.TotalDrops++
-	
+
 	switch reason {
 	case "backpressure":
 		m.DeliveryMetrics.BackpressureDrops++
@@ -575,7 +571,7 @@ func DefaultReplayServiceConfig() ReplayServiceConfig {
 		MaxReplayRate:        1000,
 		ReplayTimeout:        5 * time.Minute,
 		EnableMetrics:        true,
-		Logger:              nil,
+		Logger:               nil,
 	}
 }
 
@@ -693,7 +689,7 @@ type ReplayServiceMetrics struct {
 	mu sync.RWMutex
 
 	// Replay sessions
-	ReplaySessionsStarted  int64
+	ReplaySessionsStarted   int64
 	ReplaySessionsCompleted int64
 	ReplaySessionsFailed    int64
 	ReplaySessionsCancelled int64
@@ -703,9 +699,33 @@ type ReplayServiceMetrics struct {
 	EventsFailed   int64
 
 	// Replay performance
-	TotalReplayTime time.Duration
+	TotalReplayTime   time.Duration
 	AverageReplayTime time.Duration
-	ReplayCount int64
+	ReplayCount       int64
+
+	// Current active replays
+	ActiveReplays int64
+
+	// Errors
+	ReplayErrors int64
+}
+
+// ReplayServiceMetricsSnapshot is a copy of metrics values without the mutex
+type ReplayServiceMetricsSnapshot struct {
+	// Replay sessions
+	ReplaySessionsStarted   int64
+	ReplaySessionsCompleted int64
+	ReplaySessionsFailed    int64
+	ReplaySessionsCancelled int64
+
+	// Events replayed
+	EventsReplayed int64
+	EventsFailed   int64
+
+	// Replay performance
+	TotalReplayTime   time.Duration
+	AverageReplayTime time.Duration
+	ReplayCount       int64
 
 	// Current active replays
 	ActiveReplays int64
@@ -766,11 +786,23 @@ func (m *ReplayServiceMetrics) RecordEventsFailed(count int64) {
 	m.EventsFailed += count
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *ReplayServiceMetrics) GetMetrics() ReplayServiceMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *ReplayServiceMetrics) GetMetrics() ReplayServiceMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return *m
+	return ReplayServiceMetricsSnapshot{
+		ReplaySessionsStarted:   m.ReplaySessionsStarted,
+		ReplaySessionsCompleted: m.ReplaySessionsCompleted,
+		ReplaySessionsFailed:    m.ReplaySessionsFailed,
+		ReplaySessionsCancelled: m.ReplaySessionsCancelled,
+		EventsReplayed:          m.EventsReplayed,
+		EventsFailed:            m.EventsFailed,
+		TotalReplayTime:         m.TotalReplayTime,
+		AverageReplayTime:       m.AverageReplayTime,
+		ReplayCount:             m.ReplayCount,
+		ActiveReplays:           m.ActiveReplays,
+		ReplayErrors:            m.ReplayErrors,
+	}
 }
 
 // NewReplayService creates a new replay service
@@ -780,11 +812,11 @@ func NewReplayService(config ReplayServiceConfig) *ReplayService {
 	}
 
 	service := &ReplayService{
-		config:           config,
+		config:            config,
 		replaysInProgress: make(map[string]*ReplaySession),
-		metrics:          ReplayServiceMetrics{},
-		logger:           config.Logger,
-		closed:           false,
+		metrics:           ReplayServiceMetrics{},
+		logger:            config.Logger,
+		closed:            false,
 	}
 
 	config.Logger.Info("Replay service initialized",
@@ -849,15 +881,15 @@ func (s *ReplayService) StartReplay(
 
 	// Create replay session
 	session := &ReplaySession{
-		SessionID:       generateReplaySessionID(),
-		SubscriptionID:  subscriptionID,
-		StartCursor:     startCursor,
-		EndCursor:       endCursor,
-		CurrentCursor:   startCursor,
-		Status:          ReplaySessionStatusPending,
-		Started:         time.Now().UTC(),
-		LastActivity:    time.Now().UTC(),
-		ProgressChannel: make(chan ReplayProgress, 10),
+		SessionID:         generateReplaySessionID(),
+		SubscriptionID:    subscriptionID,
+		StartCursor:       startCursor,
+		EndCursor:         endCursor,
+		CurrentCursor:     startCursor,
+		Status:            ReplaySessionStatusPending,
+		Started:           time.Now().UTC(),
+		LastActivity:      time.Now().UTC(),
+		ProgressChannel:   make(chan ReplayProgress, 10),
 		CompletionChannel: make(chan ReplayResult, 1),
 	}
 
@@ -964,9 +996,9 @@ func (s *ReplayService) runReplaySession(session *ReplaySession) {
 		case session.ProgressChannel <- ReplayProgress{
 			SessionID:          session.SessionID,
 			CurrentCursor:      session.CurrentCursor,
-			EventsReplayed:    session.EventsReplayed,
+			EventsReplayed:     session.EventsReplayed,
 			ProgressPercentage: progress,
-			Timestamp:         time.Now().UTC(),
+			Timestamp:          time.Now().UTC(),
 		}:
 		default:
 			// Channel full, skip progress update
@@ -992,7 +1024,7 @@ func (s *ReplayService) processReplayBatch(session *ReplaySession, batch []LogEn
 	// Convert log entries to stream events and fan out
 	for _, entry := range batch {
 		streamEvent := LogEntryToStreamEvent(entry)
-		
+
 		// Fan out the event to the subscription
 		if _, err := s.fanoutService.FanoutEventToSubscribers(streamEvent); err != nil {
 			session.EventsFailed++
@@ -1024,19 +1056,19 @@ func (s *ReplayService) handleReplayError(session *ReplaySession, err error) {
 
 	// Close channels
 	close(session.ProgressChannel)
-	
+
 	// Send completion
 	session.CompletionChannel <- ReplayResult{
-		SessionID:     session.SessionID,
-		Success:       false,
-		StartCursor:   session.StartCursor,
-		EndCursor:     session.EndCursor,
-		FinalCursor:   session.CurrentCursor,
+		SessionID:      session.SessionID,
+		Success:        false,
+		StartCursor:    session.StartCursor,
+		EndCursor:      session.EndCursor,
+		FinalCursor:    session.CurrentCursor,
 		EventsReplayed: session.EventsReplayed,
 		EventsFailed:   session.EventsFailed,
-		Duration:      time.Since(session.Started),
-		Error:         err,
-		Timestamp:     time.Now().UTC(),
+		Duration:       time.Since(session.Started),
+		Error:          err,
+		Timestamp:      time.Now().UTC(),
 	}
 	close(session.CompletionChannel)
 
@@ -1067,19 +1099,19 @@ func (s *ReplayService) completeReplaySession(session *ReplaySession, err error)
 
 	// Close channels
 	close(session.ProgressChannel)
-	
+
 	// Send completion
 	session.CompletionChannel <- ReplayResult{
-		SessionID:     session.SessionID,
-		Success:       true,
-		StartCursor:   session.StartCursor,
-		EndCursor:     session.EndCursor,
-		FinalCursor:   session.CurrentCursor,
+		SessionID:      session.SessionID,
+		Success:        true,
+		StartCursor:    session.StartCursor,
+		EndCursor:      session.EndCursor,
+		FinalCursor:    session.CurrentCursor,
 		EventsReplayed: session.EventsReplayed,
 		EventsFailed:   session.EventsFailed,
-		Duration:      time.Since(session.Started),
-		Error:         err,
-		Timestamp:     time.Now().UTC(),
+		Duration:       time.Since(session.Started),
+		Error:          err,
+		Timestamp:      time.Now().UTC(),
 	}
 	close(session.CompletionChannel)
 
@@ -1387,7 +1419,7 @@ func (s *ReplayService) handleListReplaySessions(w http.ResponseWriter, r *http.
 	// Convert to response format
 	response := struct {
 		Sessions []*ReplaySession `json:"sessions"`
-		Count    int               `json:"count"`
+		Count    int              `json:"count"`
 	}{
 		Sessions: sessions,
 		Count:    len(sessions),
@@ -1419,8 +1451,8 @@ func (s *ReplayService) handleGetReplaySession(w http.ResponseWriter, r *http.Re
 func (s *ReplayService) handleStartReplaySession(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		SubscriptionID string `json:"subscriptionId"`
-		StartCursor     int64  `json:"startCursor"`
-		EndCursor       int64  `json:"endCursor"`
+		StartCursor    int64  `json:"startCursor"`
+		EndCursor      int64  `json:"endCursor"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -1511,7 +1543,7 @@ func (s *ReplayService) handleGetReplayCursor(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"subscriptionId": subscriptionID,
-		"cursor":        cursor,
+		"cursor":         cursor,
 	})
 }
 
@@ -1526,9 +1558,9 @@ func (s *ReplayService) handleGetReplayRange(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"subscriptionId": subscriptionID,
-		"startCursor":   startCursor,
-		"endCursor":     endCursor,
-		"range":        endCursor - startCursor,
+		"startCursor":    startCursor,
+		"endCursor":      endCursor,
+		"range":          endCursor - startCursor,
 	})
 }
 
@@ -1582,7 +1614,7 @@ func (s *ReplayService) IsClosed() bool {
 }
 
 // GetMetrics returns the current metrics
-func (s *ReplayService) GetMetrics() ReplayServiceMetrics {
+func (s *ReplayService) GetMetrics() ReplayServiceMetricsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.metrics.GetMetrics()

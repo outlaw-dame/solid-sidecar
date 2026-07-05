@@ -1,0 +1,8 @@
+{"@context":"https://www.w3.org/ns/solid/wac#","permission":[{"accessTo":"https://example.com/data/","accessMode":["read","write"],"agent":"https://example.com/profile/card#me"}]}
+{"@context":"https://www.w3.org/ns/solid/wac#","permission":[{"accessTo":"https://example.com/data/","accessMode":["read"],"agent":"https://example.com/profile/card#me"}],"deny":[{"accessTo":"https://example.com/private/","accessMode":["read","write"],"agent":"https://evil.com/profile/card#me"}]}
+{"permission":[{"accessTo":"resource1","accessMode":["read"],"agent":"agent1"}]}
+{"deny":[{"accessTo":"resource1","accessMode":["write"],"agent":"agent1"}]}
+{"@context":"https://www.w3.org/ns/solid/wac#","permission":[{"accessTo":"https://example.com/data/","accessMode":["read","write","control"],"agent":"https://example.com/profile/card#me","delegator":"https://example.com/profile/card#me"}]}
+{}
+{invalid json
+{"permission":[{"accessTo":"resource1","accessMode":["invalid-mode"],"agent":"agent1"}]}

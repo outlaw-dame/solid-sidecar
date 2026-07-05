@@ -39,12 +39,12 @@ type MigrationVerifierConfig struct {
 func DefaultMigrationVerifierConfig() MigrationVerifierConfig {
 	return MigrationVerifierConfig{
 		ImportReport:               nil,
-		CSSEndpoint:               "",
+		CSSEndpoint:                "",
 		EnableChecksumVerification: true,
-		Logger:                   slog.Default(),
-		Timeout:                 15 * time.Minute,
+		Logger:                     slog.Default(),
+		Timeout:                    15 * time.Minute,
 		MaxConcurrentVerifications: 10,
-		StrictMode:              false,
+		StrictMode:                 false,
 	}
 }
 
@@ -124,9 +124,9 @@ func (v *MigrationVerifier) Verify(ctx context.Context) (*VerificationReport, er
 	// Create verification report
 	report := &VerificationReport{
 		VerifiedResources:    make([]string, 0),
-		Errors:             make([]MigrationError, 0),
+		Errors:               make([]MigrationError, 0),
 		AllResourcesVerified: true,
-		StartTime:          startTime,
+		StartTime:            startTime,
 	}
 
 	// Use semaphore for concurrent verification
@@ -164,15 +164,15 @@ func (v *MigrationVerifier) Verify(ctx context.Context) (*VerificationReport, er
 				)
 				mu.Lock()
 				report.Errors = append(report.Errors, MigrationError{
-					ErrorID:    generateErrorID(),
-					Timestamp:  time.Now(),
-					Phase:      PhaseVerification,
+					ErrorID:     generateErrorID(),
+					Timestamp:   time.Now(),
+					Phase:       PhaseVerification,
 					ResourceURI: uri,
-					Error:      err,
-					Severity:   SeverityHigh,
-					Retryable:  false,
+					Error:       err,
+					Severity:    SeverityHigh,
+					Retryable:   false,
 				})
-						report.AllResourcesVerified = false
+				report.AllResourcesVerified = false
 				mu.Unlock()
 				return
 			}
@@ -181,16 +181,16 @@ func (v *MigrationVerifier) Verify(ctx context.Context) (*VerificationReport, er
 			report.VerifiedResources = append(report.VerifiedResources, uri)
 			results = append(results, *result)
 			if !result.Success {
-					report.AllResourcesVerified = false
+				report.AllResourcesVerified = false
 				if v.config.StrictMode {
 					report.Errors = append(report.Errors, MigrationError{
-						ErrorID:    generateErrorID(),
-						Timestamp:  time.Now(),
-						Phase:      PhaseVerification,
+						ErrorID:     generateErrorID(),
+						Timestamp:   time.Now(),
+						Phase:       PhaseVerification,
 						ResourceURI: uri,
-						Error:      fmt.Errorf("verification failed for %s", uri),
-						Severity:   SeverityHigh,
-						Retryable:  false,
+						Error:       fmt.Errorf("verification failed for %s", uri),
+						Severity:    SeverityHigh,
+						Retryable:   false,
 					})
 				}
 			}
@@ -198,7 +198,7 @@ func (v *MigrationVerifier) Verify(ctx context.Context) (*VerificationReport, er
 		}(resourceURI)
 	}
 
-	done:
+done:
 	// Wait for all verifications to complete
 	wg.Wait()
 
@@ -225,9 +225,9 @@ func (v *MigrationVerifier) verifyResource(ctx context.Context, resourceURI stri
 
 	result := &VerificationResult{
 		ResourceURI:      resourceURI,
-		Success:         true,
+		Success:          true,
 		VerificationTime: startTime,
-		Details:         make(map[string]interface{}),
+		Details:          make(map[string]interface{}),
 	}
 
 	v.logger.Debug("Verifying resource", "uri", resourceURI)
@@ -239,7 +239,7 @@ func (v *MigrationVerifier) verifyResource(ctx context.Context, resourceURI stri
 	// 4. Verify ACL/ACP policies are correctly applied
 
 	// For now, we'll simulate verification with some basic checks
-	
+
 	// Check that the URI is valid
 	if resourceURI == "" {
 		result.Success = false
@@ -284,9 +284,9 @@ func (v *MigrationVerifier) VerifyChecksums(ctx context.Context) (*VerificationR
 	// Create verification report
 	report := &VerificationReport{
 		VerifiedResources:    make([]string, 0),
-		Errors:             make([]MigrationError, 0),
+		Errors:               make([]MigrationError, 0),
 		AllResourcesVerified: true,
-		StartTime:          startTime,
+		StartTime:            startTime,
 	}
 
 	// Use semaphore for concurrent verification
@@ -315,15 +315,15 @@ func (v *MigrationVerifier) VerifyChecksums(ctx context.Context) (*VerificationR
 			if err := v.verifyResourceChecksum(ctx, uri); err != nil {
 				mu.Lock()
 				report.Errors = append(report.Errors, MigrationError{
-					ErrorID:    generateErrorID(),
-					Timestamp:  time.Now(),
-					Phase:      PhaseVerification,
+					ErrorID:     generateErrorID(),
+					Timestamp:   time.Now(),
+					Phase:       PhaseVerification,
 					ResourceURI: uri,
-					Error:      err,
-					Severity:   SeverityHigh,
-					Retryable:  false,
+					Error:       err,
+					Severity:    SeverityHigh,
+					Retryable:   false,
 				})
-					report.AllResourcesVerified = false
+				report.AllResourcesVerified = false
 				mu.Unlock()
 				return
 			}
@@ -334,7 +334,7 @@ func (v *MigrationVerifier) VerifyChecksums(ctx context.Context) (*VerificationR
 		}(resourceURI)
 	}
 
-	done:
+done:
 	// Wait for all verifications to complete
 	wg.Wait()
 
@@ -370,9 +370,9 @@ func (v *MigrationVerifier) VerifyMetadata(ctx context.Context) (*VerificationRe
 	// Create verification report
 	report := &VerificationReport{
 		VerifiedResources:    make([]string, 0),
-		Errors:             make([]MigrationError, 0),
+		Errors:               make([]MigrationError, 0),
 		AllResourcesVerified: true,
-		StartTime:          startTime,
+		StartTime:            startTime,
 	}
 
 	// In a real implementation, this would verify metadata for each resource
@@ -387,7 +387,7 @@ func (v *MigrationVerifier) VerifyMetadata(ctx context.Context) (*VerificationRe
 		report.VerifiedResources = append(report.VerifiedResources, uri)
 	}
 
-	done:
+done:
 	report.EndTime = time.Now()
 
 	v.logger.Info("Metadata verification completed",
@@ -406,9 +406,9 @@ func (v *MigrationVerifier) VerifyPolicies(ctx context.Context) (*VerificationRe
 	// Create verification report
 	report := &VerificationReport{
 		VerifiedResources:    make([]string, 0),
-		Errors:             make([]MigrationError, 0),
+		Errors:               make([]MigrationError, 0),
 		AllResourcesVerified: true,
-		StartTime:          startTime,
+		StartTime:            startTime,
 	}
 
 	// In a real implementation, this would verify policies for ACL/ACP resources
@@ -428,7 +428,7 @@ func (v *MigrationVerifier) VerifyPolicies(ctx context.Context) (*VerificationRe
 		}
 	}
 
-	done:
+done:
 	report.EndTime = time.Now()
 
 	v.logger.Info("Policy verification completed",
@@ -441,12 +441,12 @@ func (v *MigrationVerifier) VerifyPolicies(ctx context.Context) (*VerificationRe
 // GenerateVerificationSummary generates a summary of verification results
 func (v *MigrationVerifier) GenerateVerificationSummary(report *VerificationReport) map[string]interface{} {
 	summary := map[string]interface{}{
-		"total_resources":       len(report.VerifiedResources),
+		"total_resources":        len(report.VerifiedResources),
 		"all_resources_verified": report.AllResourcesVerified,
-		"error_count":           len(report.Errors),
-		"duration":              report.EndTime.Sub(report.StartTime),
-		"start_time":            report.StartTime,
-		"end_time":              report.EndTime,
+		"error_count":            len(report.Errors),
+		"duration":               report.EndTime.Sub(report.StartTime),
+		"start_time":             report.StartTime,
+		"end_time":               report.EndTime,
 	}
 
 	// Add error severity breakdown

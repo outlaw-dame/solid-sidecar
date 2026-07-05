@@ -27,7 +27,7 @@ func TestPhase24DurableEventLogE2E(t *testing.T) {
 	// Create durable event log with test configuration
 	config := DefaultDurableEventLogConfig()
 	config.LogDirectory = logDir
-	config.MaxLogSize = 1024 * 1024 // 1MB per file
+	config.MaxLogSize = 1024 * 1024        // 1MB per file
 	config.MaxTotalSize = 10 * 1024 * 1024 // 10MB total
 	config.RetentionTime = 24 * time.Hour
 	config.FlushInterval = 100 * time.Millisecond // Faster flush for testing
@@ -41,40 +41,40 @@ func TestPhase24DurableEventLogE2E(t *testing.T) {
 	// Test writing events
 	events := []StreamEvent{
 		{
-			EventID:       "event-1",
-			EventType:     EventTypeCreate,
-			ResourceURI:   "https://example.com/resource1",
-			ContainerURI:  "https://example.com/container1/",
-			Timestamp:     time.Now().UTC().Add(-1 * time.Hour),
-			Agent:         "https://example.com/agent1",
-			AgentType:     PolicyAgentTypeWebID,
-			Action:        "create",
-			Metadata:      map[string]string{"test": "value1"},
-			PrivacyLevel:  PrivacyLevelPublic,
+			EventID:      "event-1",
+			EventType:    EventTypeCreate,
+			ResourceURI:  "https://example.com/resource1",
+			ContainerURI: "https://example.com/container1/",
+			Timestamp:    time.Now().UTC().Add(-1 * time.Hour),
+			Agent:        "https://example.com/agent1",
+			AgentType:    PolicyAgentTypeWebID,
+			Action:       "create",
+			Metadata:     map[string]string{"test": "value1"},
+			PrivacyLevel: PrivacyLevelPublic,
 		},
 		{
-			EventID:       "event-2",
-			EventType:     EventTypeUpdate,
-			ResourceURI:   "https://example.com/resource2",
-			ContainerURI:  "https://example.com/container2/",
-			Timestamp:     time.Now().UTC().Add(-30 * time.Minute),
-			Agent:         "https://example.com/agent2",
-			AgentType:     PolicyAgentTypeAgent,
-			Action:        "update",
-			Metadata:      map[string]string{"test": "value2"},
-			PrivacyLevel:  PrivacyLevelMetadata,
+			EventID:      "event-2",
+			EventType:    EventTypeUpdate,
+			ResourceURI:  "https://example.com/resource2",
+			ContainerURI: "https://example.com/container2/",
+			Timestamp:    time.Now().UTC().Add(-30 * time.Minute),
+			Agent:        "https://example.com/agent2",
+			AgentType:    PolicyAgentTypeAgent,
+			Action:       "update",
+			Metadata:     map[string]string{"test": "value2"},
+			PrivacyLevel: PrivacyLevelMetadata,
 		},
 		{
-			EventID:       "event-3",
-			EventType:     EventTypeDelete,
-			ResourceURI:   "https://example.com/resource3",
-			ContainerURI:  "https://example.com/container3/",
-			Timestamp:     time.Now().UTC().Add(-15 * time.Minute),
-			Agent:         "https://example.com/agent3",
-			AgentType:     PolicyAgentTypePublic,
-			Action:        "delete",
-			Metadata:      map[string]string{"test": "value3"},
-			PrivacyLevel:  PrivacyLevelPrivate,
+			EventID:      "event-3",
+			EventType:    EventTypeDelete,
+			ResourceURI:  "https://example.com/resource3",
+			ContainerURI: "https://example.com/container3/",
+			Timestamp:    time.Now().UTC().Add(-15 * time.Minute),
+			Agent:        "https://example.com/agent3",
+			AgentType:    PolicyAgentTypePublic,
+			Action:       "delete",
+			Metadata:     map[string]string{"test": "value3"},
+			PrivacyLevel: PrivacyLevelPrivate,
 		},
 	}
 
@@ -303,16 +303,16 @@ func TestPhase24FanoutWorkerE2E(t *testing.T) {
 	fanoutEvents := []FanoutEvent{
 		{
 			Event: StreamEvent{
-				EventID:       "fanout-event-1",
-				EventType:     EventTypeCreate,
-				ResourceURI:   "https://example.com/resource1",
-				ContainerURI:  "https://example.com/container1/",
-				Timestamp:     time.Now().UTC(),
-				Agent:         "https://example.com/agent1",
-				AgentType:     PolicyAgentTypeWebID,
-				Action:        "create",
-				Metadata:      map[string]string{"test": "value1"},
-				PrivacyLevel:  PrivacyLevelPublic,
+				EventID:      "fanout-event-1",
+				EventType:    EventTypeCreate,
+				ResourceURI:  "https://example.com/resource1",
+				ContainerURI: "https://example.com/container1/",
+				Timestamp:    time.Now().UTC(),
+				Agent:        "https://example.com/agent1",
+				AgentType:    PolicyAgentTypeWebID,
+				Action:       "create",
+				Metadata:     map[string]string{"test": "value1"},
+				PrivacyLevel: PrivacyLevelPublic,
 			},
 			Subscribers: []*Subscription{
 				// No subscribers for this test - we're testing the queue
@@ -320,16 +320,16 @@ func TestPhase24FanoutWorkerE2E(t *testing.T) {
 		},
 		{
 			Event: StreamEvent{
-				EventID:       "fanout-event-2",
-				EventType:     EventTypeUpdate,
-				ResourceURI:   "https://example.com/resource2",
-				ContainerURI:  "https://example.com/container2/",
-				Timestamp:     time.Now().UTC(),
-				Agent:         "https://example.com/agent2",
-				AgentType:     PolicyAgentTypeAgent,
-				Action:        "update",
-				Metadata:      map[string]string{"test": "value2"},
-				PrivacyLevel:  PrivacyLevelMetadata,
+				EventID:      "fanout-event-2",
+				EventType:    EventTypeUpdate,
+				ResourceURI:  "https://example.com/resource2",
+				ContainerURI: "https://example.com/container2/",
+				Timestamp:    time.Now().UTC(),
+				Agent:        "https://example.com/agent2",
+				AgentType:    PolicyAgentTypeAgent,
+				Action:       "update",
+				Metadata:     map[string]string{"test": "value2"},
+				PrivacyLevel: PrivacyLevelMetadata,
 			},
 			Subscribers: []*Subscription{},
 		},
@@ -350,15 +350,15 @@ func TestPhase24FanoutWorkerE2E(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		fanoutEvent := FanoutEvent{
 			Event: StreamEvent{
-				EventID:       "backpressure-event-" + fmt.Sprintf("%d", i),
-				EventType:     EventTypeCreate,
-				ResourceURI:   "https://example.com/resource-" + fmt.Sprintf("%d", i),
-				ContainerURI:  "https://example.com/container/",
-				Timestamp:     time.Now().UTC(),
-				Agent:         "https://example.com/agent",
-				AgentType:     PolicyAgentTypeWebID,
-				Action:        "create",
-				PrivacyLevel:  PrivacyLevelPublic,
+				EventID:      "backpressure-event-" + fmt.Sprintf("%d", i),
+				EventType:    EventTypeCreate,
+				ResourceURI:  "https://example.com/resource-" + fmt.Sprintf("%d", i),
+				ContainerURI: "https://example.com/container/",
+				Timestamp:    time.Now().UTC(),
+				Agent:        "https://example.com/agent",
+				AgentType:    PolicyAgentTypeWebID,
+				Action:       "create",
+				PrivacyLevel: PrivacyLevelPublic,
 			},
 			Subscribers: []*Subscription{},
 		}
@@ -443,26 +443,26 @@ func TestPhase24ReconnectScenarios(t *testing.T) {
 	// Write some initial events
 	initialEvents := []StreamEvent{
 		{
-			EventID:       "initial-event-1",
-			EventType:     EventTypeCreate,
-			ResourceURI:   "https://example.com/resource1",
-			ContainerURI:  "https://example.com/container1/",
-			Timestamp:     time.Now().UTC().Add(-2 * time.Hour),
-			Agent:         "https://example.com/agent1",
-			AgentType:     PolicyAgentTypeWebID,
-			Action:        "create",
-			PrivacyLevel:  PrivacyLevelPublic,
+			EventID:      "initial-event-1",
+			EventType:    EventTypeCreate,
+			ResourceURI:  "https://example.com/resource1",
+			ContainerURI: "https://example.com/container1/",
+			Timestamp:    time.Now().UTC().Add(-2 * time.Hour),
+			Agent:        "https://example.com/agent1",
+			AgentType:    PolicyAgentTypeWebID,
+			Action:       "create",
+			PrivacyLevel: PrivacyLevelPublic,
 		},
 		{
-			EventID:       "initial-event-2",
-			EventType:     EventTypeUpdate,
-			ResourceURI:   "https://example.com/resource2",
-			ContainerURI:  "https://example.com/container2/",
-			Timestamp:     time.Now().UTC().Add(-1 * time.Hour),
-			Agent:         "https://example.com/agent2",
-			AgentType:     PolicyAgentTypeAgent,
-			Action:        "update",
-			PrivacyLevel:  PrivacyLevelMetadata,
+			EventID:      "initial-event-2",
+			EventType:    EventTypeUpdate,
+			ResourceURI:  "https://example.com/resource2",
+			ContainerURI: "https://example.com/container2/",
+			Timestamp:    time.Now().UTC().Add(-1 * time.Hour),
+			Agent:        "https://example.com/agent2",
+			AgentType:    PolicyAgentTypeAgent,
+			Action:       "update",
+			PrivacyLevel: PrivacyLevelMetadata,
 		},
 	}
 
@@ -498,26 +498,26 @@ func TestPhase24ReconnectScenarios(t *testing.T) {
 	// Write more events while client was disconnected
 	missedEvents := []StreamEvent{
 		{
-			EventID:       "missed-event-1",
-			EventType:     EventTypeCreate,
-			ResourceURI:   "https://example.com/resource3",
-			ContainerURI:  "https://example.com/container3/",
-			Timestamp:     time.Now().UTC().Add(-30 * time.Minute),
-			Agent:         "https://example.com/agent3",
-			AgentType:     PolicyAgentTypeWebID,
-			Action:        "create",
-			PrivacyLevel:  PrivacyLevelPublic,
+			EventID:      "missed-event-1",
+			EventType:    EventTypeCreate,
+			ResourceURI:  "https://example.com/resource3",
+			ContainerURI: "https://example.com/container3/",
+			Timestamp:    time.Now().UTC().Add(-30 * time.Minute),
+			Agent:        "https://example.com/agent3",
+			AgentType:    PolicyAgentTypeWebID,
+			Action:       "create",
+			PrivacyLevel: PrivacyLevelPublic,
 		},
 		{
-			EventID:       "missed-event-2",
-			EventType:     EventTypeDelete,
-			ResourceURI:   "https://example.com/resource4",
-			ContainerURI:  "https://example.com/container4/",
-			Timestamp:     time.Now().UTC().Add(-15 * time.Minute),
-			Agent:         "https://example.com/agent4",
-			AgentType:     PolicyAgentTypePublic,
-			Action:        "delete",
-			PrivacyLevel:  PrivacyLevelPublic,
+			EventID:      "missed-event-2",
+			EventType:    EventTypeDelete,
+			ResourceURI:  "https://example.com/resource4",
+			ContainerURI: "https://example.com/container4/",
+			Timestamp:    time.Now().UTC().Add(-15 * time.Minute),
+			Agent:        "https://example.com/agent4",
+			AgentType:    PolicyAgentTypePublic,
+			Action:       "delete",
+			PrivacyLevel: PrivacyLevelPublic,
 		},
 	}
 
@@ -595,7 +595,7 @@ func TestPhase24MissedEventScenarios(t *testing.T) {
 	// Create durable event log with smaller limits for testing
 	config := DefaultDurableEventLogConfig()
 	config.LogDirectory = logDir
-	config.MaxLogSize = 1024 * 1024 // 1MB per file
+	config.MaxLogSize = 1024 * 1024         // 1MB per file
 	config.MaxTotalSize = 100 * 1024 * 1024 // 100MB total
 	config.RetentionTime = 24 * time.Hour
 
@@ -607,15 +607,15 @@ func TestPhase24MissedEventScenarios(t *testing.T) {
 	eventCount := 50
 	for i := 0; i < eventCount; i++ {
 		event := StreamEvent{
-			EventID:       "event-" + fmt.Sprintf("%d", i),
-			EventType:     EventTypeCreate,
-			ResourceURI:   "https://example.com/resource-" + fmt.Sprintf("%d", i),
-			ContainerURI:  "https://example.com/container/",
-			Timestamp:     time.Now().UTC().Add(-time.Duration(i) * time.Minute),
-			Agent:         "https://example.com/agent",
-			AgentType:     PolicyAgentTypeWebID,
-			Action:        "create",
-			PrivacyLevel:  PrivacyLevelPublic,
+			EventID:      "event-" + fmt.Sprintf("%d", i),
+			EventType:    EventTypeCreate,
+			ResourceURI:  "https://example.com/resource-" + fmt.Sprintf("%d", i),
+			ContainerURI: "https://example.com/container/",
+			Timestamp:    time.Now().UTC().Add(-time.Duration(i) * time.Minute),
+			Agent:        "https://example.com/agent",
+			AgentType:    PolicyAgentTypeWebID,
+			Action:       "create",
+			PrivacyLevel: PrivacyLevelPublic,
 		}
 
 		err := eventLog.WriteEvent(event)

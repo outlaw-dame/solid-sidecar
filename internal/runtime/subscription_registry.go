@@ -22,8 +22,6 @@ var ErrSubscriptionAlreadyExists = errors.New("subscription already exists")
 // ErrAuthenticationRequired is returned when authentication is required
 var ErrAuthenticationRequired = errors.New("authentication required")
 
-
-
 // ErrInvalidSubscriptionFilter is returned when a subscription filter is invalid
 var ErrInvalidSubscriptionFilter = errors.New("invalid subscription filter")
 
@@ -60,14 +58,14 @@ type SubscriptionRegistryConfig struct {
 // DefaultSubscriptionRegistryConfig returns a safe default configuration
 func DefaultSubscriptionRegistryConfig() SubscriptionRegistryConfig {
 	return SubscriptionRegistryConfig{
-		MaxSubscriptions:             10000,
-		MaxSubscriptionsPerWebID:     100,
-		MaxSubscriptionAge:           24 * time.Hour,
-		SubscriptionTimeout:          30 * time.Second,
-		EnableBackpressure:           true,
-		MaxBackpressureBufferSize:    1000,
-		EnableMetrics:                true,
-		Logger:                      nil,
+		MaxSubscriptions:          10000,
+		MaxSubscriptionsPerWebID:  100,
+		MaxSubscriptionAge:        24 * time.Hour,
+		SubscriptionTimeout:       30 * time.Second,
+		EnableBackpressure:        true,
+		MaxBackpressureBufferSize: 1000,
+		EnableMetrics:             true,
+		Logger:                    nil,
 	}
 }
 
@@ -79,7 +77,7 @@ const (
 	SubscriptionStatusPaused    SubscriptionStatus = "paused"
 	SubscriptionStatusCancelled SubscriptionStatus = "cancelled"
 	SubscriptionStatusExpired   SubscriptionStatus = "expired"
-	SubscriptionStatusError    SubscriptionStatus = "error"
+	SubscriptionStatusError     SubscriptionStatus = "error"
 )
 
 // Subscription represents a subscription to resource change notifications
@@ -171,6 +169,36 @@ type DeliveryStatistics struct {
 	LastRetryTime time.Time
 }
 
+// DeliveryStatisticsSnapshot is a copy of delivery statistics without the mutex
+type DeliveryStatisticsSnapshot struct {
+	// EventsDelivered is the total number of events delivered
+	EventsDelivered int64
+
+	// EventsFailed is the total number of events that failed to deliver
+	EventsFailed int64
+
+	// LastDeliveryTime is when the last event was delivered
+	LastDeliveryTime time.Time
+
+	// FirstDeliveryTime is when the first event was delivered
+	FirstDeliveryTime time.Time
+
+	// TotalDeliveryLatency is the sum of all delivery latencies
+	TotalDeliveryLatency time.Duration
+
+	// MinDeliveryLatency is the minimum delivery latency
+	MinDeliveryLatency time.Duration
+
+	// MaxDeliveryLatency is the maximum delivery latency
+	MaxDeliveryLatency time.Duration
+
+	// RetryCount is the number of retries that occurred
+	RetryCount int64
+
+	// LastRetryTime is when the last retry occurred
+	LastRetryTime time.Time
+}
+
 // RecordDelivery records a successful delivery
 func (d *DeliveryStatistics) RecordDelivery(latency time.Duration) {
 	d.mu.Lock()
@@ -223,11 +251,21 @@ func (d *DeliveryStatistics) GetAverageLatency() time.Duration {
 	return d.TotalDeliveryLatency / time.Duration(d.EventsDelivered)
 }
 
-// GetDeliveryStats returns a copy of the delivery statistics
-func (d *DeliveryStatistics) GetDeliveryStats() DeliveryStatistics {
+// GetDeliveryStats returns a snapshot of the delivery statistics
+func (d *DeliveryStatistics) GetDeliveryStats() DeliveryStatisticsSnapshot {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	return *d
+	return DeliveryStatisticsSnapshot{
+		EventsDelivered:      d.EventsDelivered,
+		EventsFailed:         d.EventsFailed,
+		LastDeliveryTime:     d.LastDeliveryTime,
+		FirstDeliveryTime:    d.FirstDeliveryTime,
+		TotalDeliveryLatency: d.TotalDeliveryLatency,
+		MinDeliveryLatency:   d.MinDeliveryLatency,
+		MaxDeliveryLatency:   d.MaxDeliveryLatency,
+		RetryCount:           d.RetryCount,
+		LastRetryTime:        d.LastRetryTime,
+	}
 }
 
 // NotificationProtocol represents the notification protocol
@@ -293,18 +331,16 @@ type Authorizer interface {
 	GetAccessModes(ctx context.Context, agent, resourceURI string) ([]AccessMode, error)
 }
 
-
-
 // SubscriptionRegistryMetrics holds metrics for the subscription registry
 type SubscriptionRegistryMetrics struct {
 	mu sync.RWMutex
 
-	TotalSubscriptions    int64
-	ActiveSubscriptions   int64
-	PausedSubscriptions   int64
+	TotalSubscriptions     int64
+	ActiveSubscriptions    int64
+	PausedSubscriptions    int64
 	CancelledSubscriptions int64
 	ExpiredSubscriptions   int64
-	ErrorSubscriptions    int64
+	ErrorSubscriptions     int64
 
 	SubscriptionsByProtocol map[NotificationProtocol]int64
 
@@ -314,9 +350,32 @@ type SubscriptionRegistryMetrics struct {
 	TotalRetries          int64
 
 	AuthenticationFailures int64
-	AuthorizationFailures int64
+	AuthorizationFailures  int64
 
-	SubscriptionCreations int64
+	SubscriptionCreations     int64
+	SubscriptionCancellations int64
+}
+
+// SubscriptionRegistryMetricsSnapshot is a copy of metrics without the mutex
+type SubscriptionRegistryMetricsSnapshot struct {
+	TotalSubscriptions     int64
+	ActiveSubscriptions    int64
+	PausedSubscriptions    int64
+	CancelledSubscriptions int64
+	ExpiredSubscriptions   int64
+	ErrorSubscriptions     int64
+
+	SubscriptionsByProtocol map[NotificationProtocol]int64
+
+	TotalDeliveryAttempts int64
+	TotalDeliveries       int64
+	TotalDeliveryFailures int64
+	TotalRetries          int64
+
+	AuthenticationFailures int64
+	AuthorizationFailures  int64
+
+	SubscriptionCreations     int64
 	SubscriptionCancellations int64
 }
 
@@ -397,21 +456,37 @@ func (m *SubscriptionRegistryMetrics) RecordCancellation() {
 	m.SubscriptionCancellations++
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *SubscriptionRegistryMetrics) GetMetrics() SubscriptionRegistryMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *SubscriptionRegistryMetrics) GetMetrics() SubscriptionRegistryMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Create a copy
-	copy := *m
+	// Create a snapshot
+	snapshot := SubscriptionRegistryMetricsSnapshot{
+		TotalSubscriptions:        m.TotalSubscriptions,
+		ActiveSubscriptions:       m.ActiveSubscriptions,
+		PausedSubscriptions:       m.PausedSubscriptions,
+		CancelledSubscriptions:    m.CancelledSubscriptions,
+		ExpiredSubscriptions:      m.ExpiredSubscriptions,
+		ErrorSubscriptions:        m.ErrorSubscriptions,
+		TotalDeliveryAttempts:     m.TotalDeliveryAttempts,
+		TotalDeliveries:           m.TotalDeliveries,
+		TotalDeliveryFailures:     m.TotalDeliveryFailures,
+		TotalRetries:              m.TotalRetries,
+		AuthenticationFailures:    m.AuthenticationFailures,
+		AuthorizationFailures:     m.AuthorizationFailures,
+		SubscriptionCreations:     m.SubscriptionCreations,
+		SubscriptionCancellations: m.SubscriptionCancellations,
+	}
+
 	if m.SubscriptionsByProtocol != nil {
-		copy.SubscriptionsByProtocol = make(map[NotificationProtocol]int64)
+		snapshot.SubscriptionsByProtocol = make(map[NotificationProtocol]int64)
 		for k, v := range m.SubscriptionsByProtocol {
-			copy.SubscriptionsByProtocol[k] = v
+			snapshot.SubscriptionsByProtocol[k] = v
 		}
 	}
 
-	return copy
+	return snapshot
 }
 
 // NewSubscriptionRegistry creates a new subscription registry
@@ -421,14 +496,14 @@ func NewSubscriptionRegistry(config SubscriptionRegistryConfig, durableLog *Dura
 	}
 
 	registry := &SubscriptionRegistry{
-		config:             config,
-		subscriptions:      make(map[string]*Subscription),
-		subscriptionsByWebID: make(map[string][]string),
+		config:                 config,
+		subscriptions:          make(map[string]*Subscription),
+		subscriptionsByWebID:   make(map[string][]string),
 		subscriptionsByChannel: make(map[string][]string),
-		durableLog:         durableLog,
-		logger:             config.Logger,
-		closeChan:          make(chan struct{}),
-		metrics:            SubscriptionRegistryMetrics{
+		durableLog:             durableLog,
+		logger:                 config.Logger,
+		closeChan:              make(chan struct{}),
+		metrics: SubscriptionRegistryMetrics{
 			SubscriptionsByProtocol: make(map[NotificationProtocol]int64),
 		},
 	}
@@ -480,10 +555,10 @@ func (r *SubscriptionRegistry) cleanupStaleSubscriptions() {
 		if sub.Status == SubscriptionStatusActive && sub.LastActivity.Before(cutoff) {
 			sub.Status = SubscriptionStatusExpired
 			toRemove = append(toRemove, id)
-			
+
 			// Update metrics
 			r.metrics.RecordSubscription(SubscriptionStatusExpired)
-			
+
 			r.logger.Info("Subscription expired due to inactivity",
 				"subscription_id", id,
 				"webid", sub.WebID,
@@ -1212,7 +1287,7 @@ func isInContainer(resourceURI, containerURI string) bool {
 }
 
 // GetMetrics returns the current metrics
-func (r *SubscriptionRegistry) GetMetrics() SubscriptionRegistryMetrics {
+func (r *SubscriptionRegistry) GetMetrics() SubscriptionRegistryMetricsSnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.metrics.GetMetrics()

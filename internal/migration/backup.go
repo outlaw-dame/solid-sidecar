@@ -46,16 +46,16 @@ type BackupManagerConfig struct {
 // DefaultBackupManagerConfig returns a safe default configuration
 func DefaultBackupManagerConfig() BackupManagerConfig {
 	return BackupManagerConfig{
-		CSSEndpoint:      "",
-		Inventory:       nil,
-		BackupDir:       "/var/backups/solid-migration",
-		Logger:          slog.Default(),
-		Timeout:         30 * time.Minute,
-		MaxBackupSize:   0, // unlimited
+		CSSEndpoint:        "",
+		Inventory:          nil,
+		BackupDir:          "/var/backups/solid-migration",
+		Logger:             slog.Default(),
+		Timeout:            30 * time.Minute,
+		MaxBackupSize:      0, // unlimited
 		CompressionEnabled: true,
-		IncludeMetadata: true,
-		IncludeACL:      true,
-		IncludeACP:      true,
+		IncludeMetadata:    true,
+		IncludeACL:         true,
+		IncludeACP:         true,
 	}
 }
 
@@ -93,8 +93,8 @@ type BackupInfo struct {
 type BackupType string
 
 const (
-	BackupTypeFull        BackupType = "full"
-	BackupTypeIncremental BackupType = "incremental"
+	BackupTypeFull         BackupType = "full"
+	BackupTypeIncremental  BackupType = "incremental"
 	BackupTypeDifferential BackupType = "differential"
 )
 
@@ -145,9 +145,9 @@ func (b *BackupManager) CreateBackup(ctx context.Context) (*BackupReport, error)
 	// Create backup report
 	report := &BackupReport{
 		BackupPath:         backupPath,
-		BackedUpResources: make([]string, 0),
+		BackedUpResources:  make([]string, 0),
 		TotalBytesBackedUp: 0,
-		StartTime:         startTime,
+		StartTime:          startTime,
 	}
 
 	// Prepare resources to backup
@@ -187,15 +187,15 @@ func (b *BackupManager) CreateBackup(ctx context.Context) (*BackupReport, error)
 
 	// Create backup info
 	backupInfo := &BackupInfo{
-		BackupID:     backupID,
-		BackupPath:   backupPath,
-		Timestamp:    time.Now(),
+		BackupID:       backupID,
+		BackupPath:     backupPath,
+		Timestamp:      time.Now(),
 		TotalResources: int64(len(report.BackedUpResources)),
-		TotalBytes:   report.TotalBytesBackedUp,
-		Compressed:  b.config.CompressionEnabled,
-		BackupType:  BackupTypeFull,
-		CSSVersion:  "unknown", // Would be detected in a real implementation
-		Metadata:    make(map[string]interface{}),
+		TotalBytes:     report.TotalBytesBackedUp,
+		Compressed:     b.config.CompressionEnabled,
+		BackupType:     BackupTypeFull,
+		CSSVersion:     "unknown", // Would be detected in a real implementation
+		Metadata:       make(map[string]interface{}),
 	}
 
 	// Save backup info
@@ -275,7 +275,7 @@ func (b *BackupManager) backupResource(ctx context.Context, resource CSSResource
 
 	// For now, we'll simulate the backup by returning the resource size
 	// and logging what we would do
-	
+
 	b.logger.Debug("Would backup resource",
 		"uri", resource.URI,
 		"type", resource.ResourceType,
@@ -300,14 +300,14 @@ func (b *BackupManager) getBackupPath(backupID string) string {
 func (b *BackupManager) saveBackupInfo(info *BackupInfo) error {
 	// In a real implementation, this would save the backup info
 	// as JSON to a file in the backup directory
-	
+
 	b.logger.Debug("Would save backup info",
 		"backup_id", info.BackupID,
 		"backup_path", info.BackupPath,
 		"resources", info.TotalResources,
 		"bytes", info.TotalBytes,
 	)
-	
+
 	return nil
 }
 
@@ -320,7 +320,7 @@ func (b *BackupManager) RestoreBackup(ctx context.Context, backupPath string) er
 	// 4. Verify the restored resources
 
 	b.logger.Info("Would restore from backup", "backup_path", backupPath)
-	
+
 	return fmt.Errorf("restore not implemented")
 }
 
@@ -333,13 +333,13 @@ func (b *BackupManager) VerifyBackup(ctx context.Context, backupPath string) (*B
 	// 4. Return a verification report
 
 	b.logger.Info("Would verify backup", "backup_path", backupPath)
-	
+
 	return &BackupReport{
 		BackupPath:         backupPath,
-		BackedUpResources: make([]string, 0),
+		BackedUpResources:  make([]string, 0),
 		TotalBytesBackedUp: 0,
-		StartTime:         time.Now(),
-		EndTime:           time.Now(),
+		StartTime:          time.Now(),
+		EndTime:            time.Now(),
 	}, fmt.Errorf("backup verification not fully implemented")
 }
 
@@ -347,9 +347,9 @@ func (b *BackupManager) VerifyBackup(ctx context.Context, backupPath string) (*B
 func (b *BackupManager) ListBackups(ctx context.Context) ([]BackupInfo, error) {
 	// In a real implementation, this would scan the backup directory
 	// and parse backup info files
-	
+
 	b.logger.Info("Would list backups")
-	
+
 	return make([]BackupInfo, 0), fmt.Errorf("backup listing not implemented")
 }
 
@@ -357,9 +357,9 @@ func (b *BackupManager) ListBackups(ctx context.Context) ([]BackupInfo, error) {
 func (b *BackupManager) DeleteBackup(ctx context.Context, backupPath string) error {
 	// In a real implementation, this would delete the backup files
 	// with proper safety checks
-	
+
 	b.logger.Info("Would delete backup", "backup_path", backupPath)
-	
+
 	return fmt.Errorf("backup deletion not implemented")
 }
 

@@ -138,9 +138,9 @@ func DefaultSolidNotificationConfig() SolidNotificationConfig {
 		},
 		DefaultProtocol: SolidNotificationProtocolWebSocket,
 		WebSocketConfig: WebSocketConfig{
-			MaxConnections:   1000,
+			MaxConnections:    1000,
 			ConnectionTimeout: 30 * time.Second,
-			PongWait:         60 * time.Second,
+			PongWait:          60 * time.Second,
 			PingInterval:      30 * time.Second,
 			MaxMessageSize:    65536, // 64KB
 			WriteBufferSize:   4096,
@@ -150,12 +150,12 @@ func DefaultSolidNotificationConfig() SolidNotificationConfig {
 			MaxConnections:    1000,
 			ConnectionTimeout: 30 * time.Second,
 			MaxRetryDuration:  5 * time.Minute,
-			EventBufferSize:    100,
+			EventBufferSize:   100,
 		},
 		WebhookConfig: WebhookConfig{
 			MaxConcurrentDeliveries: 100,
-			DeliveryTimeout:          30 * time.Second,
-			MaxRetries:               3,
+			DeliveryTimeout:         30 * time.Second,
+			MaxRetries:              3,
 			RetryDelay:              1 * time.Second,
 			EnableSigning:           true,
 			SigningSecret:           "", // Should be configured
@@ -276,35 +276,69 @@ type SolidNotificationMetrics struct {
 	mu sync.RWMutex
 
 	// Channel metrics
-	ChannelsCreated  int64
-	ChannelsClosed   int64
-	ActiveChannels   int64
+	ChannelsCreated int64
+	ChannelsClosed  int64
+	ActiveChannels  int64
 
 	// Connection metrics
-	ConnectionsOpened  int64
-	ConnectionsClosed  int64
-	ActiveConnections  int64
+	ConnectionsOpened int64
+	ConnectionsClosed int64
+	ActiveConnections int64
 
 	// Notification metrics
-	NotificationsSent     int64
+	NotificationsSent      int64
 	NotificationsDelivered int64
 	NotificationsFailed    int64
 
 	// Protocol-specific metrics
-	WebSocketMessagesSent    int64
+	WebSocketMessagesSent     int64
 	WebSocketMessagesReceived int64
-	SSEEventsSent            int64
-	WebhookDeliveries        int64
+	SSEEventsSent             int64
+	WebhookDeliveries         int64
 
 	// Error metrics
-	ProtocolErrors     int64
-	ConnectionErrors   int64
-	DeliveryErrors     int64
+	ProtocolErrors   int64
+	ConnectionErrors int64
+	DeliveryErrors   int64
 
 	// Performance metrics
-	TotalDeliveryTime time.Duration
+	TotalDeliveryTime   time.Duration
 	AverageDeliveryTime time.Duration
-	DeliveriesCount    int64
+	DeliveriesCount     int64
+}
+
+// SolidNotificationMetricsSnapshot is a copy of metrics values without the mutex
+type SolidNotificationMetricsSnapshot struct {
+	// Channel metrics
+	ChannelsCreated int64
+	ChannelsClosed  int64
+	ActiveChannels  int64
+
+	// Connection metrics
+	ConnectionsOpened int64
+	ConnectionsClosed int64
+	ActiveConnections int64
+
+	// Notification metrics
+	NotificationsSent      int64
+	NotificationsDelivered int64
+	NotificationsFailed    int64
+
+	// Protocol-specific metrics
+	WebSocketMessagesSent     int64
+	WebSocketMessagesReceived int64
+	SSEEventsSent             int64
+	WebhookDeliveries         int64
+
+	// Error metrics
+	ProtocolErrors   int64
+	ConnectionErrors int64
+	DeliveryErrors   int64
+
+	// Performance metrics
+	TotalDeliveryTime   time.Duration
+	AverageDeliveryTime time.Duration
+	DeliveriesCount     int64
 }
 
 // RecordChannelCreated records a channel being created
@@ -386,11 +420,31 @@ func (m *SolidNotificationMetrics) RecordDeliveryError() {
 	m.DeliveryErrors++
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *SolidNotificationMetrics) GetMetrics() SolidNotificationMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *SolidNotificationMetrics) GetMetrics() SolidNotificationMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return *m
+	return SolidNotificationMetricsSnapshot{
+		ChannelsCreated:           m.ChannelsCreated,
+		ChannelsClosed:            m.ChannelsClosed,
+		ActiveChannels:            m.ActiveChannels,
+		ConnectionsOpened:         m.ConnectionsOpened,
+		ConnectionsClosed:         m.ConnectionsClosed,
+		ActiveConnections:         m.ActiveConnections,
+		NotificationsSent:         m.NotificationsSent,
+		NotificationsDelivered:    m.NotificationsDelivered,
+		NotificationsFailed:       m.NotificationsFailed,
+		WebSocketMessagesSent:     m.WebSocketMessagesSent,
+		WebSocketMessagesReceived: m.WebSocketMessagesReceived,
+		SSEEventsSent:             m.SSEEventsSent,
+		WebhookDeliveries:         m.WebhookDeliveries,
+		ProtocolErrors:            m.ProtocolErrors,
+		ConnectionErrors:          m.ConnectionErrors,
+		DeliveryErrors:            m.DeliveryErrors,
+		TotalDeliveryTime:         m.TotalDeliveryTime,
+		AverageDeliveryTime:       m.AverageDeliveryTime,
+		DeliveriesCount:           m.DeliveriesCount,
+	}
 }
 
 // NewSolidNotificationService creates a new Solid notification service
@@ -400,11 +454,11 @@ func NewSolidNotificationService(config SolidNotificationConfig) *SolidNotificat
 	}
 
 	service := &SolidNotificationService{
-		config:    config,
-		channels:  make(map[string]*SolidNotificationChannel),
-		metrics:   SolidNotificationMetrics{},
-		logger:    config.Logger,
-		closed:    false,
+		config:   config,
+		channels: make(map[string]*SolidNotificationChannel),
+		metrics:  SolidNotificationMetrics{},
+		logger:   config.Logger,
+		closed:   false,
 	}
 
 	// Initialize managers based on configuration
@@ -548,7 +602,7 @@ func (s *SolidNotificationService) IsEnabled() bool {
 }
 
 // GetMetrics returns the current metrics
-func (s *SolidNotificationService) GetMetrics() SolidNotificationMetrics {
+func (s *SolidNotificationService) GetMetrics() SolidNotificationMetricsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.metrics.GetMetrics()
@@ -574,16 +628,16 @@ func (s *SolidNotificationService) NotifyResourceChange(
 	// Create notification message
 	now := time.Now().UTC()
 	notification := SolidNotificationMessage{
-		ID:           generateNotificationID(),
-		Type:         "ResourceChange",
-		Resource:     resourceURI,
-		Container:    containerURI,
-		ChangeType:   changeType,
-		Actor:        actor,
-		Timestamp:    now,
-		State:        metadata,
-		Metadata:     make(map[string]interface{}),
-		Cursor:       fmt.Sprintf("cursor-%d", now.UnixNano()),
+		ID:         generateNotificationID(),
+		Type:       "ResourceChange",
+		Resource:   resourceURI,
+		Container:  containerURI,
+		ChangeType: changeType,
+		Actor:      actor,
+		Timestamp:  now,
+		State:      metadata,
+		Metadata:   make(map[string]interface{}),
+		Cursor:     fmt.Sprintf("cursor-%d", now.UnixNano()),
 	}
 
 	// Add notification to durable log if available
@@ -722,10 +776,10 @@ type WebSocketConnection struct {
 // NewWebSocketManager creates a new WebSocket manager
 func NewWebSocketManager(config WebSocketConfig, notificationService *SolidNotificationService) *WebSocketManager {
 	return &WebSocketManager{
-		config:             config,
-		connections:        make(map[string]*WebSocketConnection),
+		config:              config,
+		connections:         make(map[string]*WebSocketConnection),
 		notificationService: notificationService,
-		logger:             notificationService.config.Logger,
+		logger:              notificationService.config.Logger,
 	}
 }
 
@@ -827,10 +881,10 @@ type SSEConnection struct {
 // NewSSEManager creates a new SSE manager
 func NewSSEManager(config SSEConfig, notificationService *SolidNotificationService) *SSEManager {
 	return &SSEManager{
-		config:             config,
-		connections:        make(map[string]*SSEConnection),
+		config:              config,
+		connections:         make(map[string]*SSEConnection),
 		notificationService: notificationService,
-		logger:             notificationService.config.Logger,
+		logger:              notificationService.config.Logger,
 	}
 }
 
@@ -942,10 +996,10 @@ type WebhookTarget struct {
 // NewWebhookManager creates a new webhook manager
 func NewWebhookManager(config WebhookConfig, notificationService *SolidNotificationService) *WebhookManager {
 	return &WebhookManager{
-		config:             config,
-		targets:           make(map[string]*WebhookTarget),
+		config:              config,
+		targets:             make(map[string]*WebhookTarget),
 		notificationService: notificationService,
-		logger:             notificationService.config.Logger,
+		logger:              notificationService.config.Logger,
 	}
 }
 
@@ -1066,7 +1120,7 @@ func (s *SolidNotificationService) ValidateWebhookURL(urlStr string) error {
 func (s *SolidNotificationService) ValidateNotificationProtocol(protocol NotificationProtocol) error {
 	// Map our protocol to Solid notification protocol
 	solidProtocol := mapNotificationProtocol(protocol)
-	
+
 	// Check if protocol is supported
 	for _, supported := range s.config.SupportedProtocols {
 		if solidProtocol == supported {
@@ -1255,7 +1309,7 @@ func (s *SolidNotificationService) RemoveSubscriberFromChannel(channelID, subscr
 		if sub == subscriberID {
 			channel.Subscribers = append(channel.Subscribers[:i], channel.Subscribers[i+1:]...)
 			channel.Modified = time.Now().UTC()
-			
+
 			s.logger.Info("Subscriber removed from channel",
 				"channel_id", channelID,
 				"subscriber_id", subscriberID,
@@ -1311,7 +1365,7 @@ func (s *SolidNotificationService) deliverNotificationToSubscriber(
 ) error {
 	// In a real implementation, this would look up the subscriber's delivery method
 	// and deliver via the appropriate protocol manager
-	
+
 	// For now, we'll just log the delivery
 	s.logger.Info("Notification delivered to subscriber",
 		"notification_id", notification.ID,
@@ -1417,7 +1471,7 @@ func (s *SolidNotificationService) isWebSocketUpgrade(r *http.Request) bool {
 	// Check for WebSocket upgrade header
 	connectionHeader := r.Header.Get("Connection")
 	upgradeHeader := r.Header.Get("Upgrade")
-	
+
 	return connectionHeader == "Upgrade" && upgradeHeader == "websocket"
 }
 
@@ -1432,7 +1486,7 @@ func (s *SolidNotificationService) isSSERequest(r *http.Request) bool {
 func (s *SolidNotificationService) handleWebSocketConnection(w http.ResponseWriter, r *http.Request) {
 	// In a real implementation, this would upgrade the connection to WebSocket
 	// and manage the WebSocket connection
-	
+
 	// For now, we'll return an error since WebSocket is not fully implemented
 	http.Error(w, "WebSocket notifications not yet implemented", http.StatusNotImplemented)
 }
@@ -1441,7 +1495,7 @@ func (s *SolidNotificationService) handleWebSocketConnection(w http.ResponseWrit
 func (s *SolidNotificationService) handleSSEConnection(w http.ResponseWriter, r *http.Request) {
 	// In a real implementation, this would establish an SSE connection
 	// and send events as they occur
-	
+
 	// For now, we'll return an error since SSE is not fully implemented
 	http.Error(w, "Server-Sent Events notifications not yet implemented", http.StatusNotImplemented)
 }
@@ -1449,11 +1503,11 @@ func (s *SolidNotificationService) handleSSEConnection(w http.ResponseWriter, r 
 // handleListChannels handles listing all channels
 func (s *SolidNotificationService) handleListChannels(w http.ResponseWriter, r *http.Request) {
 	channels := s.ListChannels()
-	
+
 	// Convert to JSON response
 	response := struct {
 		Channels []*SolidNotificationChannel `json:"channels"`
-		Count    int                      `json:"count"`
+		Count    int                         `json:"count"`
 	}{
 		Channels: channels,
 		Count:    len(channels),

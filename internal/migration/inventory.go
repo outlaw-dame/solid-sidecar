@@ -60,14 +60,14 @@ type ResourceLink struct {
 type ResourceType string
 
 const (
-	ResourceTypeResource        ResourceType = "Resource"
-	ResourceTypeContainer       ResourceType = "Container"
-	ResourceTypeAuxiliary      ResourceType = "Auxiliary"
-	ResourceTypeACL            ResourceType = "ACL"
-	ResourceTypeACP            ResourceType = "ACP"
-	ResourceTypeMetadata       ResourceType = "Metadata"
-	ResourceTypeStorageDesc    ResourceType = "StorageDescription"
-	ResourceTypeUnknown        ResourceType = "Unknown"
+	ResourceTypeResource    ResourceType = "Resource"
+	ResourceTypeContainer   ResourceType = "Container"
+	ResourceTypeAuxiliary   ResourceType = "Auxiliary"
+	ResourceTypeACL         ResourceType = "ACL"
+	ResourceTypeACP         ResourceType = "ACP"
+	ResourceTypeMetadata    ResourceType = "Metadata"
+	ResourceTypeStorageDesc ResourceType = "StorageDescription"
+	ResourceTypeUnknown     ResourceType = "Unknown"
 )
 
 // CSSInventory represents the complete inventory of resources in a CSS deployment
@@ -157,15 +157,15 @@ type CSSInventoryScannerConfig struct {
 // DefaultCSSInventoryScannerConfig returns a safe default configuration
 func DefaultCSSInventoryScannerConfig() CSSInventoryScannerConfig {
 	return CSSInventoryScannerConfig{
-		CSSEndpoint:               "",
-		Logger:                   slog.Default(),
-		Timeout:                 5 * time.Minute,
-		RetryCount:              3,
-		RetryDelay:             1 * time.Second,
-		MaxResources:            0, // unlimited
-		FollowLinks:             true,
+		CSSEndpoint:                "",
+		Logger:                     slog.Default(),
+		Timeout:                    5 * time.Minute,
+		RetryCount:                 3,
+		RetryDelay:                 1 * time.Second,
+		MaxResources:               0, // unlimited
+		FollowLinks:                true,
 		IncludeStorageDescriptions: true,
-		HTTPClient:              nil,
+		HTTPClient:                 nil,
 	}
 }
 
@@ -226,17 +226,17 @@ func (s *CSSInventoryScanner) Scan(ctx context.Context) (*CSSInventory, error) {
 
 	// Create inventory
 	inventory := &CSSInventory{
-		Resources:          make([]CSSResource, 0),
-		Containers:         make([]CSSResource, 0),
-		AuxiliaryResources: make([]CSSResource, 0),
-		ACLResources:       make([]CSSResource, 0),
-		ACPResources:       make([]CSSResource, 0),
-		MetadataResources:  make([]CSSResource, 0),
+		Resources:           make([]CSSResource, 0),
+		Containers:          make([]CSSResource, 0),
+		AuxiliaryResources:  make([]CSSResource, 0),
+		ACLResources:        make([]CSSResource, 0),
+		ACPResources:        make([]CSSResource, 0),
+		MetadataResources:   make([]CSSResource, 0),
 		StorageDescriptions: make([]CSSResource, 0),
-		AllResources:       make([]CSSResource, 0),
+		AllResources:        make([]CSSResource, 0),
 		ScanTimestamp:       startTime,
-		CSSEndpoint:        s.config.CSSEndpoint,
-		Errors:             make([]InventoryScanError, 0),
+		CSSEndpoint:         s.config.CSSEndpoint,
+		Errors:              make([]InventoryScanError, 0),
 	}
 
 	// Discover the root container
@@ -468,12 +468,12 @@ func (s *CSSInventoryScanner) fetchResourceWithGet(ctx context.Context, resource
 // parseResourceResponse parses an HTTP response into a CSSResource
 func (s *CSSInventoryScanner) parseResourceResponse(resp *http.Response, resourceURI string) (*CSSResource, error) {
 	resource := &CSSResource{
-		URI:        resourceURI,
-		Size:       resp.ContentLength,
+		URI:          resourceURI,
+		Size:         resp.ContentLength,
 		LastModified: time.Time{}, // Will be parsed from header
-		ETag:      resp.Header.Get("ETag"),
-		Links:     make([]ResourceLink, 0),
-		Metadata:  make(map[string]interface{}),
+		ETag:         resp.Header.Get("ETag"),
+		Links:        make([]ResourceLink, 0),
+		Metadata:     make(map[string]interface{}),
 	}
 
 	// Parse Content-Type
@@ -607,7 +607,7 @@ func parseLinkHeader(header string) ([]ResourceLink, error) {
 		}
 
 		link := ResourceLink{}
-		
+
 		// Parse the link
 		inQuotes := false
 		params := make(map[string]string)
@@ -615,7 +615,7 @@ func parseLinkHeader(header string) ([]ResourceLink, error) {
 
 		for i := 0; i < len(part); i++ {
 			c := part[i]
-			
+
 			if c == '"' {
 				inQuotes = !inQuotes
 				continue
@@ -641,9 +641,9 @@ func parseLinkHeader(header string) ([]ResourceLink, error) {
 					}
 					j++
 				}
-				paramStr := strings.TrimSpace(part[i+1:j])
+				paramStr := strings.TrimSpace(part[i+1 : j])
 				i = j - 1 // -1 because the loop will increment
-				
+
 				// Parse individual parameters
 				paramParts := strings.Split(paramStr, ";")
 				for _, paramPart := range paramParts {
@@ -675,7 +675,7 @@ func parseLinkHeader(header string) ([]ResourceLink, error) {
 		if rel, ok := params["rel"]; ok {
 			link.Rel = rel
 		}
-		
+
 		// Set the type from type parameter
 		if typ, ok := params["type"]; ok {
 			link.Type = typ
@@ -979,7 +979,7 @@ func (inventory *CSSInventory) SaveInventory(path string) error {
 	if lastSlash := strings.LastIndex(path, "/"); lastSlash != -1 {
 		dir = path[:lastSlash]
 	}
-	
+
 	// Simple directory creation (don't use filepath to avoid imports)
 	if dir != "" && dir != "." {
 		// This is a simplified approach - in production, use os.MkdirAll

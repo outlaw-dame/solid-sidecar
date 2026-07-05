@@ -111,15 +111,15 @@ type DurableEventLogConfig struct {
 // DefaultDurableEventLogConfig returns a safe default configuration
 func DefaultDurableEventLogConfig() DurableEventLogConfig {
 	return DurableEventLogConfig{
-		LogDirectory:        "/var/lib/solid-sidecar/events",
-		MaxLogSize:          100 * 1024 * 1024,  // 100MB per file
-		MaxTotalSize:       10 * 1024 * 1024 * 1024, // 10GB total
-		RetentionTime:      7 * 24 * time.Hour,   // 7 days
-		FlushInterval:      5 * time.Second,
-		SyncWrites:         false,
-		EnableCompression:  false,
-		MaxEventsPerFile:   100000,
-		EnableEncryption:   false,
+		LogDirectory:      "/var/lib/solid-sidecar/events",
+		MaxLogSize:        100 * 1024 * 1024,       // 100MB per file
+		MaxTotalSize:      10 * 1024 * 1024 * 1024, // 10GB total
+		RetentionTime:     7 * 24 * time.Hour,      // 7 days
+		FlushInterval:     5 * time.Second,
+		SyncWrites:        false,
+		EnableCompression: false,
+		MaxEventsPerFile:  100000,
+		EnableEncryption:  false,
 		Logger:            nil,
 	}
 }
@@ -173,9 +173,9 @@ type DurableEventLog struct {
 	config DurableEventLogConfig
 
 	// Current write position
-	currentFile     *os.File
-	currentFilePath string
-	currentFileSize int64
+	currentFile       *os.File
+	currentFilePath   string
+	currentFileSize   int64
 	currentEventCount int
 
 	// Log file metadata
@@ -195,8 +195,8 @@ type DurableEventLog struct {
 	closed    bool
 
 	// Background processes
-	cleanupTicker    *time.Ticker
-	flushTicker     *time.Ticker
+	cleanupTicker *time.Ticker
+	flushTicker   *time.Ticker
 
 	// Metrics
 	metrics DurableLogMetrics
@@ -204,7 +204,7 @@ type DurableEventLog struct {
 
 // LogFileInfo holds information about a log file
 type LogFileInfo struct {
-	FilePath    string
+	FilePath   string
 	FileSize   int64
 	EventCount int
 	FirstSeq   int64
@@ -224,6 +224,20 @@ type EventIndexEntry struct {
 type DurableLogMetrics struct {
 	mu sync.RWMutex
 
+	TotalEventsLogged  int64
+	TotalEventsRead    int64
+	WriteOperations    int64
+	ReadOperations     int64
+	FileRotations      int64
+	CleanupOperations  int64
+	CorruptionDetected int64
+	StorageFullErrors  int64
+	IndexHits          int64
+	IndexMisses        int64
+}
+
+// DurableLogMetricsSnapshot is a copy of metrics values without the mutex
+type DurableLogMetricsSnapshot struct {
 	TotalEventsLogged  int64
 	TotalEventsRead    int64
 	WriteOperations    int64
@@ -299,11 +313,22 @@ func (m *DurableLogMetrics) RecordIndexMiss() {
 	m.IndexMisses++
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *DurableLogMetrics) GetMetrics() DurableLogMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *DurableLogMetrics) GetMetrics() DurableLogMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return *m
+	return DurableLogMetricsSnapshot{
+		TotalEventsLogged:  m.TotalEventsLogged,
+		TotalEventsRead:    m.TotalEventsRead,
+		WriteOperations:    m.WriteOperations,
+		ReadOperations:     m.ReadOperations,
+		FileRotations:      m.FileRotations,
+		CleanupOperations:  m.CleanupOperations,
+		CorruptionDetected: m.CorruptionDetected,
+		StorageFullErrors:  m.StorageFullErrors,
+		IndexHits:          m.IndexHits,
+		IndexMisses:        m.IndexMisses,
+	}
 }
 
 // NewDurableEventLog creates a new durable event log
@@ -318,12 +343,12 @@ func NewDurableEventLog(config DurableEventLogConfig) (*DurableEventLog, error) 
 	}
 
 	log := &DurableEventLog{
-		config:        config,
-		index:         make(map[string]EventIndexEntry),
-		logger:        config.Logger,
-		closeChan:     make(chan struct{}),
+		config:          config,
+		index:           make(map[string]EventIndexEntry),
+		logger:          config.Logger,
+		closeChan:       make(chan struct{}),
 		sequenceCounter: 0,
-		metrics:       DurableLogMetrics{},
+		metrics:         DurableLogMetrics{},
 	}
 
 	// Ensure log directory exists
@@ -406,7 +431,7 @@ func (l *DurableEventLog) loadExistingFiles() error {
 		}
 
 		logFileInfo := LogFileInfo{
-			FilePath:    filePath,
+			FilePath:   filePath,
 			FileSize:   fileInfo.Size(),
 			Created:    fileInfo.ModTime(),
 			FirstSeq:   0, // Will be updated when we read the file
@@ -443,7 +468,7 @@ func isLogFile(name string) bool {
 func parseLogFileMetadata(filename string) (firstSeq, lastSeq int64, count int, ok bool) {
 	// Expected format: log-{firstSeq}-{lastSeq}-{count}-{timestamp}.log
 	// or: evt-{firstSeq}-{lastSeq}-{count}.log
-	
+
 	// For now, return false - we'll implement proper parsing later
 	return 0, 0, 0, false
 }
@@ -1090,7 +1115,7 @@ func (l *DurableEventLog) IsClosed() bool {
 }
 
 // GetMetrics returns the current metrics
-func (l *DurableEventLog) GetMetrics() DurableLogMetrics {
+func (l *DurableEventLog) GetMetrics() DurableLogMetricsSnapshot {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.metrics.GetMetrics()

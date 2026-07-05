@@ -42,16 +42,16 @@ var ErrRollbackNotAvailable = errors.New("rollback not available")
 type MigrationState string
 
 const (
-	MigrationStateCreated     MigrationState = "created"
-	MigrationStateScanning    MigrationState = "scanning"
-	MigrationStateExporting   MigrationState = "exporting"
-	MigrationStateAnalyzing   MigrationState = "analyzing"
-	MigrationStateImporting   MigrationState = "importing"
-	MigrationStateVerifying   MigrationState = "verifying"
-	MigrationStatePaused      MigrationState = "paused"
-	MigrationStateCompleted   MigrationState = "completed"
-	MigrationStateFailed       MigrationState = "failed"
-	MigrationStateRolledBack  MigrationState = "rolled_back"
+	MigrationStateCreated    MigrationState = "created"
+	MigrationStateScanning   MigrationState = "scanning"
+	MigrationStateExporting  MigrationState = "exporting"
+	MigrationStateAnalyzing  MigrationState = "analyzing"
+	MigrationStateImporting  MigrationState = "importing"
+	MigrationStateVerifying  MigrationState = "verifying"
+	MigrationStatePaused     MigrationState = "paused"
+	MigrationStateCompleted  MigrationState = "completed"
+	MigrationStateFailed     MigrationState = "failed"
+	MigrationStateRolledBack MigrationState = "rolled_back"
 )
 
 // MigrationMode represents the migration execution mode
@@ -59,7 +59,7 @@ type MigrationMode string
 
 const (
 	MigrationModeDryRun MigrationMode = "dry_run"
-	MigrationModeLive  MigrationMode = "live"
+	MigrationModeLive   MigrationMode = "live"
 )
 
 // MigrationConfig holds configuration for a migration job
@@ -116,22 +116,22 @@ type MigrationConfig struct {
 // DefaultMigrationConfig returns a safe default configuration
 func DefaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
-		CSSEndpoint:            "http://localhost:3000",
-		TargetStorageConfig:   "",
-		Mode:                  MigrationModeDryRun,
-		BatchSize:             100,
-		MaxConcurrentBatches:  4,
+		CSSEndpoint:                "http://localhost:3000",
+		TargetStorageConfig:        "",
+		Mode:                       MigrationModeDryRun,
+		BatchSize:                  100,
+		MaxConcurrentBatches:       4,
 		EnableChecksumVerification: true,
-		EnablePolicyComparison:    true,
-		EnableIdentityMapping:     true,
-		CreateBackup:             true,
-		BackupDirectory:          "/var/backups/solid-migration",
-		TemporaryDirectory:       "/tmp/solid-migration",
-		LogLevel:                slog.LevelInfo,
-		Timeout:                 5 * time.Minute,
-		RetryCount:              3,
-		RetryDelay:             1 * time.Second,
-		Logger:                 nil,
+		EnablePolicyComparison:     true,
+		EnableIdentityMapping:      true,
+		CreateBackup:               true,
+		BackupDirectory:            "/var/backups/solid-migration",
+		TemporaryDirectory:         "/tmp/solid-migration",
+		LogLevel:                   slog.LevelInfo,
+		Timeout:                    5 * time.Minute,
+		RetryCount:                 3,
+		RetryDelay:                 1 * time.Second,
+		Logger:                     nil,
 	}
 }
 
@@ -247,7 +247,7 @@ const (
 	PhaseStorageDescription   MigrationPhase = "storage_description"
 	PhaseExport               MigrationPhase = "export"
 	PhaseChecksumVerification MigrationPhase = "checksum_verification"
-	PhasePolicyComparison    MigrationPhase = "policy_comparison"
+	PhasePolicyComparison     MigrationPhase = "policy_comparison"
 	PhaseIdentityMapping      MigrationPhase = "identity_mapping"
 	PhaseImport               MigrationPhase = "import"
 	PhaseValidation           MigrationPhase = "validation"
@@ -350,15 +350,15 @@ type MigrationServiceMetrics struct {
 	mu sync.RWMutex
 
 	// Job metrics
-	JobsCreated    int64
-	JobsCompleted  int64
-	JobsFailed     int64
-	JobsCancelled  int64
+	JobsCreated   int64
+	JobsCompleted int64
+	JobsFailed    int64
+	JobsCancelled int64
 
 	// Resource metrics
 	TotalResourcesDiscovered int64
 	TotalResourcesMigrated   int64
-	TotalResourcesFailed      int64
+	TotalResourcesFailed     int64
 
 	// Phase metrics
 	PhaseDurations map[MigrationPhase]time.Duration
@@ -368,8 +368,8 @@ type MigrationServiceMetrics struct {
 	ErrorsByPhase    map[MigrationPhase]int64
 
 	// Timing
-	AverageJobDuration time.Duration
-	LongestJobDuration time.Duration
+	AverageJobDuration  time.Duration
+	LongestJobDuration  time.Duration
 	ShortestJobDuration time.Duration
 }
 
@@ -491,12 +491,12 @@ func (s *MigrationService) CreateMigrationJob(config MigrationConfig) (*Migratio
 
 	// Create the migration job
 	job := &MigrationJob{
-		JobID:   jobID,
-		Config:  config,
-		State:   MigrationStateCreated,
+		JobID:     jobID,
+		Config:    config,
+		State:     MigrationStateCreated,
 		StartTime: time.Now().UTC(),
 		Progress: MigrationProgress{
-			CurrentPhase:    PhaseInitialization,
+			CurrentPhase:     PhaseInitialization,
 			PhaseDescription: "Job created, ready to start",
 			PhaseStartTime:   time.Now().UTC(),
 		},
@@ -627,12 +627,12 @@ func (s *MigrationService) StartJob(jobID string) error {
 					"error", err,
 				)
 				job.recordError(MigrationError{
-					ErrorID:    generateErrorID(),
-					Timestamp:  time.Now().UTC(),
-					Phase:      job.Progress.CurrentPhase,
-					Error:      fmt.Errorf("panic: %v", err),
-					Severity:   SeverityFatal,
-					Retryable:  false,
+					ErrorID:   generateErrorID(),
+					Timestamp: time.Now().UTC(),
+					Phase:     job.Progress.CurrentPhase,
+					Error:     fmt.Errorf("panic: %v", err),
+					Severity:  SeverityFatal,
+					Retryable: false,
 				})
 				job.State = MigrationStateFailed
 				job.EndTime = time.Now().UTC()
@@ -650,7 +650,7 @@ func (s *MigrationService) StartJob(jobID string) error {
 			job.State = MigrationStateCompleted
 		}
 		job.EndTime = time.Now().UTC()
-		
+
 		s.updateJobMetrics(job)
 	}()
 
@@ -732,11 +732,11 @@ func (j *MigrationJob) scanCSSInventory() error {
 
 	// Create inventory scanner
 	scanner := NewCSSInventoryScanner(CSSInventoryScannerConfig{
-		CSSEndpoint:   j.Config.CSSEndpoint,
-		Logger:       j.Config.Logger,
-		Timeout:      j.Config.Timeout,
-		RetryCount:   j.Config.RetryCount,
-		RetryDelay:   j.Config.RetryDelay,
+		CSSEndpoint: j.Config.CSSEndpoint,
+		Logger:      j.Config.Logger,
+		Timeout:     j.Config.Timeout,
+		RetryCount:  j.Config.RetryCount,
+		RetryDelay:  j.Config.RetryDelay,
 	})
 
 	// Run the scan
@@ -771,13 +771,13 @@ func (j *MigrationJob) exportFromCSS() error {
 
 	// Create export reader
 	reader := NewCSSExportReader(CSSExportReaderConfig{
-		CSSEndpoint:   j.Config.CSSEndpoint,
-		Inventory:     j.Inventory,
-		Logger:        j.Config.Logger,
-		Timeout:       j.Config.Timeout,
-		RetryCount:    j.Config.RetryCount,
-		RetryDelay:    j.Config.RetryDelay,
-		BatchSize:     j.Config.BatchSize,
+		CSSEndpoint:     j.Config.CSSEndpoint,
+		Inventory:       j.Inventory,
+		Logger:          j.Config.Logger,
+		Timeout:         j.Config.Timeout,
+		RetryCount:      j.Config.RetryCount,
+		RetryDelay:      j.Config.RetryDelay,
+		BatchSize:       j.Config.BatchSize,
 		ExportDirectory: j.Config.TemporaryDirectory,
 	})
 
@@ -810,11 +810,11 @@ func (j *MigrationJob) analyzeMigration() error {
 
 	// Create analyzer
 	analyzer := NewMigrationAnalyzer(MigrationAnalyzerConfig{
-		ExportReport:        j.ExportReport,
+		ExportReport:               j.ExportReport,
 		EnableChecksumVerification: j.Config.EnableChecksumVerification,
-		EnablePolicyComparison:    j.Config.EnablePolicyComparison,
-		EnableIdentityMapping:     j.Config.EnableIdentityMapping,
-		Logger:        j.Config.Logger,
+		EnablePolicyComparison:     j.Config.EnablePolicyComparison,
+		EnableIdentityMapping:      j.Config.EnableIdentityMapping,
+		Logger:                     j.Config.Logger,
 	})
 
 	// Run the analysis
@@ -848,11 +848,11 @@ func (j *MigrationJob) createBackup() error {
 
 	// Create backup manager
 	backupManager := NewBackupManager(BackupManagerConfig{
-		CSSEndpoint:   j.Config.CSSEndpoint,
-		Inventory:     j.Inventory,
-		BackupDir:     j.Config.BackupDirectory,
-		Logger:        j.Config.Logger,
-		Timeout:       j.Config.Timeout,
+		CSSEndpoint: j.Config.CSSEndpoint,
+		Inventory:   j.Inventory,
+		BackupDir:   j.Config.BackupDirectory,
+		Logger:      j.Config.Logger,
+		Timeout:     j.Config.Timeout,
 	})
 
 	// Create backup
@@ -862,8 +862,8 @@ func (j *MigrationJob) createBackup() error {
 	}
 
 	j.RollbackPlan = &RollbackPlan{
-		BackupLocation:   backupReport.BackupPath,
-		BackupTimestamp: time.Now().UTC(),
+		BackupLocation:    backupReport.BackupPath,
+		BackupTimestamp:   time.Now().UTC(),
 		ResourcesBackedUp: int64(len(backupReport.BackedUpResources)),
 		RollbackInstructions: []string{
 			"1. Stop all traffic to native runtime",
@@ -942,11 +942,11 @@ func (j *MigrationJob) verifyMigration() error {
 
 	// Create verifier
 	verifier := NewMigrationVerifier(MigrationVerifierConfig{
-		ImportReport:       j.ImportReport,
-		CSSEndpoint:        j.Config.CSSEndpoint,
+		ImportReport:               j.ImportReport,
+		CSSEndpoint:                j.Config.CSSEndpoint,
 		EnableChecksumVerification: j.Config.EnableChecksumVerification,
-		Logger:        j.Config.Logger,
-		Timeout:       j.Config.Timeout,
+		Logger:                     j.Config.Logger,
+		Timeout:                    j.Config.Timeout,
 	})
 
 	// Run the verification
@@ -1192,8 +1192,8 @@ func (s *MigrationService) RollbackJob(jobID string) error {
 	// Create rollback executor
 	rollbackExecutor := NewRollbackExecutor(RollbackExecutorConfig{
 		RollbackPlan: job.RollbackPlan,
-		Logger:      job.Config.Logger,
-		Timeout:     job.Config.Timeout,
+		Logger:       job.Config.Logger,
+		Timeout:      job.Config.Timeout,
 	})
 
 	// Execute rollback

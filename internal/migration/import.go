@@ -46,16 +46,16 @@ type NativeImportWriterConfig struct {
 // DefaultNativeImportWriterConfig returns a safe default configuration
 func DefaultNativeImportWriterConfig() NativeImportWriterConfig {
 	return NativeImportWriterConfig{
-		ExportReport:            nil,
+		ExportReport:           nil,
 		TargetConfig:           "",
-		BatchSize:             10,
-		Logger:               slog.Default(),
-		Timeout:              10 * time.Minute,
-		RetryCount:           3,
-		RetryDelay:          1 * time.Second,
-		ValidateChecksums:     true,
+		BatchSize:              10,
+		Logger:                 slog.Default(),
+		Timeout:                10 * time.Minute,
+		RetryCount:             3,
+		RetryDelay:             1 * time.Second,
+		ValidateChecksums:      true,
 		SkipOnChecksumMismatch: true,
-		ImportMode:           ImportModeOverwrite,
+		ImportMode:             ImportModeOverwrite,
 	}
 }
 
@@ -64,8 +64,8 @@ type ImportMode string
 
 const (
 	ImportModeOverwrite ImportMode = "overwrite"
-	ImportModeSkip     ImportMode = "skip"
-	ImportModeFail     ImportMode = "fail"
+	ImportModeSkip      ImportMode = "skip"
+	ImportModeFail      ImportMode = "fail"
 )
 
 // ImportedResource represents a resource that has been imported to native storage
@@ -158,7 +158,7 @@ func (w *NativeImportWriter) Import(ctx context.Context) (*ImportReport, error) 
 		ImportedResources:  make([]string, 0),
 		Errors:             make([]MigrationError, 0),
 		TotalBytesImported: 0,
-		StartTime:         startTime,
+		StartTime:          startTime,
 	}
 
 	// Prepare resources to import
@@ -183,12 +183,12 @@ func (w *NativeImportWriter) Import(ctx context.Context) (*ImportReport, error) 
 		// Import batch concurrently
 		if err := w.importBatch(ctx, batch, report); err != nil {
 			report.Errors = append(report.Errors, MigrationError{
-				ErrorID:    generateErrorID(),
-				Timestamp:  time.Now(),
-				Phase:      PhaseImport,
-				Error:      err,
-				Severity:   SeverityHigh,
-				Retryable:  false,
+				ErrorID:   generateErrorID(),
+				Timestamp: time.Now(),
+				Phase:     PhaseImport,
+				Error:     err,
+				Severity:  SeverityHigh,
+				Retryable: false,
 			})
 			// Continue with remaining batches
 		}
@@ -264,12 +264,12 @@ func (w *NativeImportWriter) importBatch(ctx context.Context, batch []ExportedRe
 	for err := range errors {
 		mu.Lock()
 		report.Errors = append(report.Errors, MigrationError{
-			ErrorID:    generateErrorID(),
-			Timestamp:  time.Now(),
-			Phase:      PhaseImport,
-			Error:      err,
-			Severity:   SeverityMedium,
-			Retryable:  true,
+			ErrorID:   generateErrorID(),
+			Timestamp: time.Now(),
+			Phase:     PhaseImport,
+			Error:     err,
+			Severity:  SeverityMedium,
+			Retryable: true,
 		})
 		mu.Unlock()
 	}
@@ -289,8 +289,8 @@ func (w *NativeImportWriter) importSingleResource(ctx context.Context, exported 
 		Checksum:     exported.Checksum,
 		ImportTime:   startTime,
 		Success:      false,
-		Metadata:    make(map[string]interface{}),
-		Links:       exported.Links,
+		Metadata:     make(map[string]interface{}),
+		Links:        exported.Links,
 	}
 
 	// Copy metadata
@@ -313,7 +313,7 @@ func (w *NativeImportWriter) importSingleResource(ctx context.Context, exported 
 
 	// For now, we'll simulate the import and return success
 	// In a production implementation, this would integrate with the storage layer
-	
+
 	// Set the target URI (might be different from original URI)
 	imported.TargetURI = w.getTargetURI(exported.URI)
 
@@ -349,9 +349,9 @@ func (w *NativeImportWriter) ValidateImport(ctx context.Context, importReport *I
 	// Create verification report
 	report := &VerificationReport{
 		VerifiedResources:    make([]string, 0),
-		Errors:             make([]MigrationError, 0),
+		Errors:               make([]MigrationError, 0),
 		AllResourcesVerified: true,
-		StartTime:          startTime,
+		StartTime:            startTime,
 	}
 
 	// In a real implementation, this would:
@@ -386,7 +386,7 @@ func (w *NativeImportWriter) CheckImportReadiness(ctx context.Context) error {
 	// 4. Verify storage is healthy
 
 	w.logger.Info("Checking import readiness")
-	
+
 	// For now, we'll just return success
 	return nil
 }
@@ -401,18 +401,18 @@ func (w *NativeImportWriter) RollbackImport(ctx context.Context, importReport *I
 	w.logger.Info("Would rollback import",
 		"resources_to_rollback", len(importReport.ImportedResources),
 	)
-	
+
 	return fmt.Errorf("import rollback not implemented")
 }
 
 // GetImportStatistics returns statistics about the import process
 func (w *NativeImportWriter) GetImportStatistics() map[string]interface{} {
 	return map[string]interface{}{
-		"total_resources":  0,
+		"total_resources":    0,
 		"successful_imports": 0,
-		"failed_imports":   0,
-		"total_bytes":      int64(0),
-		"average_size":     int64(0),
-		"import_duration":  time.Duration(0),
+		"failed_imports":     0,
+		"total_bytes":        int64(0),
+		"average_size":       int64(0),
+		"import_duration":    time.Duration(0),
 	}
 }

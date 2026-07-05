@@ -37,12 +37,12 @@ type MigrationAnalyzerConfig struct {
 // DefaultMigrationAnalyzerConfig returns a safe default configuration
 func DefaultMigrationAnalyzerConfig() MigrationAnalyzerConfig {
 	return MigrationAnalyzerConfig{
-		ExportReport:                nil,
+		ExportReport:               nil,
 		EnableChecksumVerification: true,
-		EnablePolicyComparison:    true,
-		EnableIdentityMapping:     true,
-		Logger:                   slog.Default(),
-		Timeout:                 10 * time.Minute,
+		EnablePolicyComparison:     true,
+		EnableIdentityMapping:      true,
+		Logger:                     slog.Default(),
+		Timeout:                    10 * time.Minute,
 	}
 }
 
@@ -85,12 +85,12 @@ func (a *MigrationAnalyzer) Analyze(ctx context.Context) (*AnalysisReport, error
 
 	// Create analysis report
 	report := &AnalysisReport{
-		AnalyzedResources: make([]string, 0),
-		ChecksumsVerified: 0,
+		AnalyzedResources:  make([]string, 0),
+		ChecksumsVerified:  0,
 		ChecksumMismatches: 0,
-		PolicyIssues:      make([]PolicyIssue, 0),
-		IdentityIssues:   make([]IdentityIssue, 0),
-		StartTime:        startTime,
+		PolicyIssues:       make([]PolicyIssue, 0),
+		IdentityIssues:     make([]IdentityIssue, 0),
+		StartTime:          startTime,
 	}
 
 	// Analyze exported resources
@@ -112,9 +112,9 @@ func (a *MigrationAnalyzer) Analyze(ctx context.Context) (*AnalysisReport, error
 				report.ChecksumMismatches++
 				report.PolicyIssues = append(report.PolicyIssues, PolicyIssue{
 					ResourceURI: exported.URI,
-					IssueType:  "checksum_mismatch",
+					IssueType:   "checksum_mismatch",
 					Description: fmt.Sprintf("Checksum verification failed: %v", err),
-					Severity:   SeverityHigh,
+					Severity:    SeverityHigh,
 				})
 			} else {
 				report.ChecksumsVerified++
@@ -154,10 +154,10 @@ func (a *MigrationAnalyzer) Analyze(ctx context.Context) (*AnalysisReport, error
 func (a *MigrationAnalyzer) verifyResourceChecksum(ctx context.Context, exported *ExportedResource) error {
 	// In a real implementation, this would re-fetch the resource from CSS
 	// and compare the checksum with the exported version
-	
+
 	// For now, we'll verify that the exported resource has a valid checksum
 	// and that it matches our own calculation
-	
+
 	if exported.Checksum == "" {
 		return fmt.Errorf("no checksum available for resource %s", exported.URI)
 	}
@@ -176,7 +176,7 @@ func (a *MigrationAnalyzer) verifyResourceChecksum(ctx context.Context, exported
 	// 1. Re-fetch the resource from CSS
 	// 2. Compute its checksum
 	// 3. Compare with exported.Checksum
-	
+
 	a.logger.Debug("Checksum verification passed",
 		"uri", exported.URI,
 		"checksum", exported.Checksum,
@@ -199,17 +199,17 @@ func (a *MigrationAnalyzer) compareResourcePolicy(ctx context.Context, exported 
 
 		// For now, we'll add a placeholder issue for policy comparison
 		// This would be replaced with actual comparison logic
-		
+
 		// Check if we have policy content in metadata
 		if policyContent, ok := exported.Metadata["policy"].(string); ok {
 			if policyContent != "" {
 				// This is a placeholder - actual implementation would parse and compare policies
 				issues = append(issues, PolicyIssue{
-					ResourceURI: exported.URI,
-					IssueType:  "policy_parsing_pending",
-					Description: fmt.Sprintf("Policy comparison not yet implemented for %s", exported.URI),
-					Severity:   SeverityMedium,
-					CSSPolicy:  policyContent,
+					ResourceURI:  exported.URI,
+					IssueType:    "policy_parsing_pending",
+					Description:  fmt.Sprintf("Policy comparison not yet implemented for %s", exported.URI),
+					Severity:     SeverityMedium,
+					CSSPolicy:    policyContent,
 					NativePolicy: "",
 				})
 			}
@@ -237,11 +237,11 @@ func (a *MigrationAnalyzer) checkIdentityMapping(ctx context.Context, exported *
 			if strings.Contains(content, "WebID") || strings.Contains(content, "webid") {
 				// Placeholder for actual identity mapping checks
 				issues = append(issues, IdentityIssue{
-					ResourceURI: exported.URI,
-					IssueType:  "identity_mapping_pending",
-					Description: fmt.Sprintf("Identity mapping check not yet implemented for %s", exported.URI),
-					Severity:   SeverityMedium,
-					CSSIdentity:  "unknown",
+					ResourceURI:    exported.URI,
+					IssueType:      "identity_mapping_pending",
+					Description:    fmt.Sprintf("Identity mapping check not yet implemented for %s", exported.URI),
+					Severity:       SeverityMedium,
+					CSSIdentity:    "unknown",
 					NativeIdentity: "unknown",
 				})
 			}
@@ -258,16 +258,16 @@ func (a *MigrationAnalyzer) AnalyzeChecksums(ctx context.Context) (*AnalysisRepo
 	}
 
 	startTime := time.Now()
-	
+
 	report := &AnalysisReport{
 		AnalyzedResources: make([]string, 0),
-		StartTime:        startTime,
+		StartTime:         startTime,
 	}
 
 	// Use parallel processing for checksum verification
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	
+
 	for _, exported := range a.config.ExportReport.ExportedResourceDetails {
 		wg.Add(1)
 		go func(e ExportedResource) {
@@ -276,7 +276,7 @@ func (a *MigrationAnalyzer) AnalyzeChecksums(ctx context.Context) (*AnalysisRepo
 			err := a.verifyResourceChecksum(ctx, &e)
 			mu.Lock()
 			defer mu.Unlock()
-			
+
 			report.AnalyzedResources = append(report.AnalyzedResources, e.URI)
 			if err != nil {
 				report.ChecksumMismatches++
@@ -299,11 +299,11 @@ func (a *MigrationAnalyzer) AnalyzePolicies(ctx context.Context) (*AnalysisRepor
 	}
 
 	startTime := time.Now()
-	
+
 	report := &AnalysisReport{
 		AnalyzedResources: make([]string, 0),
 		PolicyIssues:      make([]PolicyIssue, 0),
-		StartTime:        startTime,
+		StartTime:         startTime,
 	}
 
 	for _, exported := range a.config.ExportReport.ExportedResourceDetails {
@@ -316,7 +316,7 @@ func (a *MigrationAnalyzer) AnalyzePolicies(ctx context.Context) (*AnalysisRepor
 		}
 
 		report.AnalyzedResources = append(report.AnalyzedResources, exported.URI)
-		
+
 		// Only analyze policy resources
 		if exported.ResourceType == ResourceTypeACL || exported.ResourceType == ResourceTypeACP {
 			if issues := a.compareResourcePolicy(ctx, &exported); len(issues) > 0 {
@@ -337,11 +337,11 @@ func (a *MigrationAnalyzer) AnalyzeIdentities(ctx context.Context) (*AnalysisRep
 	}
 
 	startTime := time.Now()
-	
+
 	report := &AnalysisReport{
 		AnalyzedResources: make([]string, 0),
-		IdentityIssues:   make([]IdentityIssue, 0),
-		StartTime:        startTime,
+		IdentityIssues:    make([]IdentityIssue, 0),
+		StartTime:         startTime,
 	}
 
 	for _, exported := range a.config.ExportReport.ExportedResourceDetails {
@@ -354,7 +354,7 @@ func (a *MigrationAnalyzer) AnalyzeIdentities(ctx context.Context) (*AnalysisRep
 		}
 
 		report.AnalyzedResources = append(report.AnalyzedResources, exported.URI)
-		
+
 		if issues := a.checkIdentityMapping(ctx, &exported); len(issues) > 0 {
 			report.IdentityIssues = append(report.IdentityIssues, issues...)
 		}

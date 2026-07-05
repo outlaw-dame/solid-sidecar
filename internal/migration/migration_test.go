@@ -20,10 +20,10 @@ func TestCSSInventoryScanner(t *testing.T) {
 	// Test configuration
 	config := CSSInventoryScannerConfig{
 		CSSEndpoint: "http://localhost:3000",
-		Logger:     logger,
-		Timeout:    5 * time.Minute,
-		RetryCount: 3,
-		RetryDelay: 1 * time.Second,
+		Logger:      logger,
+		Timeout:     5 * time.Minute,
+		RetryCount:  3,
+		RetryDelay:  1 * time.Second,
 	}
 
 	// Create scanner
@@ -49,7 +49,7 @@ func TestCSSInventoryScanner(t *testing.T) {
 		// Test valid endpoint
 		validScanner := NewCSSInventoryScanner(CSSInventoryScannerConfig{
 			CSSEndpoint: "https://valid-css.example.com",
-			Logger:     logger,
+			Logger:      logger,
 		})
 		if err := validScanner.validateCSSEndpoint(); err != nil {
 			t.Errorf("Valid endpoint should pass validation: %v", err)
@@ -58,7 +58,7 @@ func TestCSSInventoryScanner(t *testing.T) {
 		// Test invalid endpoint (no scheme)
 		invalidScanner1 := NewCSSInventoryScanner(CSSInventoryScannerConfig{
 			CSSEndpoint: "invalid-endpoint",
-			Logger:     logger,
+			Logger:      logger,
 		})
 		if err := invalidScanner1.validateCSSEndpoint(); err == nil {
 			t.Error("Invalid endpoint (no scheme) should fail validation")
@@ -67,7 +67,7 @@ func TestCSSInventoryScanner(t *testing.T) {
 		// Test invalid endpoint (invalid scheme)
 		invalidScanner2 := NewCSSInventoryScanner(CSSInventoryScannerConfig{
 			CSSEndpoint: "ftp://invalid-scheme.example.com",
-			Logger:     logger,
+			Logger:      logger,
 		})
 		if err := invalidScanner2.validateCSSEndpoint(); err == nil {
 			t.Error("Invalid endpoint (invalid scheme) should fail validation")
@@ -76,7 +76,7 @@ func TestCSSInventoryScanner(t *testing.T) {
 		// Test invalid endpoint (no host)
 		invalidScanner3 := NewCSSInventoryScanner(CSSInventoryScannerConfig{
 			CSSEndpoint: "http://",
-			Logger:     logger,
+			Logger:      logger,
 		})
 		if err := invalidScanner3.validateCSSEndpoint(); err == nil {
 			t.Error("Invalid endpoint (no host) should fail validation")
@@ -86,25 +86,25 @@ func TestCSSInventoryScanner(t *testing.T) {
 	// Test CSSInventory structure
 	t.Run("CSSInventoryStructure", func(t *testing.T) {
 		inventory := &CSSInventory{
-			Resources:          make([]CSSResource, 0),
-			Containers:         make([]CSSResource, 0),
-			AuxiliaryResources: make([]CSSResource, 0),
-			ACLResources:       make([]CSSResource, 0),
-			ACPResources:       make([]CSSResource, 0),
-			MetadataResources:  make([]CSSResource, 0),
+			Resources:           make([]CSSResource, 0),
+			Containers:          make([]CSSResource, 0),
+			AuxiliaryResources:  make([]CSSResource, 0),
+			ACLResources:        make([]CSSResource, 0),
+			ACPResources:        make([]CSSResource, 0),
+			MetadataResources:   make([]CSSResource, 0),
 			StorageDescriptions: make([]CSSResource, 0),
-			AllResources:       make([]CSSResource, 0),
+			AllResources:        make([]CSSResource, 0),
 			ScanTimestamp:       time.Now(),
-			CSSEndpoint:        "http://localhost:3000",
-			Errors:             make([]InventoryScanError, 0),
+			CSSEndpoint:         "http://localhost:3000",
+			Errors:              make([]InventoryScanError, 0),
 		}
 
 		// Test adding resources
 		resource := CSSResource{
-			URI:        "http://localhost:3000/resource1",
+			URI:          "http://localhost:3000/resource1",
 			ResourceType: ResourceTypeResource,
 			ContentType:  "text/turtle",
-			Size:       1024,
+			Size:         1024,
 		}
 
 		inventory.Resources = append(inventory.Resources, resource)
@@ -165,22 +165,22 @@ func TestMigrationService(t *testing.T) {
 
 	// Test configuration
 	config := MigrationConfig{
-		CSSEndpoint:            "http://localhost:3000",
-		TargetStorageConfig:   "native-storage-config",
-		Mode:                  MigrationModeDryRun,
-		BatchSize:             100,
-		MaxConcurrentBatches:  4,
+		CSSEndpoint:                "http://localhost:3000",
+		TargetStorageConfig:        "native-storage-config",
+		Mode:                       MigrationModeDryRun,
+		BatchSize:                  100,
+		MaxConcurrentBatches:       4,
 		EnableChecksumVerification: true,
-		EnablePolicyComparison:    true,
-		EnableIdentityMapping:     true,
-		CreateBackup:             true,
-		BackupDirectory:          "/var/backups/solid-migration",
-		TemporaryDirectory:       "/tmp/solid-migration",
-		LogLevel:                slog.LevelInfo,
-		Timeout:                 5 * time.Minute,
-		RetryCount:              3,
-		RetryDelay:             1 * time.Second,
-		Logger:                 logger,
+		EnablePolicyComparison:     true,
+		EnableIdentityMapping:      true,
+		CreateBackup:               true,
+		BackupDirectory:            "/var/backups/solid-migration",
+		TemporaryDirectory:         "/tmp/solid-migration",
+		LogLevel:                   slog.LevelInfo,
+		Timeout:                    5 * time.Minute,
+		RetryCount:                 3,
+		RetryDelay:                 1 * time.Second,
+		Logger:                     logger,
 	}
 
 	// Create migration service
@@ -203,7 +203,7 @@ func TestMigrationService(t *testing.T) {
 		// Test invalid CSS endpoint
 		invalidConfig := MigrationConfig{
 			CSSEndpoint: "invalid-endpoint",
-			Logger:     logger,
+			Logger:      logger,
 		}
 		invalidService := NewMigrationService(invalidConfig)
 		// The validation should have logged a warning but not failed
@@ -214,7 +214,7 @@ func TestMigrationService(t *testing.T) {
 		// Test empty CSS endpoint
 		emptyConfig := MigrationConfig{
 			CSSEndpoint: "",
-			Logger:     logger,
+			Logger:      logger,
 		}
 		emptyService := NewMigrationService(emptyConfig)
 		if emptyService == nil {
@@ -367,14 +367,14 @@ func TestErrorSeverities(t *testing.T) {
 func TestMigrationError(t *testing.T) {
 	// Create test error
 	err := MigrationError{
-		ErrorID:    "test-error-001",
-		Timestamp:  time.Now(),
-		Phase:      PhaseExport,
+		ErrorID:     "test-error-001",
+		Timestamp:   time.Now(),
+		Phase:       PhaseExport,
 		ResourceURI: "http://localhost:3000/resource1",
-		Error:      fmt.Errorf("test error"),
-		Severity:   SeverityMedium,
-		Retryable:  true,
-		RetryCount: 0,
+		Error:       fmt.Errorf("test error"),
+		Severity:    SeverityMedium,
+		Retryable:   true,
+		RetryCount:  0,
 	}
 
 	if err.ErrorID == "" {
@@ -392,18 +392,18 @@ func TestMigrationError(t *testing.T) {
 func TestMigrationProgress(t *testing.T) {
 	// Create test progress
 	progress := MigrationProgress{
-		CurrentPhase:    PhaseExport,
-		PhaseDescription: "Exporting resources from CSS",
-		ResourcesTotal:   100,
-		ResourcesScanned: 50,
+		CurrentPhase:      PhaseExport,
+		PhaseDescription:  "Exporting resources from CSS",
+		ResourcesTotal:    100,
+		ResourcesScanned:  50,
 		ResourcesExported: 25,
 		ResourcesAnalyzed: 20,
 		ResourcesImported: 15,
 		ResourcesVerified: 10,
-		ResourcesFailed:  5,
-		BytesTotal:       1024 * 1024,
-		BytesProcessed:   512 * 1024,
-		PhaseStartTime:  time.Now(),
+		ResourcesFailed:   5,
+		BytesTotal:        1024 * 1024,
+		BytesProcessed:    512 * 1024,
+		PhaseStartTime:    time.Now(),
 	}
 
 	if progress.CurrentPhase == "" {
@@ -418,21 +418,21 @@ func TestMigrationProgress(t *testing.T) {
 func TestMigrationConfigJSON(t *testing.T) {
 	// Create test config
 	config := MigrationConfig{
-		CSSEndpoint:            "http://localhost:3000",
-		TargetStorageConfig:   "native-storage",
-		Mode:                  MigrationModeDryRun,
-		BatchSize:             50,
-		MaxConcurrentBatches:  2,
+		CSSEndpoint:                "http://localhost:3000",
+		TargetStorageConfig:        "native-storage",
+		Mode:                       MigrationModeDryRun,
+		BatchSize:                  50,
+		MaxConcurrentBatches:       2,
 		EnableChecksumVerification: true,
-		EnablePolicyComparison:    true,
-		EnableIdentityMapping:     true,
-		CreateBackup:             true,
-		BackupDirectory:          "/var/backups",
-		TemporaryDirectory:       "/tmp/migration",
-		LogLevel:                slog.LevelInfo,
-		Timeout:                 10 * time.Minute,
-		RetryCount:              2,
-		RetryDelay:             500 * time.Millisecond,
+		EnablePolicyComparison:     true,
+		EnableIdentityMapping:      true,
+		CreateBackup:               true,
+		BackupDirectory:            "/var/backups",
+		TemporaryDirectory:         "/tmp/migration",
+		LogLevel:                   slog.LevelInfo,
+		Timeout:                    10 * time.Minute,
+		RetryCount:                 2,
+		RetryDelay:                 500 * time.Millisecond,
 	}
 
 	// Test JSON serialization
@@ -636,10 +636,10 @@ func TestCSSResource(t *testing.T) {
 		ContentType:  "text/turtle",
 		Size:         1024,
 		LastModified: now,
-		ETag:        "\"abc123\"",
-		Links:       make([]ResourceLink, 0),
-		Metadata:    make(map[string]interface{}),
-		Checksum:    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		ETag:         "\"abc123\"",
+		Links:        make([]ResourceLink, 0),
+		Metadata:     make(map[string]interface{}),
+		Checksum:     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	}
 
 	if resource.URI == "" {
@@ -656,12 +656,12 @@ func TestResourceTypeDetection(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	scanner := NewCSSInventoryScanner(CSSInventoryScannerConfig{
 		CSSEndpoint: "http://localhost:3000",
-		Logger:     logger,
+		Logger:      logger,
 	})
 
 	// Test container detection by URI
 	containerResource := CSSResource{
-		URI:        "http://localhost:3000/container/",
+		URI:         "http://localhost:3000/container/",
 		ContentType: "text/turtle",
 	}
 	if !scanner.isContainer(&containerResource) {
@@ -670,7 +670,7 @@ func TestResourceTypeDetection(t *testing.T) {
 
 	// Test ACL detection by URI (using public method that doesn't require HTTP response)
 	aclResource := CSSResource{
-		URI:        "http://localhost:3000/resource.acl",
+		URI:         "http://localhost:3000/resource.acl",
 		ContentType: "text/turtle",
 	}
 	// Since determineResourceType requires an HTTP response, we'll test the URI patterns directly
@@ -680,7 +680,7 @@ func TestResourceTypeDetection(t *testing.T) {
 
 	// Test ACP detection by URI
 	acpResource := CSSResource{
-		URI:        "http://localhost:3000/resource.acp",
+		URI:         "http://localhost:3000/resource.acp",
 		ContentType: "text/turtle",
 	}
 	if !strings.Contains(strings.ToLower(acpResource.URI), ".acp") {

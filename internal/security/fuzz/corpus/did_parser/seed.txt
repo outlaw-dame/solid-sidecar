@@ -1,0 +1,12 @@
+did:solid:example.com
+did:web:example.com
+did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V
+did:solid:user123
+did:solid:user@example.com
+did:solid:user#profile
+did:solid:user#settings
+did:example:1234567890abcdef
+invalid-did
+:missing-prefix
+did:
+did:solid:

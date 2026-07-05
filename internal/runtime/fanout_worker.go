@@ -56,15 +56,15 @@ type FanoutWorkerPoolConfig struct {
 // DefaultFanoutWorkerPoolConfig returns a safe default configuration
 func DefaultFanoutWorkerPoolConfig() FanoutWorkerPoolConfig {
 	return FanoutWorkerPoolConfig{
-		NumWorkers:           10,
-		QueueSize:           1000,
-		MaxBatchSize:         50,
-		WorkerTimeout:        30 * time.Second,
+		NumWorkers:            10,
+		QueueSize:             1000,
+		MaxBatchSize:          50,
+		WorkerTimeout:         30 * time.Second,
 		BackpressureThreshold: 0.8, // 80% queue full
-		MaxRetries:           3,
-		RetryDelay:          1 * time.Second,
-		EnableMetrics:        true,
-		Logger:              nil,
+		MaxRetries:            3,
+		RetryDelay:            1 * time.Second,
+		EnableMetrics:         true,
+		Logger:                nil,
 	}
 }
 
@@ -130,8 +130,8 @@ type FanoutWorker struct {
 	workerPool *FanoutWorkerPool
 
 	// State
-	active    bool
-	startedAt time.Time
+	active        bool
+	startedAt     time.Time
 	lastProcessed time.Time
 
 	// Metrics
@@ -145,6 +145,36 @@ type FanoutWorker struct {
 type FanoutWorkerMetrics struct {
 	mu sync.RWMutex
 
+	// Events received
+	EventsReceived int64
+
+	// Events processed
+	EventsProcessed int64
+
+	// Events succeeded
+	EventsSucceeded int64
+
+	// Events failed
+	EventsFailed int64
+
+	// Events retried
+	EventsRetried int64
+
+	// Subscribers notified
+	SubscribersNotified int64
+
+	// Delivery errors
+	DeliveryErrors int64
+
+	// Processing time
+	TotalProcessingTime time.Duration
+
+	// Last processed time
+	LastProcessedTime time.Time
+}
+
+// FanoutWorkerMetricsSnapshot is a copy of metrics values without the mutex
+type FanoutWorkerMetricsSnapshot struct {
 	// Events received
 	EventsReceived int64
 
@@ -230,11 +260,21 @@ func (m *FanoutWorkerMetrics) RecordProcessingTime(duration time.Duration) {
 	m.LastProcessedTime = time.Now()
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *FanoutWorkerMetrics) GetMetrics() FanoutWorkerMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *FanoutWorkerMetrics) GetMetrics() FanoutWorkerMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return *m
+	return FanoutWorkerMetricsSnapshot{
+		EventsReceived:      m.EventsReceived,
+		EventsProcessed:     m.EventsProcessed,
+		EventsSucceeded:     m.EventsSucceeded,
+		EventsFailed:        m.EventsFailed,
+		EventsRetried:       m.EventsRetried,
+		SubscribersNotified: m.SubscribersNotified,
+		DeliveryErrors:      m.DeliveryErrors,
+		TotalProcessingTime: m.TotalProcessingTime,
+		LastProcessedTime:   m.LastProcessedTime,
+	}
 }
 
 // FanoutWorkerPool manages a pool of fanout workers for event delivery
@@ -269,14 +309,14 @@ type FanoutWorkerPoolMetrics struct {
 	mu sync.RWMutex
 
 	// Pool-level metrics
-	WorkersStarted    int64
-	WorkersStopped    int64
-	WorkersActive     int64
-	WorkersAvailable  int64
+	WorkersStarted   int64
+	WorkersStopped   int64
+	WorkersActive    int64
+	WorkersAvailable int64
 
 	// Event distribution
 	EventsDistributed int64
-	EventsQueued     int64
+	EventsQueued      int64
 	EventsDropped     int64
 
 	// Backpressure
@@ -284,17 +324,48 @@ type FanoutWorkerPoolMetrics struct {
 	QueueFullEvents    int64
 
 	// Aggregated worker metrics
-	TotalEventsReceived    int64
-	TotalEventsProcessed   int64
-	TotalEventsSucceeded   int64
-	TotalEventsFailed      int64
-	TotalEventsRetried     int64
+	TotalEventsReceived      int64
+	TotalEventsProcessed     int64
+	TotalEventsSucceeded     int64
+	TotalEventsFailed        int64
+	TotalEventsRetried       int64
 	TotalSubscribersNotified int64
 
 	// Performance
 	AverageProcessingTime time.Duration
 	TotalProcessingTime   time.Duration
-	EventsProcessedCount   int64
+	EventsProcessedCount  int64
+}
+
+// FanoutWorkerPoolMetricsSnapshot is a copy of metrics values without the mutex
+type FanoutWorkerPoolMetricsSnapshot struct {
+	// Pool-level metrics
+	WorkersStarted   int64
+	WorkersStopped   int64
+	WorkersActive    int64
+	WorkersAvailable int64
+
+	// Event distribution
+	EventsDistributed int64
+	EventsQueued      int64
+	EventsDropped     int64
+
+	// Backpressure
+	BackpressureEvents int64
+	QueueFullEvents    int64
+
+	// Aggregated worker metrics
+	TotalEventsReceived      int64
+	TotalEventsProcessed     int64
+	TotalEventsSucceeded     int64
+	TotalEventsFailed        int64
+	TotalEventsRetried       int64
+	TotalSubscribersNotified int64
+
+	// Performance
+	AverageProcessingTime time.Duration
+	TotalProcessingTime   time.Duration
+	EventsProcessedCount  int64
 }
 
 // RecordWorkerStarted records a worker being started
@@ -349,7 +420,7 @@ func (m *FanoutWorkerPoolMetrics) RecordQueueFull() {
 }
 
 // AggregateWorkerMetrics aggregates metrics from a worker
-func (m *FanoutWorkerPoolMetrics) AggregateWorkerMetrics(workerMetrics FanoutWorkerMetrics) {
+func (m *FanoutWorkerPoolMetrics) AggregateWorkerMetrics(workerMetrics FanoutWorkerMetricsSnapshot) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -367,16 +438,35 @@ func (m *FanoutWorkerPoolMetrics) AggregateWorkerMetrics(workerMetrics FanoutWor
 			m.AverageProcessingTime = m.TotalProcessingTime / time.Duration(m.EventsProcessedCount)
 		}
 	}
-	
+
 	// Aggregate retry metrics
 	m.TotalEventsRetried += workerMetrics.EventsRetried
 }
 
-// GetMetrics returns a copy of the current metrics
-func (m *FanoutWorkerPoolMetrics) GetMetrics() FanoutWorkerPoolMetrics {
+// GetMetrics returns a snapshot of the current metrics
+func (m *FanoutWorkerPoolMetrics) GetMetrics() FanoutWorkerPoolMetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return *m
+	return FanoutWorkerPoolMetricsSnapshot{
+		WorkersStarted:           m.WorkersStarted,
+		WorkersStopped:           m.WorkersStopped,
+		WorkersActive:            m.WorkersActive,
+		WorkersAvailable:         m.WorkersAvailable,
+		EventsDistributed:        m.EventsDistributed,
+		EventsQueued:             m.EventsQueued,
+		EventsDropped:            m.EventsDropped,
+		BackpressureEvents:       m.BackpressureEvents,
+		QueueFullEvents:          m.QueueFullEvents,
+		TotalEventsReceived:      m.TotalEventsReceived,
+		TotalEventsProcessed:     m.TotalEventsProcessed,
+		TotalEventsSucceeded:     m.TotalEventsSucceeded,
+		TotalEventsFailed:        m.TotalEventsFailed,
+		TotalEventsRetried:       m.TotalEventsRetried,
+		TotalSubscribersNotified: m.TotalSubscribersNotified,
+		AverageProcessingTime:    m.AverageProcessingTime,
+		TotalProcessingTime:      m.TotalProcessingTime,
+		EventsProcessedCount:     m.EventsProcessedCount,
+	}
 }
 
 // NewFanoutWorkerPool creates a new fanout worker pool
@@ -386,11 +476,11 @@ func NewFanoutWorkerPool(config FanoutWorkerPoolConfig) *FanoutWorkerPool {
 	}
 
 	pool := &FanoutWorkerPool{
-		config:            config,
+		config:              config,
 		distributionChannel: make(chan FanoutEvent, config.QueueSize*config.NumWorkers),
-		closeChan:         make(chan struct{}),
-		metrics:           FanoutWorkerPoolMetrics{},
-		logger:            config.Logger,
+		closeChan:           make(chan struct{}),
+		metrics:             FanoutWorkerPoolMetrics{},
+		logger:              config.Logger,
 	}
 
 	// Create workers
@@ -423,12 +513,12 @@ func NewFanoutWorkerPool(config FanoutWorkerPoolConfig) *FanoutWorkerPool {
 // newFanoutWorker creates a new fanout worker
 func newFanoutWorker(config FanoutWorkerConfig, pool *FanoutWorkerPool) *FanoutWorker {
 	worker := &FanoutWorker{
-		config:    config,
+		config:       config,
 		eventChannel: make(chan FanoutEvent, config.QueueSize),
-		workerPool: pool,
-		active:    false,
-		metrics:   FanoutWorkerMetrics{},
-		logger:    pool.config.Logger,
+		workerPool:   pool,
+		active:       false,
+		metrics:      FanoutWorkerMetrics{},
+		logger:       pool.config.Logger,
 	}
 
 	// Create context for this worker
@@ -629,7 +719,7 @@ func (w *FanoutWorker) isUnderBackpressure() bool {
 	// Check queue length
 	queueLength := len(w.eventChannel)
 	capacity := cap(w.eventChannel)
-	
+
 	threshold := w.workerPool.config.BackpressureThreshold
 	return float64(queueLength) >= float64(capacity)*threshold
 }
@@ -638,7 +728,7 @@ func (w *FanoutWorker) isUnderBackpressure() bool {
 func (w *FanoutWorker) requeueWithDelay(fanoutEvent FanoutEvent) {
 	// Increment delivery attempts
 	fanoutEvent.DeliveryAttempts++
-	
+
 	if fanoutEvent.DeliveryAttempts > w.config.MaxRetries {
 		w.logger.Warn("Max retries exceeded for fanout event",
 			"event_id", fanoutEvent.Event.EventID,
@@ -654,7 +744,7 @@ func (w *FanoutWorker) requeueWithDelay(fanoutEvent FanoutEvent) {
 
 	// Requeue
 	w.metrics.RecordEventRetried()
-	
+
 	// Try to send back to channel
 	select {
 	case w.eventChannel <- fanoutEvent:
@@ -705,7 +795,7 @@ func (p *FanoutWorkerPool) isPoolUnderBackpressure() bool {
 	// Check total queue length across all workers
 	queueLength := len(p.distributionChannel)
 	capacity := cap(p.distributionChannel)
-	
+
 	threshold := p.config.BackpressureThreshold
 	return float64(queueLength) >= float64(capacity)*threshold
 }
@@ -788,13 +878,13 @@ func (p *FanoutWorkerPool) IsClosed() bool {
 }
 
 // GetMetrics returns the current metrics for the pool
-func (p *FanoutWorkerPool) GetMetrics() FanoutWorkerPoolMetrics {
+func (p *FanoutWorkerPool) GetMetrics() FanoutWorkerPoolMetricsSnapshot {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	// Aggregate worker metrics
 	poolMetrics := p.metrics.GetMetrics()
-	
+
 	// For simplicity, we'll just return the pool metrics
 	// In a production implementation, we'd aggregate all worker metrics
 	return poolMetrics
@@ -885,10 +975,10 @@ type FanoutServiceConfig struct {
 // DefaultFanoutServiceConfig returns a safe default configuration
 func DefaultFanoutServiceConfig() FanoutServiceConfig {
 	return FanoutServiceConfig{
-		WorkerPoolConfig:    DefaultFanoutWorkerPoolConfig(),
-		EnableMetrics:       true,
-		MaxFanoutBatchSize:  100,
-		FanoutTimeout:       1 * time.Minute,
+		WorkerPoolConfig:   DefaultFanoutWorkerPoolConfig(),
+		EnableMetrics:      true,
+		MaxFanoutBatchSize: 100,
+		FanoutTimeout:      1 * time.Minute,
 		Logger:             nil,
 	}
 }
@@ -898,20 +988,41 @@ type FanoutServiceMetrics struct {
 	mu sync.RWMutex
 
 	// Fanout operations
-	FanoutOperations     int64
-	FanoutSuccesses      int64
-	FanoutFailures       int64
+	FanoutOperations int64
+	FanoutSuccesses  int64
+	FanoutFailures   int64
 
 	// Events
-	EventsFannedOut      int64
-	EventsDelivered     int64
-	EventsFailed        int64
+	EventsFannedOut int64
+	EventsDelivered int64
+	EventsFailed    int64
 
 	// Subscribers
 	SubscribersNotified int64
 
 	// Performance
-	TotalFanoutTime      time.Duration
+	TotalFanoutTime       time.Duration
+	AverageFanoutTime     time.Duration
+	FanoutOperationsCount int64
+}
+
+// FanoutServiceMetricsSnapshot is a copy of metrics values without the mutex
+type FanoutServiceMetricsSnapshot struct {
+	// Fanout operations
+	FanoutOperations int64
+	FanoutSuccesses  int64
+	FanoutFailures   int64
+
+	// Events
+	EventsFannedOut int64
+	EventsDelivered int64
+	EventsFailed    int64
+
+	// Subscribers
+	SubscribersNotified int64
+
+	// Performance
+	TotalFanoutTime       time.Duration
 	AverageFanoutTime     time.Duration
 	FanoutOperationsCount int64
 }
@@ -941,11 +1052,11 @@ func NewFanoutService(config FanoutServiceConfig) *FanoutService {
 	}
 
 	service := &FanoutService{
-		config:          config,
-		workerPool:      NewFanoutWorkerPool(config.WorkerPoolConfig),
-		logger:          config.Logger,
-		metrics:         FanoutServiceMetrics{},
-		closed:          false,
+		config:     config,
+		workerPool: NewFanoutWorkerPool(config.WorkerPoolConfig),
+		logger:     config.Logger,
+		metrics:    FanoutServiceMetrics{},
+		closed:     false,
 	}
 
 	config.Logger.Info("Fanout service created",
@@ -986,7 +1097,7 @@ func (s *FanoutService) FanoutEventToSubscribers(event StreamEvent) (*FanoutResu
 
 	// For now, return a simulated result
 	// In a production implementation, this would actually submit to the worker pool
-	
+
 	startTime := time.Now()
 
 	// Find matching subscribers
@@ -1024,7 +1135,7 @@ func (s *FanoutService) FanoutEventToSubscribers(event StreamEvent) (*FanoutResu
 
 	// For simulation, assume some deliveries succeeded
 	deliveredCount := len(matchingSubscribers)
-	
+
 	// Record metrics
 	s.metrics.RecordFanoutOperation(true, time.Since(startTime))
 
@@ -1162,8 +1273,21 @@ func (s *FanoutService) IsClosed() bool {
 }
 
 // GetMetrics returns the current metrics
-func (s *FanoutService) GetMetrics() FanoutServiceMetrics {
+func (s *FanoutService) GetMetrics() FanoutServiceMetricsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.metrics
+	s.metrics.mu.RLock()
+	defer s.metrics.mu.RUnlock()
+	return FanoutServiceMetricsSnapshot{
+		FanoutOperations:      s.metrics.FanoutOperations,
+		FanoutSuccesses:       s.metrics.FanoutSuccesses,
+		FanoutFailures:        s.metrics.FanoutFailures,
+		EventsFannedOut:       s.metrics.EventsFannedOut,
+		EventsDelivered:       s.metrics.EventsDelivered,
+		EventsFailed:          s.metrics.EventsFailed,
+		SubscribersNotified:   s.metrics.SubscribersNotified,
+		TotalFanoutTime:       s.metrics.TotalFanoutTime,
+		AverageFanoutTime:     s.metrics.AverageFanoutTime,
+		FanoutOperationsCount: s.metrics.FanoutOperationsCount,
+	}
 }

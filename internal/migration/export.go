@@ -59,22 +59,20 @@ type CSSExportReaderConfig struct {
 // DefaultCSSExportReaderConfig returns a safe default configuration
 func DefaultCSSExportReaderConfig() CSSExportReaderConfig {
 	return CSSExportReaderConfig{
-		CSSEndpoint:      "",
+		CSSEndpoint:     "",
 		Inventory:       nil,
 		Logger:          slog.Default(),
-		Timeout:        5 * time.Minute,
-		RetryCount:     3,
-		RetryDelay:    1 * time.Second,
-		BatchSize:      10,
+		Timeout:         5 * time.Minute,
+		RetryCount:      3,
+		RetryDelay:      1 * time.Second,
+		BatchSize:       10,
 		ExportDirectory: "/tmp/solid-export",
 		IncludeMetadata: true,
 		IncludeACL:      true,
 		IncludeACP:      true,
-		HTTPClient:     nil,
+		HTTPClient:      nil,
 	}
 }
-
-
 
 // CSSExportReader performs export reading from CSS deployments
 type CSSExportReader struct {
@@ -135,10 +133,10 @@ func (r *CSSExportReader) Export(ctx context.Context) (*ExportReport, error) {
 
 	// Create export report
 	report := &ExportReport{
-		ExportedResources:     make([]string, 0),
-		Errors:                make([]MigrationError, 0),
-		TotalBytesExported:    0,
-		StartTime:            startTime,
+		ExportedResources:       make([]string, 0),
+		Errors:                  make([]MigrationError, 0),
+		TotalBytesExported:      0,
+		StartTime:               startTime,
 		ExportedResourceDetails: make([]ExportedResource, 0),
 	}
 
@@ -164,12 +162,12 @@ func (r *CSSExportReader) Export(ctx context.Context) (*ExportReport, error) {
 		// Export batch concurrently
 		if err := r.exportBatch(ctx, batch, report); err != nil {
 			report.Errors = append(report.Errors, MigrationError{
-				ErrorID:    generateErrorID(),
-				Timestamp:  time.Now(),
-				Phase:      PhaseExport,
-				Error:      err,
-				Severity:   SeverityHigh,
-				Retryable:  false,
+				ErrorID:   generateErrorID(),
+				Timestamp: time.Now(),
+				Phase:     PhaseExport,
+				Error:     err,
+				Severity:  SeverityHigh,
+				Retryable: false,
 			})
 			// Continue with remaining batches
 		}
@@ -293,12 +291,12 @@ func (r *CSSExportReader) exportBatch(ctx context.Context, batch []CSSResource, 
 	for err := range errors {
 		mu.Lock()
 		report.Errors = append(report.Errors, MigrationError{
-			ErrorID:    generateErrorID(),
-			Timestamp:  time.Now(),
-			Phase:      PhaseExport,
-			Error:      err,
-			Severity:   SeverityMedium,
-			Retryable:  true,
+			ErrorID:   generateErrorID(),
+			Timestamp: time.Now(),
+			Phase:     PhaseExport,
+			Error:     err,
+			Severity:  SeverityMedium,
+			Retryable: true,
 		})
 		mu.Unlock()
 	}
@@ -315,9 +313,9 @@ func (r *CSSExportReader) exportSingleResource(ctx context.Context, resource CSS
 		ResourceType: resource.ResourceType,
 		ContentType:  resource.ContentType,
 		Links:        resource.Links,
-		Metadata:    make(map[string]interface{}),
-		ExportTime:  startTime,
-		Success:     false,
+		Metadata:     make(map[string]interface{}),
+		ExportTime:   startTime,
+		Success:      false,
 	}
 
 	// Copy metadata
@@ -465,11 +463,11 @@ func (r *CSSExportReader) saveExportedResource(content []byte, targetPath string
 	// For now, this is a stub implementation
 	// A full implementation would properly handle file I/O
 	// with directory creation, permissions, and error handling
-	
+
 	// This is intentionally left as a stub since we're focusing on the
 	// migration orchestration rather than the actual file system operations
 	// In a real implementation, this would use os.MkdirAll, os.WriteFile, etc.
-	
+
 	r.logger.Debug("Would save exported resource to path", "path", targetPath, "size", len(content))
 	return nil
 }
@@ -478,19 +476,19 @@ func (r *CSSExportReader) saveExportedResource(content []byte, targetPath string
 func (c *CSSExportReaderConfig) ToJSON() (string, error) {
 	// Create a temporary struct that can be serialized (avoiding function types)
 	type serializableConfig struct {
-		CSSEndpoint             string
-		BatchSize              int
-		ExportDirectory        string
-		IncludeMetadata        bool
-		IncludeACL             bool
-		IncludeACP             bool
-		Timeout                string
-		RetryCount             int
-		RetryDelay             string
+		CSSEndpoint     string
+		BatchSize       int
+		ExportDirectory string
+		IncludeMetadata bool
+		IncludeACL      bool
+		IncludeACP      bool
+		Timeout         string
+		RetryCount      int
+		RetryDelay      string
 	}
 
 	sc := serializableConfig{
-		CSSEndpoint:      c.CSSEndpoint,
+		CSSEndpoint:     c.CSSEndpoint,
 		BatchSize:       c.BatchSize,
 		ExportDirectory: c.ExportDirectory,
 		IncludeMetadata: c.IncludeMetadata,
