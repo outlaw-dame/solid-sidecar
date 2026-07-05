@@ -100,10 +100,9 @@ func (p OutboundTransportNetworkPolicy) NewHTTPClient(timeout time.Duration) *ht
 		timeout = DefaultTransportTimeout
 	}
 	dialer := &net.Dialer{Timeout: timeout}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return p.DialContext(ctx, dialer, network, address)
-		},
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return p.DialContext(ctx, dialer, network, address)
 	}
 	return &http.Client{
 		Transport: transport,
@@ -121,14 +120,14 @@ func (p OutboundTransportNetworkPolicy) DialContext(ctx context.Context, dialer 
 	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, fmt.Errorf("%w: outbound transport address must include host and port", ErrTransportInvalidPath)
+		return nil, fmt.Errorf("%w: outbound transport address must include host and port: %v", ErrTransportInvalidPath, err)
 	}
 	if err := p.ValidateHostname(host); err != nil {
 		return nil, err
 	}
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to resolve outbound transport host", ErrTransportConnectionFailed)
+		return nil, fmt.Errorf("%w: failed to resolve outbound transport host: %v", ErrTransportConnectionFailed, err)
 	}
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("%w: outbound transport host resolved no addresses", ErrTransportConnectionFailed)
@@ -141,16 +140,24 @@ func (p OutboundTransportNetworkPolicy) DialContext(ctx context.Context, dialer 
 			return nil, err
 		}
 	}
+	var lastDialErr error
 	for _, resolved := range ips {
 		if resolved.IP == nil {
 			continue
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(resolved.IP.String(), port))
 		if err == nil {
 			return conn, nil
 		}
+		lastDialErr = err
 	}
-	return nil, fmt.Errorf("%w: failed to connect to outbound transport host", ErrTransportConnectionFailed)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return nil, fmt.Errorf("%w: failed to connect to outbound transport host: %v", ErrTransportConnectionFailed, lastDialErr)
 }
 
 func (p OutboundTransportNetworkPolicy) validateResolvedIP(ip net.IP) error {
