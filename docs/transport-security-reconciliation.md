@@ -115,9 +115,9 @@ Acceptance criteria:
 
 Update `internal/authz/transport_security_audit.md` after the code hardening lands:
 
-- downgrade current S3/SSH/HTTP status from “secure” to “requires hardening” until the above controls are implemented;
+- downgrade current S3/SSH/HTTP status from "secure" to "requires hardening" until the above controls are implemented;
 - remove examples that describe insecure fallback as acceptable;
-- replace “passed with recommendations” with evidence-backed status;
+- replace "passed with recommendations" with evidence-backed status;
 - link to tests and PRs that prove the claims.
 
 ## Recommended implementation order
