@@ -201,6 +201,7 @@ Concerns/gaps:
 - The connector returned no combined status entries and no workflow runs for the latest direct-to-main commit checked.
 - `go.mod` moving from Go 1.22 to Go 1.25 is a major baseline change and should be explicitly documented in CI/runbooks if intentional.
 - The S3/SSH additions expand dependency and security surface significantly; this should trigger a focused supply-chain and secret-handling review.
+- `docs/transport-security-reconciliation.md` supersedes the older fixture transport audit until HTTP/S3/SSH network, credential, and host-key hardening lands.
 
 ## Roadmap reconciliation
 
@@ -276,12 +277,19 @@ Proceed in this order:
    - harden DID/WebID fetches against SSRF, redirects, and private-network targets;
    - ensure logs never include tokens, DPoP proofs, secrets, private resource bodies, or policy bodies.
 
-5. **SAI clarification**
+5. **Transport security hardening**
+   - follow `docs/transport-security-reconciliation.md`;
+   - add shared outbound network policy for transport endpoints;
+   - harden S3 custom endpoint policy and credential-error redaction;
+   - harden SSH host-key policy so production mode cannot silently accept unknown hosts;
+   - update the older transport security audit only after code evidence exists.
+
+6. **SAI clarification**
    - decide whether SAI remains deferred for enforcement or becomes a real roadmap branch;
    - document exact implemented subset;
    - add comparison/security fixtures before any authz effect.
 
-6. **Runtime mode gating**
+7. **Runtime mode gating**
    - ensure `native`/`hybrid` modes cannot be enabled in production without explicit guardrails, comparison evidence, and rollback controls.
 
 ## Immediate recommended branch
@@ -291,6 +299,7 @@ Create a docs-only reconciliation branch first. The next code branch should like
 - `storage-conditional-writes-occ`
 - `security-redact-agent-identity-string`
 - `harden-did-resolution-network-policy`
+- `transport-network-policy-hardening`
 - `verify-s3-ssh-transport-security`
 
-The best immediate next code slice is **storage conditional writes/OCC**, because Phase 18 now explicitly requires it and the current `StorageBackend` interface does not yet expose conditional write semantics.
+The best immediate next code slice is **transport network policy hardening**, because DID resolver network hardening has landed and the transport layer needs the same level of SSRF/DNS-rebinding resistance before S3/HTTP/SSH fixture distribution can be called production-ready.
