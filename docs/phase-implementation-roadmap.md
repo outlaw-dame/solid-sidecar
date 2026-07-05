@@ -119,11 +119,16 @@ This document provides a unified view of all phase implementations, their curren
 - All 8 layers complete (gateway, storage abstraction, metadata/index, RDF graph/index, policy engine, notification, multi-storage, CSS migration)
 
 ### Phase 16: Notifications, live updates, and indexing
-**Status: ❌ NOT STARTED**
-- Solid notification support plan needed
-- Resource-change event stream needed
-- Container metadata index needed
-- Policy-aware index filtering needed
+**Status: ✅ COMPLETE**
+**Document: `docs/phase-16-completion.md`**
+**Support Plan: `docs/solid-notification-support-plan.md`**
+- Solid notification support plan implemented
+- Resource-change event stream implemented (event_stream.go)
+- Container metadata index implemented (metadata.go, indexing.go)
+- WebID-scoped index access implemented
+- Policy-aware index filtering implemented
+- Privacy-safe notifications (no body content)
+- Full observability with event lag and dropped event metrics
 
 ### Phase 17: Production hardening
 **Status: ⚠️ PARTIAL**
@@ -240,14 +245,13 @@ See `docs/solid-platform-maturity-phases.md` for Phases 18-31.
 
 Based on the repository audit and current state, the recommended execution order follows the natural phase sequence:
 
-1. **Phase 16** - Notifications, live updates, and indexing
-   - Required for production operations
-   - Currently not started
-   - **CURRENT PRIORITY**
-   
-2. **Phase 17** - Production hardening
+1. **Phase 17** - Production hardening
    - Structured health states and pprof/debug endpoint policy needed
    - Memory/goroutine leak tests needed
+   - **CURRENT PRIORITY**
+   
+2. **Phase 18-31** - Platform Maturity Phases
+   - See `docs/solid-platform-maturity-phases.md` for details
    
 3. **Phase 17** - Production hardening
    - Required for production operations
