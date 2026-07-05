@@ -31,6 +31,19 @@ type WACEvaluatorOptions struct {
 	// Default: true (non-enforcing by default)
 	ShadowMode bool
 
+	// EnforcementMode determines if the evaluator should return actual enforcement decisions
+	// When true, the evaluator returns allow/deny instead of abstain
+	// Default: false (shadow mode only for safety)
+	EnforcementMode bool
+
+	// DecisionTraceIDsEnabled enables operator-visible decision trace IDs in decisions
+	// Default: false
+	DecisionTraceIDsEnabled bool
+
+	// FailClosedPolicy configures fail-closed/fail-open behavior
+	// Default: strict fail-closed for safety
+	FailClosedPolicy FailClosedPolicy
+
 	// Logger is the logger to use
 	Logger *slog.Logger
 }
@@ -38,19 +51,25 @@ type WACEvaluatorOptions struct {
 // DefaultWACEvaluatorOptions returns options with sensible defaults
 func DefaultWACEvaluatorOptions() WACEvaluatorOptions {
 	return WACEvaluatorOptions{
-		MaxPolicies: 10,
-		Timeout:     30 * time.Second,
-		ShadowMode:  true,
-		Logger:      nil,
+		MaxPolicies:          10,
+		Timeout:              30 * time.Second,
+		ShadowMode:           true,
+		EnforcementMode:      false,
+		DecisionTraceIDsEnabled: false,
+		FailClosedPolicy:     DefaultFailClosedPolicy(),
+		Logger:               nil,
 	}
 }
 
-// WACEvaluator evaluates Web Access Control (WAC) policies in shadow mode
+// WACEvaluator evaluates Web Access Control (WAC) policies
 type WACEvaluator struct {
-	options    WACEvaluatorOptions
-	parser     *WACParser
-	RDFParser  *RDFParserRegistry
-	shadowMode bool
+	options                WACEvaluatorOptions
+	parser                 *WACParser
+	RDFParser              *RDFParserRegistry
+	shadowMode             bool
+	enforcementMode        bool
+	decisionTraceIDsEnabled bool
+	failClosedPolicy       FailClosedPolicy
 }
 
 // NewWACEvaluator creates a new WAC evaluator
@@ -72,10 +91,13 @@ func NewWACEvaluator(options WACEvaluatorOptions, rdfParser *RDFParserRegistry) 
 	}
 
 	return &WACEvaluator{
-		options:    options,
-		parser:     options.Parser,
-		RDFParser:  rdfParser,
-		shadowMode: options.ShadowMode,
+		options:                options,
+		parser:                 options.Parser,
+		RDFParser:              rdfParser,
+		shadowMode:             options.ShadowMode,
+		enforcementMode:        options.EnforcementMode,
+		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
+		failClosedPolicy:       options.FailClosedPolicy,
 	}, nil
 }
 

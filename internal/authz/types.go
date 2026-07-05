@@ -89,4 +89,14 @@ type Decision struct {
 	PolicyVersion   string        `json:"policy_version,omitempty"`
 	ResourceVersion string        `json:"resource_version,omitempty"`
 	Audit           AuditFields   `json:"audit"`
+	// Operator-visible decision trace ID for Phase 19
+	TraceID string `json:"trace_id,omitempty"`
+	// Authority mode indicates whether decision was made by native authority or CSS
+	AuthorityMode string `json:"authority_mode,omitempty"`
+	// Enforcement mode indicates the current enforcement state
+	EnforcementMode string `json:"enforcement_mode,omitempty"`
+	// Strict mode indicates whether fail-closed policy was applied
+	StrictMode bool `json:"strict_mode,omitempty"`
+	// FallbackToCSS indicates whether CSS fallback was used
+	FallbackToCSS bool `json:"fallback_to_css,omitempty"`
 }
