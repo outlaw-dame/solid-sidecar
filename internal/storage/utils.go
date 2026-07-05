@@ -267,6 +267,43 @@ func validateTombstone(tombstone *Tombstone) error {
 	return nil
 }
 
+// estimateMetadataSize estimates the size of metadata for quota purposes
+func estimateMetadataSize(metadata *Metadata) int64 {
+	if metadata == nil {
+		return 0
+	}
+
+	size := 0
+	size += len(metadata.URI)
+	size += len(metadata.ResourceType)
+	size += len(metadata.ContentType)
+	size += len(metadata.Digest)
+	size += len(metadata.Owner)
+	size += len(metadata.StorageRoot)
+	size += len(metadata.Tenant)
+	size += len(metadata.ContentAddress)
+	size += len(metadata.ETag)
+
+	// Add size for maps
+	for k, v := range metadata.AuxiliaryLinks {
+		size += len(k) + len(v)
+	}
+	for _, v := range metadata.PolicyReferences {
+		size += len(v)
+	}
+	for k, v := range metadata.ValidatorState {
+		size += len(k) + len(v)
+	}
+	for k, v := range metadata.Custom {
+		size += len(k) + len(v)
+	}
+
+	// Add overhead for JSON serialization
+	size += 200
+
+	return int64(size)
+}
+
 // validateMetadataSize validates the size of metadata by estimating its serialized size
 func validateMetadataSize(metadata *Metadata) error {
 	// Estimate metadata size by approximating the JSON serialization size

@@ -129,7 +129,7 @@ func (b *memoryBackend) Get(ctx context.Context, uri string) (*Resource, error) 
 
 	// Validate URI is not empty
 	if uri == "" {
-		return nil, fmt.Errorf("URI cannot be empty")
+		return nil, SanitizeError(ErrEmptyURI)
 	}
 
 	// Check if tombstoned
@@ -181,7 +181,7 @@ func (b *memoryBackend) Put(ctx context.Context, uri string, resource *WriteReso
 
 	// Validate URI is not empty
 	if uri == "" {
-		return fmt.Errorf("URI cannot be empty")
+		return SanitizeError(ErrEmptyURI)
 	}
 
 	// Handle conditional writes (preconditions)
@@ -223,7 +223,7 @@ func (b *memoryBackend) Put(ctx context.Context, uri string, resource *WriteReso
 		var err error
 		body, err = io.ReadAll(resource.BodyReader)
 		if err != nil {
-			return fmt.Errorf("failed to read body: %w", err)
+			return SanitizeError(fmt.Errorf("failed to read body: %w", err))
 		}
 	}
 
@@ -236,8 +236,18 @@ func (b *memoryBackend) Put(ctx context.Context, uri string, resource *WriteReso
 		}
 	}
 
+	// Calculate size for quota: body size + estimated metadata size
+	resourceSize := int64(0)
 	if body != nil {
-		if err := b.checkAndUpdateQuota(storageRoot, int64(len(body))); err != nil {
+		resourceSize += int64(len(body))
+	}
+
+	// Add estimated metadata size
+	metadataSize := estimateMetadataSize(&resource.Metadata)
+	resourceSize += metadataSize
+
+	if resourceSize > 0 {
+		if err := b.checkAndUpdateQuota(storageRoot, resourceSize); err != nil {
 			return err
 		}
 	}
@@ -865,7 +875,7 @@ func (b *memoryBackend) Restore(ctx context.Context, reader io.Reader) error {
 
 	// Check backend compatibility
 	if backend, ok := manifest["backend"].(string); !ok || backend != "memory" {
-		return fmt.Errorf("incompatible backup: expected memory backend, got %s", backend)
+		return SanitizeError(fmt.Errorf("incompatible backup: expected memory backend"))
 	}
 
 	return nil

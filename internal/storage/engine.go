@@ -275,7 +275,7 @@ func NewStorageEngine(config EngineConfig) (StorageEngine, error) {
 
 	// Register default backends
 	if err := engine.registerDefaultBackends(config); err != nil {
-		return nil, fmt.Errorf("failed to register default backends: %w", err)
+		return nil, SanitizeError(fmt.Errorf("failed to initialize storage engine: %w", err))
 	}
 
 	// Set default backend
@@ -369,7 +369,7 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 	})
 
 	if err := s.RegisterBackend("filesystem", fsBackend); err != nil {
-		return fmt.Errorf("failed to register filesystem backend: %w", err)
+		return SanitizeError(fmt.Errorf("failed to register filesystem backend: %w", err))
 	}
 
 	// Register memory backend (for testing)
@@ -378,7 +378,7 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 	})
 
 	if err := s.RegisterBackend("memory", memBackend); err != nil {
-		return fmt.Errorf("failed to register memory backend: %w", err)
+		return SanitizeError(fmt.Errorf("failed to register memory backend: %w", err))
 	}
 
 	// Initialize configured backends
@@ -414,7 +414,7 @@ func (s *storageEngineImpl) registerDefaultBackends(config EngineConfig) error {
 		}
 
 		if err := s.RegisterBackend(name, backend); err != nil {
-			return fmt.Errorf("failed to register backend %q: %w", name, err)
+			return SanitizeError(fmt.Errorf("failed to register backend: %w", err))
 		}
 	}
 
@@ -650,7 +650,7 @@ func (s *storageEngineImpl) Put(ctx context.Context, resource *WriteResource) er
 			data, err := io.ReadAll(resource.BodyReader)
 			if err != nil {
 				s.metrics.RecordError("put", err)
-				return fmt.Errorf("failed to read body for quota check: %w", err)
+				return SanitizeError(fmt.Errorf("failed to read body for quota check: %w", err))
 			}
 			bodySize = int64(len(data))
 			// Reset the reader
@@ -659,7 +659,12 @@ func (s *storageEngineImpl) Put(ctx context.Context, resource *WriteResource) er
 			resource.BodySize = bodySize
 		}
 
-		if err := s.quotaManager.CheckQuota(ctx, resource.Metadata.StorageRoot, bodySize); err != nil {
+		// Calculate total size: body + metadata
+		totalSize := bodySize
+		metadataSize := estimateMetadataSize(&resource.Metadata)
+		totalSize += metadataSize
+
+		if err := s.quotaManager.CheckQuota(ctx, resource.Metadata.StorageRoot, totalSize); err != nil {
 			s.metrics.RecordError("put", err)
 			return err
 		}
@@ -889,6 +894,20 @@ func (s *storageEngineImpl) ExistsWithTombstone(ctx context.Context, uri string)
 // StoreBlob implements StorageEngine.StoreBlob
 func (s *storageEngineImpl) StoreBlob(ctx context.Context, data []byte) (ContentAddress, error) {
 	s.metrics.RecordRequest("blob_store")
+
+	// Check blob size against quota if enabled
+	if s.config.EnableQuotaManagement {
+		// For blobs, we need to determine the storage root
+		// Blobs are typically stored under a specific storage root
+		// For now, we'll use a default blob storage root
+		storageRoot := "blobs"
+
+		blobSize := int64(len(data))
+		if err := s.quotaManager.CheckQuota(ctx, storageRoot, blobSize); err != nil {
+			s.metrics.RecordError("blob_store", err)
+			return "", err
+		}
+	}
 
 	// Store in blob store - it will compute the address
 	address, err := s.blobStore.StoreBlob(ctx, data)

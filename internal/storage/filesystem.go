@@ -111,7 +111,7 @@ func (b *filesystemBackend) HealthCheck(ctx context.Context) error {
 	}
 
 	if _, err := os.Stat(b.config.RootPath); err != nil {
-		return fmt.Errorf("root path not accessible: %w", err)
+		return SanitizeError(fmt.Errorf("storage backend not accessible: %w", err))
 	}
 
 	return nil
@@ -187,12 +187,12 @@ func (b *filesystemBackend) Get(ctx context.Context, uri string) (*Resource, err
 
 	// Validate URI is not empty
 	if uri == "" {
-		return nil, fmt.Errorf("URI cannot be empty")
+		return nil, SanitizeError(ErrEmptyURI)
 	}
 
 	// Check if tombstoned
 	if _, exists := b.tombstones[uri]; exists {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, uri)
+		return nil, ErrNotFound
 	}
 
 	filePath := b.uriToPath(uri)
@@ -201,7 +201,7 @@ func (b *filesystemBackend) Get(ctx context.Context, uri string) (*Resource, err
 		if os.IsNotExist(err) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, SanitizeError(fmt.Errorf("failed to read resource: %w", err))
 	}
 
 	var metadata Metadata
@@ -264,7 +264,7 @@ func (b *filesystemBackend) GetMetadata(ctx context.Context, uri string) (*Metad
 			// Resource exists but no metadata - return basic metadata
 			fileInfo, err := os.Stat(filePath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to stat file: %w", err)
+				return nil, SanitizeError(fmt.Errorf("failed to stat resource: %w", err))
 			}
 
 			return &Metadata{
@@ -364,7 +364,7 @@ func (b *filesystemBackend) Put(ctx context.Context, uri string, resource *Write
 		var err error
 		body, err = io.ReadAll(resource.BodyReader)
 		if err != nil {
-			return fmt.Errorf("failed to read body: %w", err)
+			return SanitizeError(fmt.Errorf("failed to read body: %w", err))
 		}
 	}
 
@@ -377,8 +377,18 @@ func (b *filesystemBackend) Put(ctx context.Context, uri string, resource *Write
 		}
 	}
 
+	// Calculate size for quota: body size + estimated metadata size
+	resourceSize := int64(0)
 	if body != nil {
-		if err := b.checkAndUpdateQuota(storageRoot, int64(len(body))); err != nil {
+		resourceSize += int64(len(body))
+	}
+
+	// Add estimated metadata size
+	metadataSize := estimateMetadataSize(&resource.Metadata)
+	resourceSize += metadataSize
+
+	if resourceSize > 0 {
+		if err := b.checkAndUpdateQuota(storageRoot, resourceSize); err != nil {
 			return err
 		}
 	}
@@ -389,7 +399,7 @@ func (b *filesystemBackend) Put(ctx context.Context, uri string, resource *Write
 		if body != nil && storageRoot != "" {
 			b.rollbackQuota(storageRoot, int64(len(body)))
 		}
-		return fmt.Errorf("failed to write file: %w", err)
+		return SanitizeError(fmt.Errorf("failed to write resource: %w", err))
 	}
 
 	// Prepare and write metadata
@@ -422,7 +432,7 @@ func (b *filesystemBackend) Put(ctx context.Context, uri string, resource *Write
 	}
 
 	if err := os.WriteFile(b.metadataPath(uri), metadataData, 0640); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
+		return SanitizeError(fmt.Errorf("failed to write metadata: %w", err))
 	}
 
 	// Remove tombstone if it exists
@@ -441,7 +451,7 @@ func (b *filesystemBackend) getResourceNoLock(uri string) (*Resource, error) {
 
 	// Check if tombstoned
 	if _, exists := b.tombstones[uri]; exists {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, uri)
+		return nil, ErrNotFound
 	}
 
 	data, err := os.ReadFile(filePath)
@@ -490,7 +500,7 @@ func (b *filesystemBackend) Delete(ctx context.Context, uri string) error {
 
 	// Remove the file
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove file: %w", err)
+		return SanitizeError(fmt.Errorf("failed to remove resource: %w", err))
 	}
 
 	// Remove metadata
@@ -1317,7 +1327,7 @@ func (b *filesystemBackend) Restore(ctx context.Context, reader io.Reader) error
 
 	// Check backend compatibility
 	if backend, ok := manifest["backend"].(string); !ok || backend != "filesystem" {
-		return fmt.Errorf("incompatible backup: expected filesystem backend, got %s", backend)
+		return SanitizeError(fmt.Errorf("incompatible backup: expected filesystem backend"))
 	}
 
 	return nil

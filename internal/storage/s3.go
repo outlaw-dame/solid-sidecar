@@ -439,6 +439,32 @@ func (b *s3Backend) Put(ctx context.Context, uri string, resource *WriteResource
 
 	key := b.s3KeyFromURI(validatedURI)
 
+	// Calculate size for quota: body size + estimated metadata size
+	// Even though S3 doesn't have native quota, we still need to enforce it at the storage layer
+	resourceSize := int64(0)
+	if resource.Body != nil {
+		resourceSize += int64(len(resource.Body))
+	}
+
+	// Add estimated metadata size
+	metadataSize := estimateMetadataSize(&resource.Metadata)
+	resourceSize += metadataSize
+
+	// Check quota - extract storage root from metadata or URI
+	storageRoot := resource.Metadata.StorageRoot
+	if storageRoot == "" {
+		storageRoot = validatedURI
+		if idx := strings.Index(validatedURI, "/"); idx > 0 {
+			storageRoot = validatedURI[:idx]
+		}
+	}
+
+	if resourceSize > 0 {
+		if err := b.CheckQuota(ctx, storageRoot, resourceSize); err != nil {
+			return SanitizeError(err)
+		}
+	}
+
 	// Prepare the input
 	input := &s3.PutObjectInput{
 		Bucket: aws.String(b.config.Bucket),
@@ -1300,8 +1326,15 @@ func (b *s3Backend) CheckQuota(ctx context.Context, storageRoot string, addition
 		return SanitizeError(err)
 	}
 
-	// S3 doesn't have native quota support
-	// This is handled at the storage engine level
+	// If we have a quota manager, use it
+	if b.quotaManager != nil {
+		return b.quotaManager.CheckQuota(ctx, storageRoot, additionalBytes)
+	}
+
+	// S3 doesn't have native quota support, but we still return an error if quota would be exceeded
+	// This prevents quota bypass even though S3 itself doesn't enforce it
+	// For now, we allow unlimited if no quota manager is configured
+	// In production, a quota manager should always be configured
 	return nil
 }
 
