@@ -137,25 +137,25 @@ type TenantDPoPSettings struct {
 func DefaultTenantAuthConfig() *TenantAuthConfig {
 	return &TenantAuthConfig{
 		IssuerTrustPolicy: TenantIssuerTrustPolicy{
-			AllowedIssuers:        []string{},
-			BlockedIssuers:        []string{},
+			AllowedIssuers:         []string{},
+			BlockedIssuers:         []string{},
 			RequireIssuerAllowlist: false,
 			AllowIssuerDiscovery:   true,
 			IssuerPinning:          make(map[string]TenantIssuerPin),
 			JWKSEndpointTTL:        1 * time.Hour,
 		},
-		AuthzMode:         TenantAuthzModeInherit,
-		CompressionMode:   TenantCompressionModeInherit,
+		AuthzMode:       TenantAuthzModeInherit,
+		CompressionMode: TenantCompressionModeInherit,
 		DPoPSettings: TenantDPoPSettings{
 			RequireDPoPForAllRequests:   false,
 			RequireDPoPForWriteRequests: true,
 			DPoPReplayWindow:            10 * time.Minute,
-			DPoPMaxNonceAge:            10 * time.Minute,
-			DPoPNonceCleanupInterval:   5 * time.Minute,
+			DPoPMaxNonceAge:             10 * time.Minute,
+			DPoPNonceCleanupInterval:    5 * time.Minute,
 		},
-		WebIDProfileCacheTTL:   5 * time.Minute,
+		WebIDProfileCacheTTL:     5 * time.Minute,
 		MaxWebIDProfileCacheSize: 1000,
-		IdentityAssuranceLevel:  "low",
+		IdentityAssuranceLevel:   "low",
 	}
 }
 
@@ -285,7 +285,7 @@ func NewTenantAuthManager(logger *slog.Logger) *TenantAuthManager {
 	}
 
 	return &TenantAuthManager{
-		tenantAuthConfigs:  make(map[string]*TenantAuthConfig),
+		tenantAuthConfigs: make(map[string]*TenantAuthConfig),
 		defaultAuthConfig: DefaultTenantAuthConfig(),
 		logger:            logger,
 	}
@@ -435,19 +435,19 @@ func (m *TenantAuthManager) copyTenantAuthConfig(config *TenantAuthConfig) *Tena
 
 	return &TenantAuthConfig{
 		IssuerTrustPolicy: TenantIssuerTrustPolicy{
-			AllowedIssuers:        allowedIssuers,
-			BlockedIssuers:        blockedIssuers,
+			AllowedIssuers:         allowedIssuers,
+			BlockedIssuers:         blockedIssuers,
 			RequireIssuerAllowlist: config.IssuerTrustPolicy.RequireIssuerAllowlist,
 			AllowIssuerDiscovery:   config.IssuerTrustPolicy.AllowIssuerDiscovery,
 			IssuerPinning:          issuerPinning,
 			JWKSEndpointTTL:        config.IssuerTrustPolicy.JWKSEndpointTTL,
 		},
-		AuthzMode:         config.AuthzMode,
-		CompressionMode:   config.CompressionMode,
-		DPoPSettings:      dpopSettings,
-		WebIDProfileCacheTTL:   config.WebIDProfileCacheTTL,
+		AuthzMode:                config.AuthzMode,
+		CompressionMode:          config.CompressionMode,
+		DPoPSettings:             dpopSettings,
+		WebIDProfileCacheTTL:     config.WebIDProfileCacheTTL,
 		MaxWebIDProfileCacheSize: config.MaxWebIDProfileCacheSize,
-		IdentityAssuranceLevel:  config.IdentityAssuranceLevel,
+		IdentityAssuranceLevel:   config.IdentityAssuranceLevel,
 	}
 }
 

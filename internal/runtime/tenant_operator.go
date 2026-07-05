@@ -61,12 +61,12 @@ type OperatorAPIConfig struct {
 // DefaultOperatorAPIConfig returns a safe default configuration
 func DefaultOperatorAPIConfig() OperatorAPIConfig {
 	return OperatorAPIConfig{
-		BasePath:           "/admin/api/v1",
-		AdminAPIKey:        "", // Must be explicitly set
+		BasePath:             "/admin/api/v1",
+		AdminAPIKey:          "", // Must be explicitly set
 		EnableTenantCreation: true,
 		EnableTenantDeletion: false, // Disabled by default for safety
-		MaxTenants:         0,    // Unlimited
-		Logger:             nil,
+		MaxTenants:           0,     // Unlimited
+		Logger:               nil,
 	}
 }
 
@@ -241,11 +241,11 @@ func (api *OperatorAPI) handleListTenants(w http.ResponseWriter, r *http.Request
 	tenantSummaries := make([]TenantSummary, 0, len(tenants))
 	for _, tenant := range tenants {
 		tenantSummaries = append(tenantSummaries, TenantSummary{
-			TenantID:      tenant.TenantID,
+			TenantID:       tenant.TenantID,
 			StorageBackend: tenant.StorageBackend,
-			Enabled:       tenant.Enabled,
-			Created:       tenant.Created,
-			Modified:      tenant.Modified,
+			Enabled:        tenant.Enabled,
+			Created:        tenant.Created,
+			Modified:       tenant.Modified,
 			// Don't expose quotas or other sensitive info in list
 		})
 	}
@@ -377,9 +377,9 @@ func (api *OperatorAPI) handleCreateTenant(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusCreated)
 
 	if err := json.NewEncoder(w).Encode(TenantCreateResponse{
-		TenantID:      request.TenantID,
-		Message:       "Tenant created successfully",
-		Created:       now,
+		TenantID:       request.TenantID,
+		Message:        "Tenant created successfully",
+		Created:        now,
 		StorageBackend: tenantConfig.StorageBackend,
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant create response", "error", err)
@@ -438,10 +438,10 @@ func (api *OperatorAPI) handleGetTenant(w http.ResponseWriter, r *http.Request) 
 		ResourceQuotas:         tenant.ResourceQuotas,
 		ACLConfig:              tenant.ACLConfig,
 		// Don't expose AuthConfig in detail response for privacy
-		Metadata:               tenant.Metadata,
-		Created:                tenant.Created,
-		Modified:               tenant.Modified,
-		Enabled:                tenant.Enabled,
+		Metadata: tenant.Metadata,
+		Created:  tenant.Created,
+		Modified: tenant.Modified,
+		Enabled:  tenant.Enabled,
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant detail response", "error", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -543,9 +543,9 @@ func (api *OperatorAPI) handleUpdateTenant(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(TenantUpdateResponse{
-		TenantID:      tenantID,
-		Message:       "Tenant updated successfully",
-		Modified:      updatedTenant.Modified,
+		TenantID:       tenantID,
+		Message:        "Tenant updated successfully",
+		Modified:       updatedTenant.Modified,
 		StorageBackend: updatedTenant.StorageBackend,
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant update response", "error", err)
@@ -653,11 +653,11 @@ func (api *OperatorAPI) handleGetTenantHealth(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(TenantHealthResponse{
-		TenantID:       tenantID,
-		StorageBackend: healthStatus.StorageBackend,
-		Healthy:        healthStatus.Healthy,
+		TenantID:        tenantID,
+		StorageBackend:  healthStatus.StorageBackend,
+		Healthy:         healthStatus.Healthy,
 		LastHealthCheck: healthStatus.LastHealthCheck,
-		ResponseTime:   healthStatus.ResponseTime,
+		ResponseTime:    healthStatus.ResponseTime,
 		// Don't expose LastError in response for privacy
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant health response", "error", err)
@@ -711,8 +711,8 @@ func (api *OperatorAPI) handleGetTenantAuthConfig(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(TenantAuthConfigResponse{
-		TenantID:       tenantID,
-		AuthConfig:     authConfig,
+		TenantID:   tenantID,
+		AuthConfig: authConfig,
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant auth config response", "error", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -779,7 +779,7 @@ func (api *OperatorAPI) handleUpdateTenantAuthConfig(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(TenantAuthConfigUpdateResponse{
-		TenantID:  tenantID,
+		TenantID: tenantID,
 		Message:  "Tenant auth config updated successfully",
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant auth config update response", "error", err)
@@ -831,8 +831,8 @@ func (api *OperatorAPI) handleGetTenantStorageConfig(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(TenantStorageConfigResponse{
-		TenantID:        tenantID,
-		StorageBackend:  storage,
+		TenantID:       tenantID,
+		StorageBackend: storage,
 	}); err != nil {
 		api.logger.Error("Failed to encode tenant storage config response", "error", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -868,18 +868,18 @@ type TenantListResponse struct {
 }
 
 type TenantSummary struct {
-	TenantID      string `json:"tenant_id"`
+	TenantID       string `json:"tenant_id"`
 	StorageBackend string `json:"storage_backend"`
-	Enabled       bool   `json:"enabled"`
-	Created       string `json:"created"`
-	Modified      string `json:"modified"`
+	Enabled        bool   `json:"enabled"`
+	Created        string `json:"created"`
+	Modified       string `json:"modified"`
 }
 
 type TenantDetailResponse struct {
 	TenantID               string            `json:"tenant_id"`
 	StorageBackend         string            `json:"storage_backend"`
 	AllowedStorageBackends []string          `json:"allowed_storage_backends"`
-	ResourceQuotas         TenantQuotas     `json:"resource_quotas"`
+	ResourceQuotas         TenantQuotas      `json:"resource_quotas"`
 	ACLConfig              TenantACLConfig   `json:"acl_config"`
 	Metadata               map[string]string `json:"metadata"`
 	Created                string            `json:"created"`
@@ -892,7 +892,7 @@ type TenantCreateRequest struct {
 	StorageRoot            string            `json:"storage_root"`
 	StorageBackend         string            `json:"storage_backend"`
 	AllowedStorageBackends []string          `json:"allowed_storage_backends"`
-	ResourceQuotas         TenantQuotas     `json:"resource_quotas"`
+	ResourceQuotas         TenantQuotas      `json:"resource_quotas"`
 	ACLConfig              TenantACLConfig   `json:"acl_config"`
 	AuthConfig             *TenantAuthConfig `json:"auth_config"`
 	Metadata               map[string]string `json:"metadata"`
@@ -900,9 +900,9 @@ type TenantCreateRequest struct {
 }
 
 type TenantCreateResponse struct {
-	TenantID      string `json:"tenant_id"`
-	Message       string `json:"message"`
-	Created       string `json:"created"`
+	TenantID       string `json:"tenant_id"`
+	Message        string `json:"message"`
+	Created        string `json:"created"`
 	StorageBackend string `json:"storage_backend"`
 }
 
@@ -910,29 +910,29 @@ type TenantUpdateRequest struct {
 	StorageRoot            string            `json:"storage_root"`
 	StorageBackend         string            `json:"storage_backend"`
 	AllowedStorageBackends []string          `json:"allowed_storage_backends"`
-	ResourceQuotas         TenantQuotas     `json:"resource_quotas"`
+	ResourceQuotas         TenantQuotas      `json:"resource_quotas"`
 	ACLConfig              TenantACLConfig   `json:"acl_config"`
 	Metadata               map[string]string `json:"metadata"`
 	Enabled                bool              `json:"enabled"`
 }
 
 type TenantUpdateResponse struct {
-	TenantID      string `json:"tenant_id"`
-	Message       string `json:"message"`
-	Modified      string `json:"modified"`
+	TenantID       string `json:"tenant_id"`
+	Message        string `json:"message"`
+	Modified       string `json:"modified"`
 	StorageBackend string `json:"storage_backend"`
 }
 
 type TenantHealthResponse struct {
-	TenantID       string  `json:"tenant_id"`
-	StorageBackend string  `json:"storage_backend"`
-	Healthy        bool    `json:"healthy"`
-	LastHealthCheck string `json:"last_health_check"`
-	ResponseTime   float64 `json:"response_time_ms"`
+	TenantID        string  `json:"tenant_id"`
+	StorageBackend  string  `json:"storage_backend"`
+	Healthy         bool    `json:"healthy"`
+	LastHealthCheck string  `json:"last_health_check"`
+	ResponseTime    float64 `json:"response_time_ms"`
 }
 
 type TenantAuthConfigResponse struct {
-	TenantID  string           `json:"tenant_id"`
+	TenantID   string            `json:"tenant_id"`
 	AuthConfig *TenantAuthConfig `json:"auth_config"`
 }
 

@@ -323,15 +323,15 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 	}
 
 	layer := &MultiStorageLayer{
-		config:        config,
-		storageRoutes: make(map[string]*StorageRoute),
-		tenants:       make(map[string]*TenantConfig),
-		tenantStorage: make(map[string]string),
-		healthStatus:  make(map[string]TenantHealthStatus),
-		logger:        config.Logger,
+		config:            config,
+		storageRoutes:     make(map[string]*StorageRoute),
+		tenants:           make(map[string]*TenantConfig),
+		tenantStorage:     make(map[string]string),
+		healthStatus:      make(map[string]TenantHealthStatus),
+		logger:            config.Logger,
 		tenantAuthManager: NewTenantAuthManager(config.Logger),
-		closeChan:     make(chan struct{}),
-		closed:        false,
+		closeChan:         make(chan struct{}),
+		closed:            false,
 		metrics: MultiStorageMetrics{
 			BackendOperations: make(map[string]int64),
 		},
@@ -372,10 +372,10 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 			PublicReadEnabled: false,
 		},
 		AuthConfig: DefaultTenantAuthConfig(),
-		Metadata: make(map[string]string),
-		Created:  time.Now().Format(time.RFC3339),
-		Modified: time.Now().Format(time.RFC3339),
-		Enabled:  true,
+		Metadata:   make(map[string]string),
+		Created:    time.Now().Format(time.RFC3339),
+		Modified:   time.Now().Format(time.RFC3339),
+		Enabled:    true,
 	})
 
 	// Start health monitoring if enabled

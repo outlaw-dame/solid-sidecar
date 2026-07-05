@@ -60,10 +60,10 @@ type IsolationViolation struct {
 // NewTenantIsolationTester creates a new tenant isolation tester
 func NewTenantIsolationTester(multiStorage *MultiStorageLayer) *TenantIsolationTester {
 	return &TenantIsolationTester{
-		multiStorage:   multiStorage,
-		logger:        slog.Default(),
-		testTenants:    []*TenantConfig{},
-		testResources:  make(map[string][]string),
+		multiStorage:        multiStorage,
+		logger:              slog.Default(),
+		testTenants:         []*TenantConfig{},
+		testResources:       make(map[string][]string),
 		isolationViolations: []IsolationViolation{},
 	}
 }
@@ -84,7 +84,7 @@ func (t *TenantIsolationTester) SetupTestTenants() error {
 			ResourceQuotas: TenantQuotas{
 				MaxResources:         100,
 				MaxStorage:           1024 * 1024 * 100, // 100 MB
-				MaxBandwidth:         1024 * 1024,      // 1 MB/s
+				MaxBandwidth:         1024 * 1024,       // 1 MB/s
 				MaxRequestsPerSecond: 100,
 			},
 			ACLConfig: TenantACLConfig{
@@ -93,10 +93,10 @@ func (t *TenantIsolationTester) SetupTestTenants() error {
 				PublicReadEnabled: false,
 			},
 			AuthConfig: DefaultTenantAuthConfig(),
-			Metadata:  map[string]string{"test": "true"},
-			Created:   time.Now().Format(time.RFC3339),
-			Modified:  time.Now().Format(time.RFC3339),
-			Enabled:   true,
+			Metadata:   map[string]string{"test": "true"},
+			Created:    time.Now().Format(time.RFC3339),
+			Modified:   time.Now().Format(time.RFC3339),
+			Enabled:    true,
 		}
 
 		if err := t.multiStorage.AddTenant(tenantConfig); err != nil {
@@ -167,13 +167,13 @@ func (t *TenantIsolationTester) TestTenantIDValidation() error {
 	for _, tc := range testCases {
 		if err := ValidateTenantID(tc.tenantID); (err != nil) != tc.wantErr {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantIDValidation",
+				TestName:     "TestTenantIDValidation",
 				SourceTenant: tc.tenantID,
 				TargetTenant: "",
 				ResourceURI:  "tenant-id-validation",
 				AccessType:   "validation",
-				Timestamp:   time.Now(),
-				Error:       fmt.Errorf("ValidateTenantID(%q) error = %v, wantErr %v", tc.tenantID, err, tc.wantErr),
+				Timestamp:    time.Now(),
+				Error:        fmt.Errorf("ValidateTenantID(%q) error = %v, wantErr %v", tc.tenantID, err, tc.wantErr),
 			})
 		}
 	}
@@ -193,13 +193,13 @@ func (t *TenantIsolationTester) TestTenantStorageIsolation() error {
 
 		if storage != tenant.StorageBackend {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantStorageIsolation",
+				TestName:     "TestTenantStorageIsolation",
 				SourceTenant: tenant.TenantID,
 				TargetTenant: tenant.TenantID,
 				ResourceURI:  "storage-backend",
 				AccessType:   "storage-resolution",
-				Timestamp:   time.Now(),
-				Error:       fmt.Errorf("expected storage %s, got %s", tenant.StorageBackend, storage),
+				Timestamp:    time.Now(),
+				Error:        fmt.Errorf("expected storage %s, got %s", tenant.StorageBackend, storage),
 			})
 		}
 	}
@@ -211,13 +211,13 @@ func (t *TenantIsolationTester) TestTenantStorageIsolation() error {
 	}
 	if unknownStorage != t.multiStorage.config.DefaultStorage {
 		t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-			TestName:    "TestTenantStorageIsolation",
+			TestName:     "TestTenantStorageIsolation",
 			SourceTenant: "unknown-tenant",
 			TargetTenant: "",
 			ResourceURI:  "storage-backend",
 			AccessType:   "default-storage-resolution",
-			Timestamp:   time.Now(),
-			Error:       fmt.Errorf("expected default storage, got %s", unknownStorage),
+			Timestamp:    time.Now(),
+			Error:        fmt.Errorf("expected default storage, got %s", unknownStorage),
 		})
 	}
 
@@ -236,13 +236,13 @@ func (t *TenantIsolationTester) TestTenantConfigIsolation() error {
 		// Verify that we get the same tenant ID back
 		if config.TenantID != tenant.TenantID {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantConfigIsolation",
+				TestName:     "TestTenantConfigIsolation",
 				SourceTenant: tenant.TenantID,
 				TargetTenant: config.TenantID,
 				ResourceURI:  "tenant-config",
 				AccessType:   "config-retrieval",
-				Timestamp:   time.Now(),
-				Error:       errors.New("tenant ID mismatch"),
+				Timestamp:    time.Now(),
+				Error:        errors.New("tenant ID mismatch"),
 			})
 		}
 
@@ -254,13 +254,13 @@ func (t *TenantIsolationTester) TestTenantConfigIsolation() error {
 
 		if authConfig == nil {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantConfigIsolation",
+				TestName:     "TestTenantConfigIsolation",
 				SourceTenant: tenant.TenantID,
 				TargetTenant: "",
 				ResourceURI:  "auth-config",
 				AccessType:   "auth-config-retrieval",
-				Timestamp:   time.Now(),
-				Error:       errors.New("auth config should not be nil"),
+				Timestamp:    time.Now(),
+				Error:        errors.New("auth config should not be nil"),
 			})
 		}
 	}
@@ -279,13 +279,13 @@ func (t *TenantIsolationTester) TestTenantConfigIsolation() error {
 	// These should be different tenant objects
 	if tenantAConfig.TenantID == tenantBConfig.TenantID {
 		t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-			TestName:    "TestTenantConfigIsolation",
+			TestName:     "TestTenantConfigIsolation",
 			SourceTenant: "tenant-a",
 			TargetTenant: "tenant-b",
 			ResourceURI:  "tenant-config",
 			AccessType:   "cross-tenant-config-access",
-			Timestamp:   time.Now(),
-			Error:       errors.New("tenants should have different configurations"),
+			Timestamp:    time.Now(),
+			Error:        errors.New("tenants should have different configurations"),
 		})
 	}
 
@@ -330,13 +330,13 @@ func (t *TenantIsolationTester) TestTenantHealthIsolation() error {
 		// Health status should be for the correct tenant
 		if healthStatus.TenantID != tenant.TenantID {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantHealthIsolation",
+				TestName:     "TestTenantHealthIsolation",
 				SourceTenant: tenant.TenantID,
 				TargetTenant: healthStatus.TenantID,
 				ResourceURI:  "health-status",
 				AccessType:   "health-check",
-				Timestamp:   time.Now(),
-				Error:       errors.New("health status tenant ID mismatch"),
+				Timestamp:    time.Now(),
+				Error:        errors.New("health status tenant ID mismatch"),
 			})
 		}
 	}
@@ -356,13 +356,13 @@ func (t *TenantIsolationTester) TestTenantMetricsIsolation() error {
 	// This is a basic test - real implementation would have more detailed metrics
 	if metrics.TenantLookups < 0 {
 		t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-			TestName:    "TestTenantMetricsIsolation",
+			TestName:     "TestTenantMetricsIsolation",
 			SourceTenant: "all",
 			TargetTenant: "all",
 			ResourceURI:  "metrics",
 			AccessType:   "metrics-validation",
-			Timestamp:   time.Now(),
-			Error:       errors.New("invalid tenant lookup count"),
+			Timestamp:    time.Now(),
+			Error:        errors.New("invalid tenant lookup count"),
 		})
 	}
 
@@ -445,10 +445,10 @@ func (t *TenantIsolationTester) TestTenantDeletionIsolation() error {
 			PublicReadEnabled: false,
 		},
 		AuthConfig: DefaultTenantAuthConfig(),
-		Metadata:  map[string]string{"temp": "true"},
-		Created:   time.Now().Format(time.RFC3339),
-		Modified:  time.Now().Format(time.RFC3339),
-		Enabled:   true,
+		Metadata:   map[string]string{"temp": "true"},
+		Created:    time.Now().Format(time.RFC3339),
+		Modified:   time.Now().Format(time.RFC3339),
+		Enabled:    true,
 	}
 
 	// Add temporary tenant
@@ -469,13 +469,13 @@ func (t *TenantIsolationTester) TestTenantDeletionIsolation() error {
 	// Verify temp tenant is gone
 	if _, err := t.multiStorage.GetTenant(tempTenantID); err == nil {
 		t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-			TestName:    "TestTenantDeletionIsolation",
+			TestName:     "TestTenantDeletionIsolation",
 			SourceTenant: tempTenantID,
 			TargetTenant: "",
 			ResourceURI:  "tenant-config",
 			AccessType:   "post-deletion-verification",
-			Timestamp:   time.Now(),
-			Error:       errors.New("temp tenant should have been deleted"),
+			Timestamp:    time.Now(),
+			Error:        errors.New("temp tenant should have been deleted"),
 		})
 	}
 
@@ -483,13 +483,13 @@ func (t *TenantIsolationTester) TestTenantDeletionIsolation() error {
 	for _, tenant := range t.testTenants {
 		if _, err := t.multiStorage.GetTenant(tenant.TenantID); err != nil {
 			t.isolationViolations = append(t.isolationViolations, IsolationViolation{
-				TestName:    "TestTenantDeletionIsolation",
+				TestName:     "TestTenantDeletionIsolation",
 				SourceTenant: tenant.TenantID,
 				TargetTenant: "",
 				ResourceURI:  "tenant-config",
 				AccessType:   "other-tenant-verification",
-				Timestamp:   time.Now(),
-				Error:       fmt.Errorf("tenant %s should still exist after deleting %s", tenant.TenantID, tempTenantID),
+				Timestamp:    time.Now(),
+				Error:        fmt.Errorf("tenant %s should still exist after deleting %s", tenant.TenantID, tempTenantID),
 			})
 		}
 	}
@@ -619,10 +619,10 @@ func TestTenantConfigValidation(t *testing.T) {
 			PublicReadEnabled: false,
 		},
 		AuthConfig: DefaultTenantAuthConfig(),
-		Metadata:  map[string]string{"test": "true"},
-		Created:   time.Now().Format(time.RFC3339),
-		Modified:  time.Now().Format(time.RFC3339),
-		Enabled:   true,
+		Metadata:   map[string]string{"test": "true"},
+		Created:    time.Now().Format(time.RFC3339),
+		Modified:   time.Now().Format(time.RFC3339),
+		Enabled:    true,
 	}
 
 	// Test tenant ID validation
@@ -662,8 +662,8 @@ func TestTenantAuthConfigCopy(t *testing.T) {
 	// Create test config
 	originalConfig := &TenantAuthConfig{
 		IssuerTrustPolicy: TenantIssuerTrustPolicy{
-			AllowedIssuers:        []string{"https://issuer1.example.com"},
-			BlockedIssuers:        []string{"https://blocked.example.com"},
+			AllowedIssuers:         []string{"https://issuer1.example.com"},
+			BlockedIssuers:         []string{"https://blocked.example.com"},
 			RequireIssuerAllowlist: true,
 			AllowIssuerDiscovery:   true,
 			IssuerPinning: map[string]TenantIssuerPin{
@@ -674,18 +674,18 @@ func TestTenantAuthConfigCopy(t *testing.T) {
 			},
 			JWKSEndpointTTL: 1 * time.Hour,
 		},
-		AuthzMode:         TenantAuthzModeNative,
-		CompressionMode:   TenantCompressionModeGzip,
+		AuthzMode:       TenantAuthzModeNative,
+		CompressionMode: TenantCompressionModeGzip,
 		DPoPSettings: TenantDPoPSettings{
 			RequireDPoPForAllRequests:   true,
 			RequireDPoPForWriteRequests: true,
 			DPoPReplayWindow:            5 * time.Minute,
-			DPoPMaxNonceAge:            5 * time.Minute,
-			DPoPNonceCleanupInterval:   2 * time.Minute,
+			DPoPMaxNonceAge:             5 * time.Minute,
+			DPoPNonceCleanupInterval:    2 * time.Minute,
 		},
-		WebIDProfileCacheTTL:   10 * time.Minute,
+		WebIDProfileCacheTTL:     10 * time.Minute,
 		MaxWebIDProfileCacheSize: 5000,
-		IdentityAssuranceLevel:  "high",
+		IdentityAssuranceLevel:   "high",
 	}
 
 	// Add config to manager
@@ -913,10 +913,10 @@ func TestTenantConfigLoader(t *testing.T) {
 			PublicReadEnabled: false,
 		},
 		AuthConfig: DefaultTenantAuthConfig(),
-		Metadata:  map[string]string{"test": "loader"},
-		Created:   time.Now().Format(time.RFC3339),
-		Modified:  time.Now().Format(time.RFC3339),
-		Enabled:   true,
+		Metadata:   map[string]string{"test": "loader"},
+		Created:    time.Now().Format(time.RFC3339),
+		Modified:   time.Now().Format(time.RFC3339),
+		Enabled:    true,
 	}
 
 	// Save tenant config

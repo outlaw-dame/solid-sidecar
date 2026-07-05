@@ -155,13 +155,13 @@ func DefaultCardinalityController() *CardinalityController {
 		labelCounts:    make(map[string]map[string]bool),
 		maxCardinality: make(map[string]int),
 		fallbackValues: map[string]string{
-			"tenant_id":         "other_tenant",
-			"error_category":   "other_error",
-			"resource_category": "other_resource",
+			"tenant_id":           "other_tenant",
+			"error_category":      "other_error",
+			"resource_category":   "other_resource",
 			"auth_event_category": "other_auth",
-			"action_category":   "other_action",
-			"status":            "unknown",
-			"log_level":         "unknown",
+			"action_category":     "other_action",
+			"status":              "unknown",
+			"log_level":           "unknown",
 		},
 	}
 }
@@ -545,15 +545,17 @@ func GetGlobalTenantMetrics() *TenantMetrics {
 // NoOpTenantMetrics is a no-op implementation for when metrics are disabled
 type NoOpTenantMetrics struct{}
 
-func (n *NoOpTenantMetrics) RecordRequest(tenantID string, duration float64, success bool, errorType string) {}
-func (n *NoOpTenantMetrics) RecordStorageUsage(tenantID string, bytesUsed float64)           {}
-func (n *NoOpTenantMetrics) RecordResourceCount(tenantID string, resourceType string, count float64) {}
-func (n *NoOpTenantMetrics) RecordConnectionCount(tenantID string, count float64)            {}
+func (n *NoOpTenantMetrics) RecordRequest(tenantID string, duration float64, success bool, errorType string) {
+}
+func (n *NoOpTenantMetrics) RecordStorageUsage(tenantID string, bytesUsed float64) {}
+func (n *NoOpTenantMetrics) RecordResourceCount(tenantID string, resourceType string, count float64) {
+}
+func (n *NoOpTenantMetrics) RecordConnectionCount(tenantID string, count float64)             {}
 func (n *NoOpTenantMetrics) RecordAuthEvent(tenantID string, eventType string, status string) {}
-func (n *NoOpTenantMetrics) RecordHealthStatus(tenantID string, healthy bool)                {}
-func (n *NoOpTenantMetrics) RecordConfigReload(tenantID string, success bool)               {}
-func (n *NoOpTenantMetrics) RecordAuditLog(tenantID string, level string, action string)     {}
-func (n *NoOpTenantMetrics) UpdateLabelCardinalityMetrics()                                    {}
+func (n *NoOpTenantMetrics) RecordHealthStatus(tenantID string, healthy bool)                 {}
+func (n *NoOpTenantMetrics) RecordConfigReload(tenantID string, success bool)                 {}
+func (n *NoOpTenantMetrics) RecordAuditLog(tenantID string, level string, action string)      {}
+func (n *NoOpTenantMetrics) UpdateLabelCardinalityMetrics()                                   {}
 func (n *NoOpTenantMetrics) GetCardinalityWarning() string                                    { return "" }
 
 // NewNoOpTenantMetrics creates a new no-op tenant metrics instance

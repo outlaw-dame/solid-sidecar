@@ -64,10 +64,10 @@ const (
 // DefaultAuditLogRetentionPolicy returns a safe default retention policy
 func DefaultAuditLogRetentionPolicy() AuditLogRetentionPolicy {
 	return AuditLogRetentionPolicy{
-		MaxAge:                 90 * 24 * time.Hour, // 90 days
+		MaxAge:                 90 * 24 * time.Hour,     // 90 days
 		MaxSize:                10 * 1024 * 1024 * 1024, // 10 GB
-		MaxEntries:             1000000, // 1 million entries
-		RetentionCheckInterval: 24 * time.Hour, // Check daily
+		MaxEntries:             1000000,                 // 1 million entries
+		RetentionCheckInterval: 24 * time.Hour,          // Check daily
 		CompressionEnabled:     true,
 		EncryptionEnabled:      false,
 		PartitionStrategy:      AuditLogPartitionByTenantAndDay,
@@ -192,16 +192,16 @@ type TenantAuditLogger struct {
 	closed    bool
 
 	// metrics
-	entriesLogged int64
+	entriesLogged  int64
 	entriesRemoved int64
 }
 
 // auditLogWriter handles writing to a specific audit log file
 type auditLogWriter struct {
-	file     *os.File
-	encoder  *json.Encoder
-	filePath string
-	size     int64
+	file       *os.File
+	encoder    *json.Encoder
+	filePath   string
+	size       int64
 	entryCount int
 }
 
@@ -226,9 +226,9 @@ type TenantAuditLoggerConfig struct {
 // DefaultTenantAuditLoggerConfig returns a safe default configuration
 func DefaultTenantAuditLoggerConfig() TenantAuditLoggerConfig {
 	return TenantAuditLoggerConfig{
-		LogDir:              "./var/log/audit",
-		RetentionPolicy:     DefaultAuditLogRetentionPolicy(),
-		Logger:              nil,
+		LogDir:               "./var/log/audit",
+		RetentionPolicy:      DefaultAuditLogRetentionPolicy(),
+		Logger:               nil,
 		EnableInMemoryBuffer: true,
 		InMemoryBufferSize:   1000,
 	}
@@ -242,13 +242,13 @@ func NewTenantAuditLogger(config TenantAuditLoggerConfig) *TenantAuditLogger {
 
 	logger := &TenantAuditLogger{
 		logger:           config.Logger,
-		retentionPolicy: config.RetentionPolicy,
-		logDir:          config.LogDir,
-		entries:         make([]AuditLogEntry, 0, config.InMemoryBufferSize),
-		entryIndex:      make(map[string]int),
+		retentionPolicy:  config.RetentionPolicy,
+		logDir:           config.LogDir,
+		entries:          make([]AuditLogEntry, 0, config.InMemoryBufferSize),
+		entryIndex:       make(map[string]int),
 		partitionWriters: make(map[string]*auditLogWriter),
-		closeChan:       make(chan struct{}),
-		closed:          false,
+		closeChan:        make(chan struct{}),
+		closed:           false,
 	}
 
 	// Ensure log directory exists
@@ -550,10 +550,10 @@ func (al *TenantAuditLogger) createPartitionWriter(partitionKey string) (*auditL
 	}
 
 	writer := &auditLogWriter{
-		file:      file,
-		encoder:   json.NewEncoder(file),
-		filePath:  filePath,
-		size:      fileInfo.Size(),
+		file:       file,
+		encoder:    json.NewEncoder(file),
+		filePath:   filePath,
+		size:       fileInfo.Size(),
 		entryCount: entryCount,
 	}
 
@@ -589,7 +589,7 @@ func sanitizePartitionKey(key string) string {
 func estimateEntrySize(entry AuditLogEntry) int64 {
 	// Rough estimate based on typical entry size
 	baseSize := 200 // Base size for fixed fields
-	
+
 	// Add size for variable fields
 	baseSize += len(entry.TenantID) * 2
 	baseSize += len(entry.UserID) * 2
@@ -601,10 +601,10 @@ func estimateEntrySize(entry AuditLogEntry) int64 {
 	baseSize += len(entry.UserAgent) * 2
 	baseSize += len(entry.SessionID) * 2
 	baseSize += len(entry.RequestID) * 2
-	
+
 	// Add size for details (estimate)
 	baseSize += 100 // Estimated size for details
-	
+
 	return int64(baseSize)
 }
 
@@ -952,10 +952,10 @@ func (al *TenantAuditLogger) LogTenantResourceAccess(tenantID, userID, action, r
 // LogTenantAdminAction logs an administrative action for a tenant
 func (al *TenantAuditLogger) LogTenantAdminAction(tenantID, adminUserID, action, details string) error {
 	entry := AuditLogEntry{
-		TenantID:   tenantID,
-		UserID:     adminUserID,
-		Action:     AuditLogActionAdmin,
-		Status:     AuditLogStatusSuccess,
+		TenantID: tenantID,
+		UserID:   adminUserID,
+		Action:   AuditLogActionAdmin,
+		Status:   AuditLogStatusSuccess,
 		Details: map[string]interface{}{
 			"action":  action,
 			"details": details,
@@ -968,10 +968,10 @@ func (al *TenantAuditLogger) LogTenantAdminAction(tenantID, adminUserID, action,
 // LogTenantConfigChange logs a configuration change for a tenant
 func (al *TenantAuditLogger) LogTenantConfigChange(tenantID, adminUserID, changeType, oldValue, newValue string) error {
 	entry := AuditLogEntry{
-		TenantID:   tenantID,
-		UserID:     adminUserID,
-		Action:     AuditLogActionConfig,
-		Status:     AuditLogStatusSuccess,
+		TenantID: tenantID,
+		UserID:   adminUserID,
+		Action:   AuditLogActionConfig,
+		Status:   AuditLogStatusSuccess,
 		Details: map[string]interface{}{
 			"change_type": changeType,
 			"old_value":   oldValue,
@@ -985,11 +985,11 @@ func (al *TenantAuditLogger) LogTenantConfigChange(tenantID, adminUserID, change
 // LogTenantAuthEvent logs an authentication event for a tenant
 func (al *TenantAuditLogger) LogTenantAuthEvent(tenantID, userID, action string, success bool, failureReason string) error {
 	entry := AuditLogEntry{
-		TenantID:   tenantID,
-		UserID:     userID,
-		Action:     AuditLogAction(action),
-		Status:     AuditLogStatusSuccess,
-		Details:    make(map[string]interface{}),
+		TenantID: tenantID,
+		UserID:   userID,
+		Action:   AuditLogAction(action),
+		Status:   AuditLogStatusSuccess,
+		Details:  make(map[string]interface{}),
 	}
 
 	if !success {

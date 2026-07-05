@@ -63,7 +63,7 @@ func DefaultTenantConfigLoaderConfig() TenantConfigLoaderConfig {
 	return TenantConfigLoaderConfig{
 		ConfigDir:      "./config/tenants",
 		ReloadInterval: 30 * time.Second,
-		Logger:        nil,
+		Logger:         nil,
 	}
 }
 
@@ -75,11 +75,11 @@ func NewTenantConfigLoader(multiStorage *MultiStorageLayer, config TenantConfigL
 
 	loader := &TenantConfigLoader{
 		multiStorage:   multiStorage,
-		configDir:     config.ConfigDir,
-		logger:        config.Logger,
+		configDir:      config.ConfigDir,
+		logger:         config.Logger,
 		reloadInterval: config.ReloadInterval,
-		closeChan:     make(chan struct{}),
-		closed:        false,
+		closeChan:      make(chan struct{}),
+		closed:         false,
 	}
 
 	// Ensure config directory exists
@@ -610,7 +610,7 @@ func (l *TenantConfigLoader) BackupAllTenantConfigs(backupDir string) error {
 	// Backup each tenant config
 	for _, tenant := range tenants {
 		backupPath := filepath.Join(backupDir, tenant.TenantID+".json")
-		
+
 		// Get tenant config
 		tenantConfig, err := l.multiStorage.GetTenant(tenant.TenantID)
 		if err != nil {
