@@ -24,6 +24,12 @@ The hardened wiring path provides:
 - `NewHardenedS3TransportWithOptions`, which fails closed on unsafe custom S3 endpoints and configures the AWS SDK HTTP client through the shared policy;
 - `S3Transport.SetHardenedS3Endpoint`, which validates and stores custom S3 endpoints through the shared policy.
 
+## Review fixes included
+
+- Host cleaning now happens before IP parsing so trailing-dot and bracketed loopback forms are rejected by literal-host validation.
+- URL parse errors now preserve the underlying parser error for troubleshooting.
+- Tests cover cleaned IP host rejection such as trailing-dot IPv4 and bracketed IPv6 forms.
+
 ## Why this is separate from legacy replacement
 
 `internal/authz/fixture_distribution_transport.go` is currently very large and includes HTTP, local file, S3, and SSH/SFTP behavior. The safer implementation sequence is:
