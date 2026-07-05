@@ -1231,7 +1231,8 @@ func (i *ResourceIndexLayer) RemoveResource(uri string) error {
 	// Check if resource exists
 	metadata, exists := i.resourceIndex[uri]
 	if !exists {
-		return fmt.Errorf("resource %s not found in index", uri)
+		// Idempotent operation: removing non-existent resource should succeed
+		return nil
 	}
 
 	// Remove from all indexes
