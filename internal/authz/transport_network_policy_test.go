@@ -78,6 +78,22 @@ func TestOutboundTransportHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+func TestOutboundTransportHTTPClientClonesDefaultTransport(t *testing.T) {
+	t.Parallel()
+	policy := DefaultOutboundTransportNetworkPolicy()
+	client := policy.NewHTTPClient(0)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if transport == http.DefaultTransport {
+		t.Fatal("expected cloned default transport, got global default transport")
+	}
+	if transport.IdleConnTimeout == 0 {
+		t.Fatal("expected cloned transport to preserve idle connection timeout")
+	}
+}
+
 func TestOutboundTransportDialContextRejectsUnsafeResolvedIP(t *testing.T) {
 	t.Parallel()
 	policy := DefaultOutboundTransportNetworkPolicy()
@@ -95,6 +111,17 @@ func TestOutboundTransportDialContextRejectsMissingPort(t *testing.T) {
 	_, err := policy.DialContext(context.Background(), dialer, "tcp", "example.com")
 	if !errors.Is(err, ErrTransportInvalidPath) {
 		t.Fatalf("expected missing port to be rejected as invalid path, got %v", err)
+	}
+}
+
+func TestOutboundTransportDialContextReturnsContextError(t *testing.T) {
+	t.Parallel()
+	policy := DefaultOutboundTransportNetworkPolicy()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := policy.DialContext(ctx, &net.Dialer{}, "tcp", "example.com:443")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
 
