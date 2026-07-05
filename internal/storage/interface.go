@@ -179,6 +179,14 @@ type Metadata struct {
 	Custom map[string]string
 }
 
+// quotaUsageInfo tracks quota usage for a storage root
+type quotaUsageInfo struct {
+	UsedBytes      int64
+	UsedResources  int64
+	MaxBytes       int64
+	MaxResources   int64
+}
+
 // Resource represents a complete resource with body and metadata
 type Resource struct {
 	// URI is the resource identifier
@@ -551,6 +559,9 @@ type StorageBackend interface {
 
 	// DeleteTombstone deletes a tombstone
 	DeleteTombstone(ctx context.Context, uri string) error
+
+	// ListTombstones lists tombstones for a storage root
+	ListTombstones(ctx context.Context, storageRoot string) ([]*Tombstone, error)
 
 	// GetLayoutVersion retrieves the layout version
 	GetLayoutVersion(ctx context.Context) (StorageLayoutVersion, error)
