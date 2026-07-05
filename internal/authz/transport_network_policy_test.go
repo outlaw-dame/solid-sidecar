@@ -20,6 +20,7 @@ func TestOutboundTransportNetworkPolicyRejectsUnsafeURLs(t *testing.T) {
 		"https://service.localhost/fixtures",
 		"https://singlelabel/fixtures",
 		"https://127.0.0.1/fixtures",
+		"https://127.0.0.1./fixtures",
 		"https://[::1]/fixtures",
 		"https://10.0.0.1/fixtures",
 		"https://172.16.0.1/fixtures",
@@ -30,6 +31,17 @@ func TestOutboundTransportNetworkPolicyRejectsUnsafeURLs(t *testing.T) {
 		_, err := policy.ValidateURL(rawURL)
 		if !errors.Is(err, ErrTransportSecurityViolation) {
 			t.Fatalf("expected ErrTransportSecurityViolation for %s, got %v", rawURL, err)
+		}
+	}
+}
+
+func TestOutboundTransportNetworkPolicyRejectsCleanedIPHosts(t *testing.T) {
+	t.Parallel()
+	policy := DefaultOutboundTransportNetworkPolicy()
+	for _, host := range []string{"127.0.0.1.", "[::1]", " [::1]. "} {
+		err := policy.ValidateHostname(host)
+		if !errors.Is(err, ErrTransportSecurityViolation) {
+			t.Fatalf("expected cleaned host %q to be rejected, got %v", host, err)
 		}
 	}
 }
