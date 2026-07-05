@@ -599,17 +599,64 @@ func isNumeric(s string) bool {
 }
 
 // looksSuspicious checks if a hostname looks suspicious
+// This function uses a more sophisticated approach to detect potential phishing attempts
 func looksSuspicious(host string) bool {
-	// Check for homoglyphs (characters that look like others)
-	homoglyphs := []string{"0", "O", "o", "l", "1", "I"}
+	// Check for empty host
+	if host == "" {
+		return false
+	}
+
 	hostLower := strings.ToLower(host)
 
-	for _, char := range hostLower {
-		charStr := string(char)
-		for _, homoglyph := range homoglyphs {
-			if charStr == homoglyph {
-				return true
-			}
+	// Check for known suspicious patterns
+	// These are patterns that are commonly used in phishing attacks
+	suspiciousPatterns := []string{
+		// Homoglyph combinations that are suspicious
+		"arn", // a + rn (looks like "am")
+		"rn",  // r + n (looks like "m")
+		"cl",  // c + l (looks like "d")
+		"lo",  // l + o (looks like "lo" but in wrong context)
+		"1l",  // 1 + l (looks like "I")
+		"0o",  // 0 + o (looks like "O")
+		"0O",  // 0 + O
+		"O0",  // O + 0
+		// Common phishing domain patterns
+		"secure-",
+		"login-",
+		"account-",
+		"verify-",
+		"suspicious",
+		"phishing",
+		"fake",
+		"hack",
+		"scam",
+	}
+
+	for _, pattern := range suspiciousPatterns {
+		if strings.Contains(hostLower, pattern) {
+			return true
+		}
+	}
+
+	// Check for IP addresses (already handled elsewhere but included for completeness)
+	if isIPAddress(host) {
+		return true
+	}
+
+	// Check for domains that are too long (potential encoding attacks)
+	if len(host) > 253 {
+		return true
+	}
+
+	// Check for labels that are too long
+	labels := strings.Split(hostLower, ".")
+	for _, label := range labels {
+		if len(label) > 63 {
+			return true
+		}
+		// Check if label starts or ends with hyphen (invalid in DNS)
+		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return true
 		}
 	}
 
