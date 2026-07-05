@@ -200,21 +200,21 @@ type ResourceIndexConfig struct {
 // DefaultResourceIndexConfig returns a safe default configuration
 func DefaultResourceIndexConfig() ResourceIndexConfig {
 	return ResourceIndexConfig{
-		MaxIndexSize:             100000, // 100K resources max
-		EnableFullTextIndex:      true,
-		MaxFullTextTerms:         100,    // 100 terms per resource max
-		EnableAgentIndex:         true,
-		EnableStorageRootIndex:   true,
-		EnableAuxiliaryIndex:     true,
-		EnableRDFTermIndex:       false,   // Disabled by default
-		MaxRDFTermsPerResource:   50,      // 50 RDF terms per resource max
-		IndexRetentionTime:       0,       // Disabled by default to avoid background goroutines
-		EnableObservability:      true,
-		EnableBackgroundReindex: false,    // Disabled by default
-		ReindexInterval:          24 * time.Hour,
-		ReindexBatchSize:         1000,
-		HardeningConfig:          DefaultResourceIndexHardeningConfig(),
-		Logger:                   nil,
+		MaxIndexSize:            100000, // 100K resources max
+		EnableFullTextIndex:     true,
+		MaxFullTextTerms:        100, // 100 terms per resource max
+		EnableAgentIndex:        true,
+		EnableStorageRootIndex:  true,
+		EnableAuxiliaryIndex:    true,
+		EnableRDFTermIndex:      false, // Disabled by default
+		MaxRDFTermsPerResource:  50,    // 50 RDF terms per resource max
+		IndexRetentionTime:      0,     // Disabled by default to avoid background goroutines
+		EnableObservability:     true,
+		EnableBackgroundReindex: false, // Disabled by default
+		ReindexInterval:         24 * time.Hour,
+		ReindexBatchSize:        1000,
+		HardeningConfig:         DefaultResourceIndexHardeningConfig(),
+		Logger:                  nil,
 	}
 }
 
@@ -773,7 +773,7 @@ func (i *ResourceIndexLayer) performBackgroundReindex() error {
 			}
 
 			// Checkpoint: log progress
-			if (offset+end) % 100 == 0 {
+			if (offset+end)%100 == 0 {
 				i.logger.Debug("Background reindex progress", "processed", offset+end, "total", len(allURIs))
 			}
 		}

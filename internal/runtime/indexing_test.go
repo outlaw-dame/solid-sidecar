@@ -25,26 +25,26 @@ func TestResourceIndexLayer_IndexResource(t *testing.T) {
 
 	// Create test metadata
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/resource1",
-		ContainerURI: "https://example.com/container1/",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		ContentType:  "text/turtle",
-		Size:         1024,
-		LastModified: time.Now(),
-		Created:      time.Now(),
-		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel: PrivacyLevelPublic,
-		StorageRoot:  "https://example.com/storage/",
-		RDFTerms:     map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
+		URI:           "https://example.com/resource1",
+		ContainerURI:  "https://example.com/container1/",
+		ResourceType:  "http://www.w3.org/ns/ldp#Resource",
+		ContentType:   "text/turtle",
+		Size:          1024,
+		LastModified:  time.Now(),
+		Created:       time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		PrivacyLevel:  PrivacyLevelPublic,
+		StorageRoot:   "https://example.com/storage/",
+		RDFTerms:      map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
 		FullTextTerms: []string{"test", "document"},
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI: "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index the resource
@@ -70,27 +70,27 @@ func TestResourceIndexLayer_StorageRootIndexing(t *testing.T) {
 
 	// Create test metadata with storage root
 	metadata1 := &ResourceMetadata{
-		URI:         "https://example.com/storage1/resource1",
-		StorageRoot: "https://example.com/storage1/",
+		URI:          "https://example.com/storage1/resource1",
+		StorageRoot:  "https://example.com/storage1/",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:  "https://example.org/alice#me",
+		OwnerWebID:   "https://example.org/alice#me",
 		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	metadata2 := &ResourceMetadata{
-		URI:         "https://example.com/storage2/resource1",
-		StorageRoot: "https://example.com/storage2/",
+		URI:          "https://example.com/storage2/resource1",
+		StorageRoot:  "https://example.com/storage2/",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:  "https://example.org/bob#me",
+		OwnerWebID:   "https://example.org/bob#me",
 		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/storage1/resource1",
+		ResourceURI:   "https://example.com/storage1/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index resources
@@ -98,11 +98,11 @@ func TestResourceIndexLayer_StorageRootIndexing(t *testing.T) {
 	require.NoError(t, err)
 
 	accessInfo2 := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/storage2/resource1",
+		ResourceURI:   "https://example.com/storage2/resource1",
 		AllowedAgents: []string{"https://example.org/bob#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/bob#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/bob#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err = index.IndexResource(metadata2, accessInfo2)
@@ -110,10 +110,10 @@ func TestResourceIndexLayer_StorageRootIndexing(t *testing.T) {
 
 	// Query by storage root
 	query := IndexQuery{
-		StorageRoots: []string{"https://example.com/storage1/"},
-		WebID:        "https://example.org/alice#me",
+		StorageRoots:   []string{"https://example.com/storage1/"},
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:       10,
+		Limit:          10,
 	}
 
 	result, err := index.Search(query)
@@ -142,23 +142,23 @@ func TestResourceIndexLayer_RDFTermIndexing(t *testing.T) {
 
 	// Create test metadata with RDF terms
 	metadata := &ResourceMetadata{
-		URI:         "https://example.com/resource1",
+		URI:          "https://example.com/resource1",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:  "https://example.org/alice#me",
+		OwnerWebID:   "https://example.org/alice#me",
 		PrivacyLevel: PrivacyLevelPublic,
 		RDFTerms: map[string]bool{
-			"http://xmlns.com/foaf/0.1/name":       true,
-			"http://xmlns.com/foaf/0.1/knows":      true,
+			"http://xmlns.com/foaf/0.1/name":                  true,
+			"http://xmlns.com/foaf/0.1/knows":                 true,
 			"http://www.w3.org/1999/02/22-rdf-syntax-ns#type": true,
 		},
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index the resource
@@ -168,10 +168,10 @@ func TestResourceIndexLayer_RDFTermIndexing(t *testing.T) {
 	// Query using RDF term (via SearchTerms which are searched in full-text index)
 	// Note: RDF terms are indexed separately but Search currently uses full-text index
 	query := IndexQuery{
-		SearchTerms: []string{"http://xmlns.com/foaf/0.1/name"},
-		WebID:       "https://example.org/alice#me",
+		SearchTerms:    []string{"http://xmlns.com/foaf/0.1/name"},
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:      10,
+		Limit:          10,
 	}
 
 	result, err := index.Search(query)
@@ -193,19 +193,19 @@ func TestResourceIndexLayer_FullTextIndexing(t *testing.T) {
 
 	// Create test metadata with full-text terms
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/document1",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel: PrivacyLevelPublic,
+		URI:           "https://example.com/document1",
+		ResourceType:  "http://www.w3.org/ns/ldp#Resource",
+		OwnerWebID:    "https://example.org/alice#me",
+		PrivacyLevel:  PrivacyLevelPublic,
 		FullTextTerms: []string{"test", "document", "solid", "web"},
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/document1",
+		ResourceURI:   "https://example.com/document1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index the resource
@@ -214,10 +214,10 @@ func TestResourceIndexLayer_FullTextIndexing(t *testing.T) {
 
 	// Query using full-text search
 	query := IndexQuery{
-		SearchTerms:   []string{"test", "document"},
-		WebID:         "https://example.org/alice#me",
+		SearchTerms:    []string{"test", "document"},
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:        10,
+		Limit:          10,
 	}
 
 	result, err := index.Search(query)
@@ -240,10 +240,10 @@ func TestResourceIndexLayer_RemoveResource(t *testing.T) {
 
 	// Create and index a resource
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/resource1",
-		ContainerURI: "https://example.com/container1/",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:   "https://example.org/alice#me",
+		URI:           "https://example.com/resource1",
+		ContainerURI:  "https://example.com/container1/",
+		ResourceType:  "http://www.w3.org/ns/ldp#Resource",
+		OwnerWebID:    "https://example.org/alice#me",
 		PrivacyLevel:  PrivacyLevelPublic,
 		StorageRoot:   "https://example.com/storage/",
 		RDFTerms:      map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
@@ -251,11 +251,11 @@ func TestResourceIndexLayer_RemoveResource(t *testing.T) {
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -292,16 +292,16 @@ func TestResourceIndexLayer_UpdateResource(t *testing.T) {
 		ContainerURI: "https://example.com/container1/",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
-		StorageRoot:   "https://example.com/storage1/",
+		PrivacyLevel: PrivacyLevelPublic,
+		StorageRoot:  "https://example.com/storage1/",
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -312,11 +312,11 @@ func TestResourceIndexLayer_UpdateResource(t *testing.T) {
 	metadata.ResourceType = "http://www.w3.org/ns/ldp#BasicContainer"
 
 	accessInfo2 := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me", "https://example.org/bob#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err = index.UpdateResource(metadata, accessInfo2)
@@ -347,15 +347,15 @@ func TestResourceIndexLayer_GetContainerResources(t *testing.T) {
 			ContainerURI: containerURI,
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
+			PrivacyLevel: PrivacyLevelPublic,
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  uri,
+			ResourceURI:   uri,
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		err := index.IndexResource(metadata, accessInfo)
@@ -381,30 +381,30 @@ func TestResourceIndexLayer_PolicyAwareFiltering(t *testing.T) {
 		URI:          "https://example.com/public",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
+		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	privateMetadata := &ResourceMetadata{
 		URI:          "https://example.com/private",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPrivate,
+		PrivacyLevel: PrivacyLevelPrivate,
 	}
 
 	publicAccessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/public",
+		ResourceURI:   "https://example.com/public",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	privateAccessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/private",
+		ResourceURI:   "https://example.com/private",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  false,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(publicMetadata, publicAccessInfo)
@@ -415,9 +415,9 @@ func TestResourceIndexLayer_PolicyAwareFiltering(t *testing.T) {
 
 	// Query with IncludePrivate=false should only return public resource
 	query := IndexQuery{
-		WebID:         "https://example.org/bob#me", // Different user
+		WebID:          "https://example.org/bob#me", // Different user
 		IncludePrivate: false,
-		Limit:        10,
+		Limit:          10,
 	}
 
 	result, err := index.Search(query)
@@ -449,10 +449,10 @@ func TestResourceIndexLayer_IndexInvalidation(t *testing.T) {
 
 	// Create and index a resource
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/resource1",
-		ContainerURI: "https://example.com/container1/",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:   "https://example.org/alice#me",
+		URI:           "https://example.com/resource1",
+		ContainerURI:  "https://example.com/container1/",
+		ResourceType:  "http://www.w3.org/ns/ldp#Resource",
+		OwnerWebID:    "https://example.org/alice#me",
 		PrivacyLevel:  PrivacyLevelPublic,
 		StorageRoot:   "https://example.com/storage/",
 		RDFTerms:      map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
@@ -460,11 +460,11 @@ func TestResourceIndexLayer_IndexInvalidation(t *testing.T) {
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -562,16 +562,16 @@ func TestResourceIndexLayer_VerifyIndexConsistency(t *testing.T) {
 			ContainerURI: containerURI,
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
-			StorageRoot:   "https://example.com/storage/",
+			PrivacyLevel: PrivacyLevelPublic,
+			StorageRoot:  "https://example.com/storage/",
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  uri,
+			ResourceURI:   uri,
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		err := index.IndexResource(metadata, accessInfo)
@@ -612,15 +612,15 @@ func TestResourceIndexLayer_ConcurrentAccess(t *testing.T) {
 					ContainerURI: "https://example.com/container/",
 					ResourceType: "http://www.w3.org/ns/ldp#Resource",
 					OwnerWebID:   "https://example.org/user" + string(rune('a'+goroutineID)) + "#me",
-					PrivacyLevel:  PrivacyLevelPublic,
+					PrivacyLevel: PrivacyLevelPublic,
 				}
 
 				accessInfo := &ResourceAccessInfo{
-					ResourceURI:  uri,
+					ResourceURI:   uri,
 					AllowedAgents: []string{"https://example.org/user" + string(rune('a'+goroutineID)) + "#me"},
 					PublicAccess:  true,
-					OwnerWebID:   "https://example.org/user" + string(rune('a'+goroutineID)) + "#me",
-					LastUpdated:  time.Now(),
+					OwnerWebID:    "https://example.org/user" + string(rune('a'+goroutineID)) + "#me",
+					LastUpdated:   time.Now(),
 				}
 
 				err := index.IndexResource(metadata, accessInfo)
@@ -657,15 +657,15 @@ func TestResourceIndexLayer_MaxSizeEviction(t *testing.T) {
 			URI:          uri,
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
+			PrivacyLevel: PrivacyLevelPublic,
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  uri,
+			ResourceURI:   uri,
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		err := index.IndexResource(metadata, accessInfo)
@@ -682,17 +682,17 @@ func TestResourceIndexLayer_MaxSizeEviction(t *testing.T) {
 		URI:          uri,
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
+		PrivacyLevel: PrivacyLevelPublic,
 		IndexedAt:    time.Now().Add(1 * time.Hour), // Newer timestamp
 		LastIndexed:  time.Now().Add(1 * time.Hour),
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  uri,
+		ResourceURI:   uri,
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -721,15 +721,15 @@ func TestResourceIndexLayer_AccessControl(t *testing.T) {
 		URI:          "https://example.com/resource1",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPrivate,
+		PrivacyLevel: PrivacyLevelPrivate,
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  false,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -770,15 +770,15 @@ func TestResourceIndexLayer_Close(t *testing.T) {
 		URI:          "https://example.com/resource1",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
+		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -814,15 +814,15 @@ func TestResourceIndexLayer_Metrics(t *testing.T) {
 		URI:          "https://example.com/resource1",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
+		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -830,9 +830,9 @@ func TestResourceIndexLayer_Metrics(t *testing.T) {
 
 	// Perform a search
 	query := IndexQuery{
-		WebID:         "https://example.org/alice#me",
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:        10,
+		Limit:          10,
 	}
 
 	_, err = index.Search(query)
@@ -862,15 +862,15 @@ func TestResourceIndexLayer_CircuitBreaker(t *testing.T) {
 			URI:          "https://example.com/resource" + string(rune('a'+i)),
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
+			PrivacyLevel: PrivacyLevelPublic,
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  "https://example.com/resource" + string(rune('a'+i)),
+			ResourceURI:   "https://example.com/resource" + string(rune('a'+i)),
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		err := index.IndexResource(metadata, accessInfo)
@@ -908,11 +908,11 @@ func TestIndexQuery_StorageRoots(t *testing.T) {
 
 	query := IndexQuery{
 		ResourceURIs:   []string{"https://example.com/resource1"},
-		ContainerURIs: []string{"https://example.com/container1/"},
-		StorageRoots:  []string{"https://example.com/storage1/", "https://example.com/storage2/"},
-		WebID:         "https://example.org/alice#me",
+		ContainerURIs:  []string{"https://example.com/container1/"},
+		StorageRoots:   []string{"https://example.com/storage1/", "https://example.com/storage2/"},
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:        10,
+		Limit:          10,
 	}
 
 	assert.Len(t, query.StorageRoots, 2)
@@ -925,23 +925,23 @@ func TestResourceMetadata_Fields(t *testing.T) {
 	t.Parallel()
 
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/resource1",
-		ContainerURI: "https://example.com/container1/",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		ContentType:  "text/turtle",
-		Size:         1024,
-		LastModified: time.Now(),
-		Created:      time.Now().Add(-1 * time.Hour),
-		OwnerWebID:   "https://example.org/alice#me",
-		Contributors: []string{"https://example.org/bob#me"},
+		URI:              "https://example.com/resource1",
+		ContainerURI:     "https://example.com/container1/",
+		ResourceType:     "http://www.w3.org/ns/ldp#Resource",
+		ContentType:      "text/turtle",
+		Size:             1024,
+		LastModified:     time.Now(),
+		Created:          time.Now().Add(-1 * time.Hour),
+		OwnerWebID:       "https://example.org/alice#me",
+		Contributors:     []string{"https://example.org/bob#me"},
 		AccessControlURI: "https://example.com/resource1.acl",
-		IsPublic:      true,
-		PrivacyLevel:  PrivacyLevelPublic,
-		IndexedAt:    time.Now().Add(-30 * time.Minute),
-		LastIndexed:  time.Now(),
-		StorageRoot:  "https://example.com/storage/",
-		RDFTerms:     map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
-		FullTextTerms: []string{"test", "document"},
+		IsPublic:         true,
+		PrivacyLevel:     PrivacyLevelPublic,
+		IndexedAt:        time.Now().Add(-30 * time.Minute),
+		LastIndexed:      time.Now(),
+		StorageRoot:      "https://example.com/storage/",
+		RDFTerms:         map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
+		FullTextTerms:    []string{"test", "document"},
 	}
 
 	assert.Equal(t, "https://example.com/resource1", metadata.URI)
@@ -983,15 +983,15 @@ func TestResourceIndexLayer_InvalidURI(t *testing.T) {
 		URI:          "not-a-valid-uri",
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
-		PrivacyLevel:  PrivacyLevelPublic,
+		PrivacyLevel: PrivacyLevelPublic,
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "not-a-valid-uri",
+		ResourceURI:   "not-a-valid-uri",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	err := index.IndexResource(metadata, accessInfo)
@@ -1022,9 +1022,9 @@ func TestResourceIndexLayer_SearchEmpty(t *testing.T) {
 
 	query := IndexQuery{
 		ResourceURIs:   []string{"https://example.com/nonexistent"},
-		WebID:         "https://example.org/alice#me",
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:        10,
+		Limit:          10,
 	}
 
 	result, err := index.Search(query)
@@ -1046,10 +1046,10 @@ func BenchmarkResourceIndexLayer_IndexResource(b *testing.B) {
 	defer index.Close()
 
 	metadata := &ResourceMetadata{
-		URI:          "https://example.com/resource",
-		ContainerURI: "https://example.com/container/",
-		ResourceType: "http://www.w3.org/ns/ldp#Resource",
-		OwnerWebID:   "https://example.org/alice#me",
+		URI:           "https://example.com/resource",
+		ContainerURI:  "https://example.com/container/",
+		ResourceType:  "http://www.w3.org/ns/ldp#Resource",
+		OwnerWebID:    "https://example.org/alice#me",
 		PrivacyLevel:  PrivacyLevelPublic,
 		StorageRoot:   "https://example.com/storage/",
 		RDFTerms:      map[string]bool{"http://xmlns.com/foaf/0.1/name": true},
@@ -1057,11 +1057,11 @@ func BenchmarkResourceIndexLayer_IndexResource(b *testing.B) {
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource",
+		ResourceURI:   "https://example.com/resource",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	b.ResetTimer()
@@ -1089,26 +1089,26 @@ func BenchmarkResourceIndexLayer_Search(b *testing.B) {
 			ContainerURI: "https://example.com/container/",
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
-			StorageRoot:   "https://example.com/storage/",
+			PrivacyLevel: PrivacyLevelPublic,
+			StorageRoot:  "https://example.com/storage/",
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  uri,
+			ResourceURI:   uri,
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		_ = index.IndexResource(metadata, accessInfo)
 	}
 
 	query := IndexQuery{
-		StorageRoots:  []string{"https://example.com/storage/"},
-		WebID:         "https://example.org/alice#me",
+		StorageRoots:   []string{"https://example.com/storage/"},
+		WebID:          "https://example.org/alice#me",
 		IncludePrivate: true,
-		Limit:        100,
+		Limit:          100,
 	}
 
 	b.ResetTimer()
@@ -1133,15 +1133,15 @@ func BenchmarkResourceIndexLayer_GetContainerResources(b *testing.B) {
 			ContainerURI: containerURI,
 			ResourceType: "http://www.w3.org/ns/ldp#Resource",
 			OwnerWebID:   "https://example.org/alice#me",
-			PrivacyLevel:  PrivacyLevelPublic,
+			PrivacyLevel: PrivacyLevelPublic,
 		}
 
 		accessInfo := &ResourceAccessInfo{
-			ResourceURI:  uri,
+			ResourceURI:   uri,
 			AllowedAgents: []string{"https://example.org/alice#me"},
 			PublicAccess:  true,
-			OwnerWebID:   "https://example.org/alice#me",
-			LastUpdated:  time.Now(),
+			OwnerWebID:    "https://example.org/alice#me",
+			LastUpdated:   time.Now(),
 		}
 
 		_ = index.IndexResource(metadata, accessInfo)
@@ -1172,16 +1172,16 @@ func TestResourceIndexLayer_AuxiliaryIndex(t *testing.T) {
 		PrivacyLevel: PrivacyLevelPublic,
 		AuxiliaryLinks: map[string]string{
 			"describedby": "https://example.com/resource1/meta",
-			"acl":        "https://example.com/resource1.acl",
+			"acl":         "https://example.com/resource1.acl",
 		},
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index the resource
@@ -1212,11 +1212,11 @@ func TestResourceIndexLayer_AuxiliaryIndexDisabled(t *testing.T) {
 	}
 
 	accessInfo := &ResourceAccessInfo{
-		ResourceURI:  "https://example.com/resource1",
+		ResourceURI:   "https://example.com/resource1",
 		AllowedAgents: []string{"https://example.org/alice#me"},
 		PublicAccess:  true,
-		OwnerWebID:   "https://example.org/alice#me",
-		LastUpdated:  time.Now(),
+		OwnerWebID:    "https://example.org/alice#me",
+		LastUpdated:   time.Now(),
 	}
 
 	// Index the resource - should succeed even with auxiliary links

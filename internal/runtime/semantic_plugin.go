@@ -94,7 +94,7 @@ func DefaultSemanticPluginConfig() SemanticPluginConfig {
 		PluginTimeout: 5000, // 5 seconds
 		DefaultPlugin: "",
 		PrivacyPolicy: "strict",
-		Logger:       nil,
+		Logger:        nil,
 	}
 }
 
@@ -124,10 +124,10 @@ func NewSemanticPluginManager(config SemanticPluginConfig) *SemanticPluginManage
 	}
 
 	return &SemanticPluginManager{
-		config: config,
+		config:  config,
 		plugins: make(map[string]SemanticSearchPlugin),
-		logger: config.Logger,
-		closed: false,
+		logger:  config.Logger,
+		closed:  false,
 	}
 }
 

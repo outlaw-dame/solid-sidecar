@@ -21,10 +21,12 @@ type MockSemanticPlugin struct {
 	closed      bool
 }
 
-func (m *MockSemanticPlugin) Name() string                    { return m.name }
-func (m *MockSemanticPlugin) Version() string                { return m.version }
-func (m *MockSemanticPlugin) Description() string            { return m.description }
-func (m *MockSemanticPlugin) Initialize(config map[string]interface{}, logger *slog.Logger) error { return nil }
+func (m *MockSemanticPlugin) Name() string        { return m.name }
+func (m *MockSemanticPlugin) Version() string     { return m.version }
+func (m *MockSemanticPlugin) Description() string { return m.description }
+func (m *MockSemanticPlugin) Initialize(config map[string]interface{}, logger *slog.Logger) error {
+	return nil
+}
 func (m *MockSemanticPlugin) IndexResource(ctx context.Context, uri string, content []byte, metadata *ResourceMetadata, accessInfo *ResourceAccessInfo) error {
 	m.indexedURIs[uri] = true
 	return nil
@@ -173,8 +175,8 @@ func TestSemanticPluginManager_IndexResource(t *testing.T) {
 	manager.RegisterPlugin("test", plugin)
 
 	metadata := &ResourceMetadata{
-		URI:        "https://example.com/resource1",
-		IsPublic:   true,
+		URI:          "https://example.com/resource1",
+		IsPublic:     true,
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 	}
 
@@ -202,8 +204,8 @@ func TestSemanticPluginManager_IndexResource_Disabled(t *testing.T) {
 	manager.RegisterPlugin("test", plugin)
 
 	metadata := &ResourceMetadata{
-		URI:        "https://example.com/resource1",
-		IsPublic:   true,
+		URI:      "https://example.com/resource1",
+		IsPublic: true,
 	}
 
 	ctx := context.Background()
@@ -230,8 +232,8 @@ func TestSemanticPluginManager_IndexResource_PrivacyBlocked(t *testing.T) {
 
 	// Try to index a non-public resource with strict policy
 	metadata := &ResourceMetadata{
-		URI:        "https://example.com/private",
-		IsPublic:   false, // Not public
+		URI:      "https://example.com/private",
+		IsPublic: false, // Not public
 	}
 
 	ctx := context.Background()
@@ -260,8 +262,8 @@ func TestSemanticPluginManager_IndexResource_PublicAllowed(t *testing.T) {
 
 	// Index a public resource - should be allowed
 	metadata := &ResourceMetadata{
-		URI:        "https://example.com/public",
-		IsPublic:   true,
+		URI:      "https://example.com/public",
+		IsPublic: true,
 	}
 
 	ctx := context.Background()
@@ -366,7 +368,7 @@ func TestSemanticPluginManager_PrivacyCheck(t *testing.T) {
 	}
 	manager.RegisterPlugin("p1", plugin1)
 
-		// Plugin with failing privacy check - create a custom plugin type
+	// Plugin with failing privacy check - create a custom plugin type
 	plugin2 := &FailingPrivacyPlugin{
 		MockSemanticPlugin: MockSemanticPlugin{
 			name:        "plugin2",
