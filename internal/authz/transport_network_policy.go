@@ -13,10 +13,6 @@ import (
 
 // OutboundTransportNetworkPolicy describes the default network-safety rules for
 // remote fixture distribution transports.
-//
-// The production default is intentionally strict: HTTPS only, no redirects, no
-// userinfo, no localhost/private/link-local/multicast/unspecified addresses,
-// no .local/.localhost names, and no single-label hostnames.
 type OutboundTransportNetworkPolicy struct {
 	AllowLocalhost bool
 	RequireHTTPS   bool
@@ -29,12 +25,12 @@ func DefaultOutboundTransportNetworkPolicy() OutboundTransportNetworkPolicy {
 }
 
 // ValidateURL validates an outbound URL before it is used by an HTTP-based
-// transport. It validates the literal host, but callers that perform network
-// I/O must also use NewHTTPClient so DNS answers are validated at dial time.
+// transport. Callers that perform network I/O must also use NewHTTPClient so
+// DNS answers are validated at dial time.
 func (p OutboundTransportNetworkPolicy) ValidateURL(rawURL string) (*url.URL, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to parse outbound transport URL", ErrTransportInvalidPath)
+		return nil, fmt.Errorf("%w: failed to parse outbound transport URL: %v", ErrTransportInvalidPath, err)
 	}
 	if err := p.ValidateParsedURL(parsedURL); err != nil {
 		return nil, err
@@ -67,15 +63,14 @@ func (p OutboundTransportNetworkPolicy) ValidateParsedURL(parsedURL *url.URL) er
 
 // ValidateHostname validates a literal hostname or IP address before use.
 func (p OutboundTransportNetworkPolicy) ValidateHostname(host string) error {
-	if host == "" {
-		return fmt.Errorf("%w: outbound transport host cannot be empty", ErrTransportInvalidPath)
-	}
-	host = strings.TrimSpace(strings.Trim(host, "[]"))
-	if host == "" {
+	cleanedHost := strings.TrimSpace(host)
+	cleanedHost = strings.Trim(cleanedHost, "[]")
+	cleanedHost = strings.ToLower(strings.TrimSuffix(cleanedHost, "."))
+	if cleanedHost == "" {
 		return fmt.Errorf("%w: outbound transport host cannot be empty", ErrTransportInvalidPath)
 	}
 
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(cleanedHost)
 	if ip != nil {
 		if p.AllowLocalhost {
 			return nil
@@ -86,24 +81,20 @@ func (p OutboundTransportNetworkPolicy) ValidateHostname(host string) error {
 		return nil
 	}
 
-	lowerHost := strings.ToLower(strings.TrimSuffix(host, "."))
-	if lowerHost == "" {
-		return fmt.Errorf("%w: outbound transport host cannot be empty", ErrTransportInvalidPath)
-	}
 	if p.AllowLocalhost {
 		return nil
 	}
-	if lowerHost == "localhost" || strings.HasSuffix(lowerHost, ".localhost") || strings.HasSuffix(lowerHost, ".local") {
+	if cleanedHost == "localhost" || strings.HasSuffix(cleanedHost, ".localhost") || strings.HasSuffix(cleanedHost, ".local") {
 		return fmt.Errorf("%w: outbound transport host cannot use localhost or local-only names", ErrTransportSecurityViolation)
 	}
-	if !strings.Contains(lowerHost, ".") {
+	if !strings.Contains(cleanedHost, ".") {
 		return fmt.Errorf("%w: outbound transport host must be a fully-qualified public hostname", ErrTransportSecurityViolation)
 	}
 	return nil
 }
 
-// NewHTTPClient returns an HTTP client that enforces the policy both before
-// request dispatch and after DNS resolution, immediately before connecting.
+// NewHTTPClient returns an HTTP client that enforces the policy before dispatch
+// and after DNS resolution, immediately before connecting.
 func (p OutboundTransportNetworkPolicy) NewHTTPClient(timeout time.Duration) *http.Client {
 	if timeout <= 0 {
 		timeout = DefaultTransportTimeout
@@ -123,9 +114,7 @@ func (p OutboundTransportNetworkPolicy) NewHTTPClient(timeout time.Duration) *ht
 	}
 }
 
-// DialContext resolves, validates, and dials a concrete IP address. Dialing the
-// already-validated IP avoids DNS rebinding/TOCTOU gaps between validation and
-// connection establishment.
+// DialContext resolves, validates, and dials a concrete IP address.
 func (p OutboundTransportNetworkPolicy) DialContext(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
 	if dialer == nil {
 		dialer = &net.Dialer{}
