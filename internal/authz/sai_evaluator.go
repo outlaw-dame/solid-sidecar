@@ -21,6 +21,15 @@ type SAIEvaluator struct {
 	// shadowMode indicates if evaluation is non-enforcing
 	shadowMode bool
 
+	// enforcementMode indicates if the evaluator should return actual enforcement decisions
+	enforcementMode bool
+
+	// decisionTraceIDsEnabled indicates if decision trace IDs should be generated
+	decisionTraceIDsEnabled bool
+
+	// failClosedPolicy configures fail-closed/fail-open behavior
+	failClosedPolicy FailClosedPolicy
+
 	// logger is the logger to use
 	logger *slog.Logger
 }
@@ -44,10 +53,13 @@ func NewSAIEvaluator(options SAIEvaluatorOptions, parser *SAIParser) *SAIEvaluat
 	}
 
 	return &SAIEvaluator{
-		options:    options,
-		parser:     parser,
-		shadowMode: options.ShadowMode,
-		logger:     options.Logger,
+		options:                options,
+		parser:                 parser,
+		shadowMode:             options.ShadowMode,
+		enforcementMode:        options.EnforcementMode,
+		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
+		failClosedPolicy:       options.FailClosedPolicy,
+		logger:                 options.Logger,
 	}
 }
 
@@ -61,10 +73,13 @@ func NewSAIEvaluatorWithOptions(options SAIEvaluatorOptions) *SAIEvaluator {
 	})
 
 	return &SAIEvaluator{
-		options:    options,
-		parser:     parser,
-		shadowMode: options.ShadowMode,
-		logger:     options.Logger,
+		options:                options,
+		parser:                 parser,
+		shadowMode:             options.ShadowMode,
+		enforcementMode:        options.EnforcementMode,
+		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
+		failClosedPolicy:       options.FailClosedPolicy,
+		logger:                 options.Logger,
 	}
 }
 

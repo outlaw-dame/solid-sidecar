@@ -356,6 +356,19 @@ type SAIEvaluatorOptions struct {
 	// Timeout is the maximum time allowed for evaluation (default: 30s)
 	Timeout time.Duration
 
+	// EnforcementMode determines if the evaluator should return actual enforcement decisions
+	// When true, the evaluator returns allow/deny instead of abstain
+	// Default: false (shadow mode only for safety)
+	EnforcementMode bool
+
+	// DecisionTraceIDsEnabled enables operator-visible decision trace IDs in decisions
+	// Default: false
+	DecisionTraceIDsEnabled bool
+
+	// FailClosedPolicy configures fail-closed/fail-open behavior
+	// Default: strict fail-closed for safety
+	FailClosedPolicy FailClosedPolicy
+
 	// Logger is the logger to use
 	Logger *slog.Logger
 }
@@ -369,6 +382,9 @@ func DefaultSAIEvaluatorOptions() SAIEvaluatorOptions {
 		EnableDelegation:   true,
 		MaxInputSize:       SAIMaxPolicySize,
 		Timeout:            30 * time.Second,
+		EnforcementMode:      false,
+		DecisionTraceIDsEnabled: false,
+		FailClosedPolicy:     DefaultFailClosedPolicy(),
 		Logger:             nil,
 	}
 }
