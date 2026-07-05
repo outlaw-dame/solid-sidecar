@@ -1381,16 +1381,20 @@ func (i *ResourceIndexLayer) getCandidateURIs(query *IndexQuery) map[string]*Res
 		return candidates
 	}
 
-	// If owner WebIDs are specified, get resources owned by those WebIDs
-	if query.WebID != "" && i.config.EnableAgentIndex {
-		if uris, exists := i.agentIndex[query.WebID]; exists {
-			for _, uri := range uris {
-				if metadata, exists := i.resourceIndex[uri]; exists {
-					candidates[uri] = metadata
+	// If owner WebIDs are specified in OwnerWebIDs field, get resources owned by those WebIDs
+	if len(query.OwnerWebIDs) > 0 && i.config.EnableAgentIndex {
+		for _, ownerWebID := range query.OwnerWebIDs {
+			if uris, exists := i.agentIndex[ownerWebID]; exists {
+				for _, uri := range uris {
+					if metadata, exists := i.resourceIndex[uri]; exists {
+						candidates[uri] = metadata
+					}
 				}
 			}
 		}
-		return candidates
+		if len(candidates) > 0 {
+			return candidates
+		}
 	}
 
 	// If storage roots are specified, get resources from those storage roots
