@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -607,20 +608,20 @@ func TestResourceIndexLayer_ConcurrentAccess(t *testing.T) {
 		go func(goroutineID int) {
 			defer wg.Done()
 			for i := 0; i < numResources; i++ {
-				uri := "https://example.com/g" + string(rune('a'+goroutineID)) + "_r" + string(rune('a'+i))
+				uri := fmt.Sprintf("https://example.com/g%d_r%d", goroutineID, i)
 				metadata := &ResourceMetadata{
 					URI:          uri,
 					ContainerURI: "https://example.com/container/",
 					ResourceType: "http://www.w3.org/ns/ldp#Resource",
-					OwnerWebID:   "https://example.org/user" + string(rune('a'+goroutineID)) + "#me",
+					OwnerWebID:   fmt.Sprintf("https://example.org/user%d#me", goroutineID),
 					PrivacyLevel: PrivacyLevelPublic,
 				}
 
 				accessInfo := &ResourceAccessInfo{
 					ResourceURI:   uri,
-					AllowedAgents: []string{"https://example.org/user" + string(rune('a'+goroutineID)) + "#me"},
+					AllowedAgents: []string{fmt.Sprintf("https://example.org/user%d#me", goroutineID)},
 					PublicAccess:  true,
-					OwnerWebID:    "https://example.org/user" + string(rune('a'+goroutineID)) + "#me",
+					OwnerWebID:    fmt.Sprintf("https://example.org/user%d#me", goroutineID),
 					LastUpdated:   time.Now(),
 				}
 
