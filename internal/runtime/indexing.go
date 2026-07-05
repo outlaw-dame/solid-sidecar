@@ -1717,6 +1717,7 @@ func (i *ResourceIndexLayer) GetResource(uri string, webID string, includePrivat
 		LastModified: metadata.LastModified,
 		OwnerWebID:   metadata.OwnerWebID,
 		PrivacyLevel: metadata.PrivacyLevel,
+		StorageRoot:  metadata.StorageRoot,
 		AccessInfo:   accessInfo,
 	}, nil
 }
@@ -1764,6 +1765,7 @@ func (i *ResourceIndexLayer) GetContainerResources(containerURI string, webID st
 			LastModified: metadata.LastModified,
 			OwnerWebID:   metadata.OwnerWebID,
 			PrivacyLevel: metadata.PrivacyLevel,
+			StorageRoot:  metadata.StorageRoot,
 			AccessInfo:   accessInfo,
 		})
 	}
