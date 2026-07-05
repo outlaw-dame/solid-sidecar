@@ -33,6 +33,28 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Authz.ExternalTimeout != DefaultAuthzExternalTimeout || cfg.Authz.ExternalMaxOutputBytes != DefaultAuthzExternalMaxOutputBytes {
 		t.Fatalf("authz external defaults mismatch: %+v", cfg.Authz)
 	}
+	// Authority defaults
+	if cfg.Authority.Mode != AuthorityModeCSS {
+		t.Fatalf("authority mode = %q, want %q", cfg.Authority.Mode, AuthorityModeCSS)
+	}
+	if cfg.Authority.InitialEnforcementMode != "shadow" {
+		t.Fatalf("authority initial enforcement mode = %q, want shadow", cfg.Authority.InitialEnforcementMode)
+	}
+	if cfg.Authority.AllowEnforcement {
+		t.Fatal("authority allow enforcement must be false by default for safety")
+	}
+	if !cfg.Authority.EmergencyBypassEnabled {
+		t.Fatal("authority emergency bypass should be enabled by default")
+	}
+	if cfg.Authority.RequireCSSFallback == false {
+		t.Fatal("authority require CSS fallback must be true by default for safety")
+	}
+	if cfg.Authority.StrictFailClosed == false {
+		t.Fatal("authority strict fail closed must be true by default for safety")
+	}
+	if cfg.Authority.RequireMultipleAuthors == false {
+		t.Fatal("authority require multiple authors must be true by default for safety")
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -181,6 +203,56 @@ func TestValidateRejectsUnsafeExternalEvaluatorBounds(t *testing.T) {
 	cfg.Authz.ExternalMaxOutputBytes = 2 << 20
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidateRejectsInvalidAuthorityMode(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.Mode = AuthorityMode("invalid")
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid authority mode")
+	}
+}
+
+func TestValidateRejectsInvalidInitialEnforcementMode(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.InitialEnforcementMode = "invalid_mode"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for invalid initial enforcement mode")
+	}
+}
+
+func TestValidateRejectsControlCharacterInEmergencyBypassToken(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.EmergencyBypassToken = "token\x00bad"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for control character in emergency bypass token")
+	}
+}
+
+func TestValidateRejectsNegativeMaxEnforcementDuration(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.MaxEnforcementDuration = -1 * time.Second
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for negative max enforcement duration")
+	}
+}
+
+func TestValidateRejectsEnforcementWithoutStrictFailClosed(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.AllowEnforcement = true
+	cfg.Authority.StrictFailClosed = false
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for enforcement without strict fail closed")
+	}
+}
+
+func TestValidateRejectsEnforcementWithoutCSSFallback(t *testing.T) {
+	cfg := Defaults()
+	cfg.Authority.AllowEnforcement = true
+	cfg.Authority.RequireCSSFallback = false
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for enforcement without CSS fallback")
 	}
 }
 

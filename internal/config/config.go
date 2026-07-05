@@ -42,6 +42,7 @@ type Config struct {
 	Security    SecurityConfig
 	Auth        AuthConfig
 	Authz       AuthzConfig
+	Authority   AuthorityConfig
 	SAI         SAIConfig
 	Compression CompressionConfig
 	Log         LogConfig
@@ -101,6 +102,59 @@ type AuthzConfig struct {
 	ExternalMaxOutputBytes   int64
 	ExternalBackoffBaseDelay time.Duration
 	ExternalBackoffMaxDelay  time.Duration
+}
+
+// AuthorityMode represents the authorization authority mode
+type AuthorityMode string
+
+const (
+	// AuthorityModeCSS means the sidecar proxies to CSS for authorization (default)
+	AuthorityModeCSS AuthorityMode = "css"
+	// AuthorityModeNative means the sidecar makes native authorization decisions
+	AuthorityModeNative AuthorityMode = "native"
+)
+
+// AuthorityConfig contains configuration for authorization authority mode
+type AuthorityConfig struct {
+	// Mode determines the authorization authority mode
+	// Default: AuthorityModeCSS (proxy to CSS)
+	Mode AuthorityMode
+
+	// InitialEnforcementMode is the starting enforcement mode when in native authority mode
+	// Default: "shadow" for safety
+	InitialEnforcementMode string
+
+	// AllowEnforcement determines if enforcement mode is allowed
+	// Default: false (shadow mode only for safety) - this is the startup guardrail
+	AllowEnforcement bool
+
+	// EmergencyBypassEnabled allows emergency bypass of enforcement
+	// Default: true
+	EmergencyBypassEnabled bool
+
+	// EmergencyBypassToken is the token required for emergency bypass
+	// Default: empty (auto-generated if not set)
+	EmergencyBypassToken string
+
+	// MaxEnforcementDuration is the maximum time enforcement can be enabled before auto-reverting
+	// Default: 0 (no auto-revert)
+	MaxEnforcementDuration time.Duration
+
+	// RequireCSSFallback requires CSS to be available for fallback when in native mode
+	// Default: true for safety
+	RequireCSSFallback bool
+
+	// DecisionTraceIDsEnabled enables operator-visible decision trace IDs
+	// Default: false
+	DecisionTraceIDsEnabled bool
+
+	// StrictFailClosed controls whether to fail closed (deny) or fail open (allow) on errors
+	// Default: true (fail closed for safety)
+	StrictFailClosed bool
+
+	// RequireMultipleAuthors prevents single-person enforcement enable
+	// Default: true (requires multiple operators to enable enforcement)
+	RequireMultipleAuthors bool
 }
 
 type LogConfig struct {
@@ -239,6 +293,18 @@ func Defaults() Config {
 			ExternalMaxOutputBytes:   DefaultAuthzExternalMaxOutputBytes,
 			ExternalBackoffBaseDelay: DefaultAuthzExternalBackoffBaseDelay,
 			ExternalBackoffMaxDelay:  DefaultAuthzExternalBackoffMaxDelay,
+		},
+		Authority: AuthorityConfig{
+			Mode:                    AuthorityModeCSS,
+			InitialEnforcementMode:  "shadow",
+			AllowEnforcement:        false,
+			EmergencyBypassEnabled:  true,
+			EmergencyBypassToken:    "",
+			MaxEnforcementDuration:  0,
+			RequireCSSFallback:      true,
+			DecisionTraceIDsEnabled: false,
+			StrictFailClosed:        true,
+			RequireMultipleAuthors:  true,
 		},
 		SAI: SAIConfig{
 			Enabled:    false,
@@ -452,6 +518,26 @@ func setValue(cfg *Config, section, key, value string) error {
 		return parseDuration(value, &cfg.Authz.ExternalBackoffBaseDelay)
 	case "authz.external_backoff_max_delay":
 		return parseDuration(value, &cfg.Authz.ExternalBackoffMaxDelay)
+	case "authority.mode":
+		cfg.Authority.Mode = AuthorityMode(strings.ToLower(strings.TrimSpace(value)))
+	case "authority.initial_enforcement_mode":
+		cfg.Authority.InitialEnforcementMode = strings.ToLower(strings.TrimSpace(value))
+	case "authority.allow_enforcement":
+		return parseBool(value, &cfg.Authority.AllowEnforcement, "authority.allow_enforcement")
+	case "authority.emergency_bypass_enabled":
+		return parseBool(value, &cfg.Authority.EmergencyBypassEnabled, "authority.emergency_bypass_enabled")
+	case "authority.emergency_bypass_token":
+		cfg.Authority.EmergencyBypassToken = value
+	case "authority.max_enforcement_duration":
+		return parseDuration(value, &cfg.Authority.MaxEnforcementDuration)
+	case "authority.require_css_fallback":
+		return parseBool(value, &cfg.Authority.RequireCSSFallback, "authority.require_css_fallback")
+	case "authority.decision_trace_ids_enabled":
+		return parseBool(value, &cfg.Authority.DecisionTraceIDsEnabled, "authority.decision_trace_ids_enabled")
+	case "authority.strict_fail_closed":
+		return parseBool(value, &cfg.Authority.StrictFailClosed, "authority.strict_fail_closed")
+	case "authority.require_multiple_authors":
+		return parseBool(value, &cfg.Authority.RequireMultipleAuthors, "authority.require_multiple_authors")
 	case "log.level":
 		cfg.Log.Level = strings.ToLower(value)
 	// Compression configuration
@@ -634,6 +720,51 @@ func applyEnv(cfg *Config) {
 			cfg.Authz.ExternalBackoffMaxDelay = parsed
 		}
 	}
+	// Authority environment variables
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_MODE"); value != "" {
+		cfg.Authority.Mode = AuthorityMode(strings.ToLower(value))
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_INITIAL_ENFORCEMENT_MODE"); value != "" {
+		cfg.Authority.InitialEnforcementMode = strings.ToLower(value)
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_ALLOW_ENFORCEMENT"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.AllowEnforcement = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_EMERGENCY_BYPASS_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.EmergencyBypassEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_EMERGENCY_BYPASS_TOKEN"); value != "" {
+		cfg.Authority.EmergencyBypassToken = value
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_MAX_ENFORCEMENT_DURATION"); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			cfg.Authority.MaxEnforcementDuration = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_REQUIRE_CSS_FALLBACK"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.RequireCSSFallback = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_DECISION_TRACE_IDS_ENABLED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.DecisionTraceIDsEnabled = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_STRICT_FAIL_CLOSED"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.StrictFailClosed = parsed
+		}
+	}
+	if value := os.Getenv("SOLID_SIDECAR_AUTHORITY_REQUIRE_MULTIPLE_AUTHORS"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Authority.RequireMultipleAuthors = parsed
+		}
+	}
 	if value := os.Getenv("SOLID_SIDECAR_LOG_LEVEL"); value != "" {
 		cfg.Log.Level = strings.ToLower(value)
 	}
@@ -707,6 +838,10 @@ func Validate(cfg Config) error {
 	if err := validateAuthzConfig(cfg.Authz); err != nil {
 		return err
 	}
+	// Validate authority configuration
+	if err := validateAuthorityConfig(cfg.Authority); err != nil {
+		return err
+	}
 	// Validate compression configuration
 	if err := validateCompressionConfig(cfg.Compression); err != nil {
 		return err
@@ -762,6 +897,51 @@ func validateAuthzConfig(cfg AuthzConfig) error {
 	if cfg.ExternalBackoffMaxDelay > maxAuthzExternalBackoffMaxDelay {
 		return fmt.Errorf("authz.external_backoff_max_delay must be <= %s", maxAuthzExternalBackoffMaxDelay)
 	}
+	return nil
+}
+
+func validateAuthorityConfig(cfg AuthorityConfig) error {
+	// Validate authority mode
+	switch cfg.Mode {
+	case AuthorityModeCSS, AuthorityModeNative:
+		// Valid modes
+	default:
+		return fmt.Errorf("authority.mode must be one of %s, %s", AuthorityModeCSS, AuthorityModeNative)
+	}
+
+	// Validate initial enforcement mode
+	validEnforcementModes := map[string]bool{
+		"shadow":         true,
+		"enforce":        true,
+		"dry-run":        true,
+		"enforce_canary": true,
+	}
+	if !validEnforcementModes[cfg.InitialEnforcementMode] {
+		return errors.New("authority.initial_enforcement_mode must be one of shadow, enforce, dry-run, enforce_canary")
+	}
+
+	// Validate emergency bypass token if provided
+	if cfg.EmergencyBypassToken != "" {
+		if containsControlCharacter(cfg.EmergencyBypassToken) {
+			return errors.New("authority.emergency_bypass_token must not contain control characters")
+		}
+	}
+
+	// Validate max enforcement duration
+	if cfg.MaxEnforcementDuration < 0 {
+		return errors.New("authority.max_enforcement_duration must be non-negative")
+	}
+
+	// If enforcement is allowed, ensure safety guardrails are in place
+	if cfg.AllowEnforcement {
+		if cfg.StrictFailClosed == false {
+			return errors.New("authority.strict_fail_closed must be true when authority.allow_enforcement is true")
+		}
+		if cfg.RequireCSSFallback == false {
+			return errors.New("authority.require_css_fallback must be true when authority.allow_enforcement is true for safety")
+		}
+	}
+
 	return nil
 }
 
