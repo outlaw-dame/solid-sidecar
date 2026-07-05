@@ -11,8 +11,6 @@ import (
 
 // TestRuntimeInitialization tests that the runtime can be initialized correctly
 func TestRuntimeInitialization(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -29,14 +27,14 @@ func TestRuntimeInitialization(t *testing.T) {
 	assert.NotNil(t, rt.RDF(), "RDF layer should be available")
 	assert.NotNil(t, rt.PolicyEngine(), "Policy engine layer should be available")
 	assert.NotNil(t, rt.Notification(), "Notification layer should be available")
+	assert.NotNil(t, rt.ResourceIndex(), "Resource index layer should be available")
+	assert.NotNil(t, rt.EventStream(), "Event stream layer should be available")
 	assert.NotNil(t, rt.MultiStorage(), "Multi-storage layer should be available")
 	assert.NotNil(t, rt.Migration(), "Migration layer should be available")
 }
 
 // TestRuntimeModeTransitions tests mode transitions
 func TestRuntimeModeTransitions(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -71,8 +69,6 @@ func TestRuntimeModeTransitions(t *testing.T) {
 
 // TestRuntimeModeTransitionFailure tests invalid mode transitions
 func TestRuntimeModeTransitionFailure(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -85,8 +81,6 @@ func TestRuntimeModeTransitionFailure(t *testing.T) {
 
 // TestRuntimeClose tests runtime cleanup
 func TestRuntimeClose(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -105,14 +99,14 @@ func TestRuntimeClose(t *testing.T) {
 	assert.NotNil(t, rt.RDF(), "RDF layer reference should still exist")
 	assert.NotNil(t, rt.PolicyEngine(), "Policy engine layer reference should still exist")
 	assert.NotNil(t, rt.Notification(), "Notification layer reference should still exist")
+	assert.NotNil(t, rt.ResourceIndex(), "Resource index layer reference should still exist")
+	assert.NotNil(t, rt.EventStream(), "Event stream layer reference should still exist")
 	assert.NotNil(t, rt.MultiStorage(), "Multi-storage layer reference should still exist")
 	assert.NotNil(t, rt.Migration(), "Migration layer reference should still exist")
 }
 
 // TestRuntimeDoubleClose tests that closing twice doesn't cause issues
 func TestRuntimeDoubleClose(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -127,8 +121,6 @@ func TestRuntimeDoubleClose(t *testing.T) {
 
 // TestRuntimeMigrationStart tests starting the migration process
 func TestRuntimeMigrationStart(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -150,8 +142,6 @@ func TestRuntimeMigrationStart(t *testing.T) {
 
 // TestRuntimeErrorHandling tests error handling in the runtime
 func TestRuntimeErrorHandling(t *testing.T) {
-	t.Parallel()
-
 	// Test with nil config logger
 	config := RuntimeConfig{
 		Mode:                RuntimeModeCSSProxy,
@@ -173,8 +163,6 @@ func TestRuntimeErrorHandling(t *testing.T) {
 
 // TestRuntimeConfiguration tests configuration options
 func TestRuntimeConfiguration(t *testing.T) {
-	t.Parallel()
-
 	// Test default configuration
 	config := DefaultRuntimeConfig()
 	assert.Equal(t, RuntimeModeCSSProxy, config.Mode, "Default mode should be CSS proxy")
@@ -187,8 +175,6 @@ func TestRuntimeConfiguration(t *testing.T) {
 
 // TestRuntimeLayerAccess tests accessing all layers
 func TestRuntimeLayerAccess(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -219,6 +205,14 @@ func TestRuntimeLayerAccess(t *testing.T) {
 	assert.NotNil(t, notification, "Notification layer should not be nil")
 	assert.False(t, notification.IsClosed(), "Notification layer should not be closed")
 
+	resourceIndex := rt.ResourceIndex()
+	assert.NotNil(t, resourceIndex, "Resource index layer should not be nil")
+	assert.False(t, resourceIndex.IsClosed(), "Resource index layer should not be closed")
+
+	eventStream := rt.EventStream()
+	assert.NotNil(t, eventStream, "Event stream layer should not be nil")
+	assert.False(t, eventStream.IsClosed(), "Event stream layer should not be closed")
+
 	multiStorage := rt.MultiStorage()
 	assert.NotNil(t, multiStorage, "Multi-storage layer should not be nil")
 	assert.False(t, multiStorage.IsClosed(), "Multi-storage layer should not be closed")
@@ -230,8 +224,6 @@ func TestRuntimeLayerAccess(t *testing.T) {
 
 // TestRuntimeConcurrentAccess tests concurrent access to the runtime
 func TestRuntimeConcurrentAccess(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -257,8 +249,6 @@ func TestRuntimeConcurrentAccess(t *testing.T) {
 
 // TestRuntimeResourceCleanup tests that resources are properly cleaned up
 func TestRuntimeResourceCleanup(t *testing.T) {
-	t.Parallel()
-
 	config := DefaultRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
@@ -274,6 +264,8 @@ func TestRuntimeResourceCleanup(t *testing.T) {
 	assert.True(t, rt.RDF().IsClosed(), "RDF layer should be closed")
 	assert.True(t, rt.PolicyEngine().IsClosed(), "Policy engine layer should be closed")
 	assert.True(t, rt.Notification().IsClosed(), "Notification layer should be closed")
+	assert.True(t, rt.ResourceIndex().IsClosed(), "Resource index layer should be closed")
+	assert.True(t, rt.EventStream().IsClosed(), "Event stream layer should be closed")
 	assert.True(t, rt.MultiStorage().IsClosed(), "Multi-storage layer should be closed")
 	assert.True(t, rt.Migration().IsClosed(), "Migration layer should be closed")
 }

@@ -17,7 +17,6 @@ import (
 
 // TestStorageAbstractionLayerInitialization tests storage layer initialization
 func TestStorageAbstractionLayerInitialization(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -33,7 +32,6 @@ func TestStorageAbstractionLayerInitialization(t *testing.T) {
 
 // TestInMemoryStorageBackend tests the in-memory storage backend
 func TestInMemoryStorageBackend(t *testing.T) {
-	t.Parallel()
 
 	backend := NewInMemoryStorageBackend("test", nil)
 	defer backend.Close()
@@ -96,7 +94,6 @@ func TestInMemoryStorageBackend(t *testing.T) {
 
 // TestStorageBackendNotFound tests getting a non-existent resource
 func TestStorageBackendNotFound(t *testing.T) {
-	t.Parallel()
 
 	backend := NewInMemoryStorageBackend("test", nil)
 	defer backend.Close()
@@ -115,7 +112,6 @@ func TestStorageBackendNotFound(t *testing.T) {
 
 // TestStorageBackendClosed tests operations on a closed backend
 func TestStorageBackendClosed(t *testing.T) {
-	t.Parallel()
 
 	backend := NewInMemoryStorageBackend("test", nil)
 
@@ -150,7 +146,6 @@ func TestStorageBackendClosed(t *testing.T) {
 
 // TestStorageAbstractionLayerRegisterBackend tests registering backends
 func TestStorageAbstractionLayerRegisterBackend(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -177,7 +172,6 @@ func TestStorageAbstractionLayerRegisterBackend(t *testing.T) {
 
 // TestStorageAbstractionLayerDuplicateBackend tests registering duplicate backends
 func TestStorageAbstractionLayerDuplicateBackend(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -201,7 +195,6 @@ func TestStorageAbstractionLayerDuplicateBackend(t *testing.T) {
 
 // TestStorageAbstractionLayerGetNonExistentBackend tests getting a non-existent backend
 func TestStorageAbstractionLayerGetNonExistentBackend(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -214,7 +207,6 @@ func TestStorageAbstractionLayerGetNonExistentBackend(t *testing.T) {
 
 // TestStorageAbstractionLayerSetDefaultBackend tests setting the default backend
 func TestStorageAbstractionLayerSetDefaultBackend(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -253,7 +245,6 @@ func TestStorageAbstractionLayerSetDefaultBackend(t *testing.T) {
 
 // TestStorageAbstractionLayerRetry tests retry logic
 func TestStorageAbstractionLayerRetry(t *testing.T) {
-	t.Parallel()
 
 	config := StorageAbstractionConfig{
 		DefaultStorage: "test",
@@ -387,7 +378,6 @@ func (f *FailingStorageBackend) HealthCheck(ctx context.Context) error {
 
 // TestStorageAbstractionLayerMaxRetries tests max retries behavior
 func TestStorageAbstractionLayerMaxRetries(t *testing.T) {
-	t.Parallel()
 
 	config := StorageAbstractionConfig{
 		DefaultStorage: "test",
@@ -463,7 +453,6 @@ func (a *AlwaysFailingStorageBackend) HealthCheck(ctx context.Context) error {
 
 // TestStorageAbstractionLayerContextCancellation tests context cancellation
 func TestStorageAbstractionLayerContextCancellation(t *testing.T) {
-	t.Parallel()
 
 	config := StorageAbstractionConfig{
 		DefaultStorage: "test",
@@ -504,8 +493,6 @@ func TestHTTPStorageBackend(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping HTTP storage backend test in short mode")
 	}
-
-	t.Parallel()
 
 	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -569,7 +556,6 @@ func TestHTTPStorageBackend(t *testing.T) {
 
 // TestStorageAbstractionLayerHealthCheck tests health checking
 func TestStorageAbstractionLayerHealthCheck(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -606,7 +592,6 @@ func TestStorageAbstractionLayerHealthCheck(t *testing.T) {
 
 // TestStorageAbstractionLayerConcurrent tests concurrent access to storage layer
 func TestStorageAbstractionLayerConcurrent(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -656,7 +641,6 @@ func TestStorageAbstractionLayerConcurrent(t *testing.T) {
 
 // TestStorageResourceMetadata tests storage resource metadata
 func TestStorageResourceMetadata(t *testing.T) {
-	t.Parallel()
 
 	backend := NewInMemoryStorageBackend("metadata-test", nil)
 	defer backend.Close()
@@ -698,7 +682,6 @@ func TestStorageResourceMetadata(t *testing.T) {
 
 // TestStorageBackendUnregister tests unregistering a backend
 func TestStorageBackendUnregister(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -723,7 +706,6 @@ func TestStorageBackendUnregister(t *testing.T) {
 
 // TestStorageLayerClose tests closing the storage layer
 func TestStorageLayerClose(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -765,7 +747,6 @@ func TestStorageLayerClose(t *testing.T) {
 
 // TestStorageLayerMetrics tests storage layer metrics
 func TestStorageLayerMetrics(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -802,7 +783,6 @@ func TestStorageLayerMetrics(t *testing.T) {
 
 // TestExponentialBackoff tests exponential backoff calculation
 func TestExponentialBackoff(t *testing.T) {
-	t.Parallel()
 
 	config := StorageAbstractionConfig{
 		DefaultStorage: "test",
@@ -852,7 +832,6 @@ func TestExponentialBackoff(t *testing.T) {
 
 // TestShouldRetry tests retry decision logic
 func TestShouldRetry(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	layer := NewStorageAbstractionLayer(config)
@@ -889,7 +868,6 @@ func (t *timeoutError) Error() string {
 
 // TestStorageAbstractionLayerDefaultConfig tests default configuration
 func TestStorageAbstractionLayerDefaultConfig(t *testing.T) {
-	t.Parallel()
 
 	config := DefaultStorageAbstractionConfig()
 	assert.Equal(t, "default", config.DefaultStorage, "Default storage should be 'default'")
@@ -901,7 +879,6 @@ func TestStorageAbstractionLayerDefaultConfig(t *testing.T) {
 
 // TestValidateURI tests URI validation for security
 func TestValidateURI(t *testing.T) {
-	t.Parallel()
 
 	// Valid URIs
 	validURIs := []string{
@@ -964,7 +941,6 @@ func TestValidateURI(t *testing.T) {
 
 // TestValidateResourceSize tests resource size validation for DoS protection
 func TestValidateResourceSize(t *testing.T) {
-	t.Parallel()
 
 	// Valid sizes
 	for size := int64(0); size <= MaxResourceSize; size += 1024 * 1024 {
@@ -981,7 +957,6 @@ func TestValidateResourceSize(t *testing.T) {
 
 // TestStorageValidationIntegration tests that validation is properly integrated
 func TestStorageValidationIntegration(t *testing.T) {
-	t.Parallel()
 
 	config := StorageAbstractionConfig{
 		DefaultStorage: "test",

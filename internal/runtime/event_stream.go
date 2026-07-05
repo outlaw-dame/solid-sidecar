@@ -48,12 +48,12 @@ type EventStreamHardeningConfig struct {
 // DefaultEventStreamHardeningConfig returns safe defaults for hardening
 func DefaultEventStreamHardeningConfig() EventStreamHardeningConfig {
 	return EventStreamHardeningConfig{
-		MaxMetadataSize:                4096, // 4KB max metadata per event
-		MaxMetadataKeys:                50,   // 50 metadata keys max
-		MaxMetadataKeyLength:           256,  // 256 chars max key length
-		MaxMetadataValueLength:         1024, // 1KB max value length
-		MaxSubscriberBufferSize:        1000, // 1000 events per subscriber buffer
-		MaxSubscriberInactivityTime:    1 * time.Hour,
+		MaxMetadataSize:                4096,   // 4KB max metadata per event
+		MaxMetadataKeys:                50,     // 50 metadata keys max
+		MaxMetadataKeyLength:           256,    // 256 chars max key length
+		MaxMetadataValueLength:         1024,   // 1KB max value length
+		MaxSubscriberBufferSize:        1000,   // 1000 events per subscriber buffer
+		MaxSubscriberInactivityTime:    0,      // Disabled by default to avoid background goroutines
 		MaxEventsPerSecond:             1000.0, // 1000 events per second max
 		EventBurstLimit:                2000,   // Allow bursts up to 2000
 		CircuitBreakerFailureThreshold: 5,
@@ -227,7 +227,7 @@ type EventStreamConfig struct {
 func DefaultEventStreamConfig() EventStreamConfig {
 	return EventStreamConfig{
 		MaxStreamBufferSize:  10000,
-		EventRetentionTime:   24 * time.Hour,
+		EventRetentionTime:   0, // Disabled by default to avoid background goroutines
 		MaxStreamSubscribers: 1000,
 		EnableObservability:  true,
 		HardeningConfig:      DefaultEventStreamHardeningConfig(),

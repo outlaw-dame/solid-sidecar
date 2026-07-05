@@ -13,7 +13,7 @@ import (
 )
 
 func TestInMemoryStoragePutConditionalIfNoneMatchCreatesOnlyWhenMissing(t *testing.T) {
-	t.Parallel()
+
 	backend := NewInMemoryStorageBackend("conditional", nil)
 	defer backend.Close()
 	ctx := context.Background()
@@ -28,7 +28,7 @@ func TestInMemoryStoragePutConditionalIfNoneMatchCreatesOnlyWhenMissing(t *testi
 }
 
 func TestInMemoryStoragePutConditionalIfMatchPreventsLostUpdate(t *testing.T) {
-	t.Parallel()
+
 	backend := NewInMemoryStorageBackend("conditional", nil)
 	defer backend.Close()
 	ctx := context.Background()
@@ -52,7 +52,7 @@ func TestInMemoryStoragePutConditionalIfMatchPreventsLostUpdate(t *testing.T) {
 }
 
 func TestInMemoryStorageDeleteConditionalRequiresMatchingETag(t *testing.T) {
-	t.Parallel()
+
 	backend := NewInMemoryStorageBackend("conditional", nil)
 	defer backend.Close()
 	ctx := context.Background()
@@ -75,7 +75,7 @@ func TestInMemoryStorageDeleteConditionalRequiresMatchingETag(t *testing.T) {
 }
 
 func TestStorageLayerConditionalUnsupportedBackendFailsClosed(t *testing.T) {
-	t.Parallel()
+
 	layer := NewStorageAbstractionLayer(DefaultStorageAbstractionConfig())
 	defer layer.Close()
 	backend := &AlwaysFailingStorageBackend{name: "plain"}
@@ -88,7 +88,7 @@ func TestStorageLayerConditionalUnsupportedBackendFailsClosed(t *testing.T) {
 }
 
 func TestStorageLayerPutConditionalRoutesThroughBackend(t *testing.T) {
-	t.Parallel()
+
 	layer := NewStorageAbstractionLayer(DefaultStorageAbstractionConfig())
 	defer layer.Close()
 	backend := NewInMemoryStorageBackend("conditional", nil)
@@ -105,7 +105,7 @@ func TestStorageLayerPutConditionalRoutesThroughBackend(t *testing.T) {
 }
 
 func TestHTTPStoragePutConditionalPropagatesHeaders(t *testing.T) {
-	t.Parallel()
+
 	var sawIfMatch string
 	var sawIfNoneMatch string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func TestHTTPStoragePutConditionalPropagatesHeaders(t *testing.T) {
 }
 
 func TestHTTPStoragePutConditionalMapsPreconditionFailed(t *testing.T) {
-	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPreconditionFailed)
 	}))
@@ -145,7 +145,7 @@ func TestHTTPStoragePutConditionalMapsPreconditionFailed(t *testing.T) {
 }
 
 func TestConditionalWriteGeneratesStrongETagWhenMissing(t *testing.T) {
-	t.Parallel()
+
 	backend := NewInMemoryStorageBackend("conditional", nil)
 	defer backend.Close()
 	ctx := context.Background()

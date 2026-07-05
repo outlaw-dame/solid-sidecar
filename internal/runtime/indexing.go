@@ -174,7 +174,7 @@ func DefaultResourceIndexConfig() ResourceIndexConfig {
 		EnableFullTextIndex: true,
 		MaxFullTextTerms:    100, // 100 terms per resource max
 		EnableAgentIndex:    true,
-		IndexRetentionTime:  24 * time.Hour * 30, // 30 days retention
+		IndexRetentionTime:  0, // Disabled by default to avoid background goroutines
 		EnableObservability: true,
 		HardeningConfig:     DefaultResourceIndexHardeningConfig(),
 		Logger:              nil,
@@ -1357,8 +1357,15 @@ func (i *ResourceIndexLayer) Close() error {
 	i.closed = true
 	close(i.closeChan)
 
-	// Clear all indexes
-	i.Clear()
+	// Clear all indexes directly without calling Clear() to avoid deadlock
+	i.resourceIndex = make(map[string]*ResourceMetadata)
+	i.containerIndex = make(map[string][]string)
+	i.agentIndex = make(map[string][]string)
+	i.typeIndex = make(map[string][]string)
+	i.accessIndex = make(map[string]*ResourceAccessInfo)
+	if i.fullTextIndex != nil {
+		i.fullTextIndex = make(map[string][]string)
+	}
 
 	i.logger.Info("Resource index layer closed")
 	return nil

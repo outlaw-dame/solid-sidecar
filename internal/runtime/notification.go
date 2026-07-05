@@ -62,6 +62,10 @@ type NotificationConfig struct {
 	// EnableMetrics enables metrics collection
 	EnableMetrics bool
 
+	// EnableBackgroundProcessing enables the background event processing goroutine
+	// Disabled by default in tests to avoid goroutine leaks
+	EnableBackgroundProcessing bool
+
 	// Logger is the logger for this layer
 	Logger *slog.Logger
 }
@@ -69,12 +73,13 @@ type NotificationConfig struct {
 // DefaultNotificationConfig returns a safe default configuration
 func DefaultNotificationConfig() NotificationConfig {
 	return NotificationConfig{
-		MaxSubscribers:     1000,
-		MaxBufferSize:      1000,
-		EventTimeout:       30 * time.Second,
-		EnableReconnection: true,
-		EnableMetrics:      true,
-		Logger:             nil,
+		MaxSubscribers:             1000,
+		MaxBufferSize:              1000,
+		EventTimeout:               30 * time.Second,
+		EnableReconnection:         true,
+		EnableMetrics:              true,
+		EnableBackgroundProcessing: false, // Disabled by default to avoid goroutine leaks in tests
+		Logger:                     nil,
 	}
 }
 
@@ -313,8 +318,10 @@ func NewNotificationLayer(config NotificationConfig) *NotificationLayer {
 		"enable_metrics", config.EnableMetrics,
 	)
 
-	// Start the event processing goroutine
-	go layer.processEvents()
+	// Start the event processing goroutine (disabled by default in tests)
+	if config.EnableBackgroundProcessing {
+		go layer.processEvents()
+	}
 
 	return layer
 }

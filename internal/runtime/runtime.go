@@ -93,14 +93,16 @@ type Runtime struct {
 	mode   RuntimeMode
 
 	// Layers
-	gateway      *GatewayCompatibilityLayer
-	storage      *StorageAbstractionLayer
-	metadata     *MetadataIndexLayer
-	rdf          *RDFGraphIndexLayer
-	policyEngine *PolicyEngineLayer
-	notification *NotificationLayer
-	multiStorage *MultiStorageLayer
-	migration    *CSSMigrationLayer
+	gateway       *GatewayCompatibilityLayer
+	storage       *StorageAbstractionLayer
+	metadata      *MetadataIndexLayer
+	rdf           *RDFGraphIndexLayer
+	policyEngine  *PolicyEngineLayer
+	notification  *NotificationLayer
+	resourceIndex *ResourceIndexLayer
+	eventStream   *EventStreamLayer
+	multiStorage  *MultiStorageLayer
+	migration     *CSSMigrationLayer
 
 	// State
 	initialized bool
@@ -154,10 +156,17 @@ func New(config RuntimeConfig) (*Runtime, error) {
 		Logger: config.Logger,
 	})
 
-	// Layer 6: Notification/Live-Update Layer
+	// Layer 6: Resource Index Layer (Phase 16)
+	rt.resourceIndex = NewResourceIndexLayer(DefaultResourceIndexConfig())
+
+	// Layer 6.1: Notification/Live-Update Layer
 	rt.notification = NewNotificationLayer(NotificationConfig{
 		Logger: config.Logger,
 	})
+
+	// Layer 6.2: Event Stream Layer (Phase 16)
+	// Connect event stream to notification layer
+	rt.eventStream = NewEventStreamLayer(DefaultEventStreamConfig(), rt.notification)
 
 	// Layer 7: Multi-Storage/Multi-Tenant Layer
 	rt.multiStorage = NewMultiStorageLayer(MultiStorageConfig{
@@ -271,6 +280,20 @@ func (rt *Runtime) PolicyEngine() *PolicyEngineLayer {
 	return rt.policyEngine
 }
 
+// ResourceIndex returns the resource index layer
+func (rt *Runtime) ResourceIndex() *ResourceIndexLayer {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return rt.resourceIndex
+}
+
+// EventStream returns the event stream layer
+func (rt *Runtime) EventStream() *EventStreamLayer {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return rt.eventStream
+}
+
 // Notification returns the notification layer
 func (rt *Runtime) Notification() *NotificationLayer {
 	rt.mu.RLock()
@@ -367,6 +390,18 @@ func (rt *Runtime) Close() error {
 
 	if rt.policyEngine != nil {
 		if err := rt.policyEngine.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if rt.eventStream != nil {
+		if err := rt.eventStream.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if rt.resourceIndex != nil {
+		if err := rt.resourceIndex.Close(); err != nil {
 			errors = append(errors, err)
 		}
 	}

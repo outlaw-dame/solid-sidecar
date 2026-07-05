@@ -12,7 +12,7 @@ import (
 )
 
 func TestContainerOperationCreateRejectsDuplicateResource(t *testing.T) {
-	t.Parallel()
+
 	service := newTestContainerOperationService(t)
 	ctx := context.Background()
 	container := "http://example.com/container/"
@@ -33,7 +33,7 @@ func TestContainerOperationCreateRejectsDuplicateResource(t *testing.T) {
 }
 
 func TestContainerOperationListMembersOnlyDirectChildren(t *testing.T) {
-	t.Parallel()
+
 	service := newTestContainerOperationService(t)
 	ctx := context.Background()
 	container := "http://example.com/container/"
@@ -53,7 +53,7 @@ func TestContainerOperationListMembersOnlyDirectChildren(t *testing.T) {
 }
 
 func TestContainerOperationDeleteRemovesResource(t *testing.T) {
-	t.Parallel()
+
 	service := newTestContainerOperationService(t)
 	ctx := context.Background()
 	container := "http://example.com/container/"
@@ -73,7 +73,7 @@ func TestContainerOperationDeleteRemovesResource(t *testing.T) {
 }
 
 func TestContainerOperationConcurrentCreateAllowsOnlyOneWinner(t *testing.T) {
-	t.Parallel()
+
 	service := newTestContainerOperationService(t)
 	ctx := context.Background()
 	container := "http://example.com/container/"
@@ -110,7 +110,7 @@ func TestContainerOperationConcurrentCreateAllowsOnlyOneWinner(t *testing.T) {
 }
 
 func TestContainerURIHelpers(t *testing.T) {
-	t.Parallel()
+
 	normalized, err := NormalizeContainerURI("http://example.com/container")
 	require.NoError(t, err)
 	assert.Equal(t, "http://example.com/container/", normalized)
@@ -126,7 +126,7 @@ func TestContainerURIHelpers(t *testing.T) {
 }
 
 func TestValidateResourceNameRejectsUnsafeNames(t *testing.T) {
-	t.Parallel()
+
 	invalid := []string{
 		"", ".", "..",
 		"nested/name", "nested\\name",
