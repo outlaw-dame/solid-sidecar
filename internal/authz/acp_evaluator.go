@@ -51,25 +51,25 @@ type ACPEvaluatorOptions struct {
 // DefaultACPEvaluatorOptions returns options with sensible defaults
 func DefaultACPEvaluatorOptions() ACPEvaluatorOptions {
 	return ACPEvaluatorOptions{
-		MaxPolicies:          10,
-		Timeout:              30 * time.Second,
-		ShadowMode:           true,
-		EnforcementMode:      false,
+		MaxPolicies:             10,
+		Timeout:                 30 * time.Second,
+		ShadowMode:              true,
+		EnforcementMode:         false,
 		DecisionTraceIDsEnabled: false,
-		FailClosedPolicy:     DefaultFailClosedPolicy(),
-		Logger:               nil,
+		FailClosedPolicy:        DefaultFailClosedPolicy(),
+		Logger:                  nil,
 	}
 }
 
 // ACPEvaluator evaluates Access Control Policies (ACP)
 type ACPEvaluator struct {
-	options                ACPEvaluatorOptions
-	parser                 *ACPParser
-	RDFParser              *RDFParserRegistry
-	shadowMode             bool
-	enforcementMode        bool
+	options                 ACPEvaluatorOptions
+	parser                  *ACPParser
+	RDFParser               *RDFParserRegistry
+	shadowMode              bool
+	enforcementMode         bool
 	decisionTraceIDsEnabled bool
-	failClosedPolicy       FailClosedPolicy
+	failClosedPolicy        FailClosedPolicy
 }
 
 // NewACPEvaluator creates a new ACP evaluator
@@ -91,13 +91,13 @@ func NewACPEvaluator(options ACPEvaluatorOptions, rdfParser *RDFParserRegistry) 
 	}
 
 	return &ACPEvaluator{
-		options:                options,
-		parser:                 options.Parser,
-		RDFParser:              rdfParser,
-		shadowMode:             options.ShadowMode,
-		enforcementMode:        options.EnforcementMode,
+		options:                 options,
+		parser:                  options.Parser,
+		RDFParser:               rdfParser,
+		shadowMode:              options.ShadowMode,
+		enforcementMode:         options.EnforcementMode,
 		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
-		failClosedPolicy:       options.FailClosedPolicy,
+		failClosedPolicy:        options.FailClosedPolicy,
 	}, nil
 }
 

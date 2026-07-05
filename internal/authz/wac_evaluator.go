@@ -51,25 +51,25 @@ type WACEvaluatorOptions struct {
 // DefaultWACEvaluatorOptions returns options with sensible defaults
 func DefaultWACEvaluatorOptions() WACEvaluatorOptions {
 	return WACEvaluatorOptions{
-		MaxPolicies:          10,
-		Timeout:              30 * time.Second,
-		ShadowMode:           true,
-		EnforcementMode:      false,
+		MaxPolicies:             10,
+		Timeout:                 30 * time.Second,
+		ShadowMode:              true,
+		EnforcementMode:         false,
 		DecisionTraceIDsEnabled: false,
-		FailClosedPolicy:     DefaultFailClosedPolicy(),
-		Logger:               nil,
+		FailClosedPolicy:        DefaultFailClosedPolicy(),
+		Logger:                  nil,
 	}
 }
 
 // WACEvaluator evaluates Web Access Control (WAC) policies
 type WACEvaluator struct {
-	options                WACEvaluatorOptions
-	parser                 *WACParser
-	RDFParser              *RDFParserRegistry
-	shadowMode             bool
-	enforcementMode        bool
+	options                 WACEvaluatorOptions
+	parser                  *WACParser
+	RDFParser               *RDFParserRegistry
+	shadowMode              bool
+	enforcementMode         bool
 	decisionTraceIDsEnabled bool
-	failClosedPolicy       FailClosedPolicy
+	failClosedPolicy        FailClosedPolicy
 }
 
 // NewWACEvaluator creates a new WAC evaluator
@@ -91,13 +91,13 @@ func NewWACEvaluator(options WACEvaluatorOptions, rdfParser *RDFParserRegistry) 
 	}
 
 	return &WACEvaluator{
-		options:                options,
-		parser:                 options.Parser,
-		RDFParser:              rdfParser,
-		shadowMode:             options.ShadowMode,
-		enforcementMode:        options.EnforcementMode,
+		options:                 options,
+		parser:                  options.Parser,
+		RDFParser:               rdfParser,
+		shadowMode:              options.ShadowMode,
+		enforcementMode:         options.EnforcementMode,
 		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
-		failClosedPolicy:       options.FailClosedPolicy,
+		failClosedPolicy:        options.FailClosedPolicy,
 	}, nil
 }
 

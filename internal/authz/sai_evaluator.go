@@ -53,13 +53,13 @@ func NewSAIEvaluator(options SAIEvaluatorOptions, parser *SAIParser) *SAIEvaluat
 	}
 
 	return &SAIEvaluator{
-		options:                options,
-		parser:                 parser,
-		shadowMode:             options.ShadowMode,
-		enforcementMode:        options.EnforcementMode,
+		options:                 options,
+		parser:                  parser,
+		shadowMode:              options.ShadowMode,
+		enforcementMode:         options.EnforcementMode,
 		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
-		failClosedPolicy:       options.FailClosedPolicy,
-		logger:                 options.Logger,
+		failClosedPolicy:        options.FailClosedPolicy,
+		logger:                  options.Logger,
 	}
 }
 
@@ -73,13 +73,13 @@ func NewSAIEvaluatorWithOptions(options SAIEvaluatorOptions) *SAIEvaluator {
 	})
 
 	return &SAIEvaluator{
-		options:                options,
-		parser:                 parser,
-		shadowMode:             options.ShadowMode,
-		enforcementMode:        options.EnforcementMode,
+		options:                 options,
+		parser:                  parser,
+		shadowMode:              options.ShadowMode,
+		enforcementMode:         options.EnforcementMode,
 		decisionTraceIDsEnabled: options.DecisionTraceIDsEnabled,
-		failClosedPolicy:       options.FailClosedPolicy,
-		logger:                 options.Logger,
+		failClosedPolicy:        options.FailClosedPolicy,
+		logger:                  options.Logger,
 	}
 }
 

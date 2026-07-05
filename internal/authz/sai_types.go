@@ -376,16 +376,16 @@ type SAIEvaluatorOptions struct {
 // DefaultSAIEvaluatorOptions returns safe default options
 func DefaultSAIEvaluatorOptions() SAIEvaluatorOptions {
 	return SAIEvaluatorOptions{
-		ShadowMode:         true, // Shadow mode by default
-		MaxInferenceDepth:  SAIInferenceLimit,
-		MaxDelegationDepth: SAIMaxDelegationDepth,
-		EnableDelegation:   true,
-		MaxInputSize:       SAIMaxPolicySize,
-		Timeout:            30 * time.Second,
-		EnforcementMode:      false,
+		ShadowMode:              true, // Shadow mode by default
+		MaxInferenceDepth:       SAIInferenceLimit,
+		MaxDelegationDepth:      SAIMaxDelegationDepth,
+		EnableDelegation:        true,
+		MaxInputSize:            SAIMaxPolicySize,
+		Timeout:                 30 * time.Second,
+		EnforcementMode:         false,
 		DecisionTraceIDsEnabled: false,
-		FailClosedPolicy:     DefaultFailClosedPolicy(),
-		Logger:             nil,
+		FailClosedPolicy:        DefaultFailClosedPolicy(),
+		Logger:                  nil,
 	}
 }
 

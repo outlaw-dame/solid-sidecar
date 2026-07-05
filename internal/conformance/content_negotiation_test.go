@@ -28,23 +28,23 @@ type ContentNegotiationConformanceTests struct {
 
 // ContentNegotiationTestResult represents the result of a content negotiation test
 type ContentNegotiationTestResult struct {
-	TestID          string `json:"test_id"`
-	TestName        string `json:"test_name"`
-	RequestPath     string `json:"request_path"`
-	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
-	ExpectedContentType string `json:"expected_content_type"`
-	ActualContentType   string `json:"actual_content_type"`
-	ActualStatus        int    `json:"actual_status"`
-	TestStatus          string `json:"test_status"` // "passed", "failed", "skipped", "error"
-	ErrorMessage        string `json:"error_message,omitempty"`
-	DurationMs          int64  `json:"duration_ms"`
-	StartTime           string `json:"start_time"`
-	EndTime             string `json:"end_time"`
-	Severity            string `json:"severity"`
-	SolidSpecRef        string `json:"solid_spec_ref,omitempty"`
+	TestID              string            `json:"test_id"`
+	TestName            string            `json:"test_name"`
+	RequestPath         string            `json:"request_path"`
+	RequestHeaders      map[string]string `json:"request_headers,omitempty"`
+	ExpectedContentType string            `json:"expected_content_type"`
+	ActualContentType   string            `json:"actual_content_type"`
+	ActualStatus        int               `json:"actual_status"`
+	TestStatus          string            `json:"test_status"` // "passed", "failed", "skipped", "error"
+	ErrorMessage        string            `json:"error_message,omitempty"`
+	DurationMs          int64             `json:"duration_ms"`
+	StartTime           string            `json:"start_time"`
+	EndTime             string            `json:"end_time"`
+	Severity            string            `json:"severity"`
+	SolidSpecRef        string            `json:"solid_spec_ref,omitempty"`
 }
 
-// ConformanceTestResult for interface compatibility  
+// ConformanceTestResult for interface compatibility
 type ConformanceTestResult struct {
 	TestID          string `json:"test_id"`
 	TestName        string `json:"test_name"`
@@ -58,7 +58,7 @@ type ConformanceTestResult struct {
 	DurationMs      int64  `json:"duration_ms"`
 	Expectation     string `json:"expectation"`
 	ActualResult    string `json:"actual_result"`
-	Severity        string `json:"severity"` // "critical", "high", "medium", "low"
+	Severity        string `json:"severity"`                 // "critical", "high", "medium", "low"
 	SolidSpecRef    string `json:"solid_spec_ref,omitempty"` // Reference to Solid spec
 }
 
@@ -247,15 +247,15 @@ func (c *ContentNegotiationConformanceTests) executeContentNegotiationTest(
 	},
 ) ContentNegotiationTestResult {
 	result := ContentNegotiationTestResult{
-		TestID:           uuid.New().String(),
-		TestName:         test.name,
-		RequestPath:      test.path,
-		RequestHeaders:   make(map[string]string),
+		TestID:              uuid.New().String(),
+		TestName:            test.name,
+		RequestPath:         test.path,
+		RequestHeaders:      make(map[string]string),
 		ExpectedContentType: test.expectedMimeType,
-		StartTime:        time.Now().UTC().Format(time.RFC3339),
-		Severity:         test.severity,
-		SolidSpecRef:     test.specRef,
-		TestStatus:      "error",
+		StartTime:           time.Now().UTC().Format(time.RFC3339),
+		Severity:            test.severity,
+		SolidSpecRef:        test.specRef,
+		TestStatus:          "error",
 	}
 
 	// Set Accept header if specified
@@ -460,20 +460,20 @@ func (c *ContentNegotiationConformanceTests) GetConformanceScore() float64 {
 // GetFailedTests returns all failed content negotiation tests
 func (c *ContentNegotiationConformanceTests) GetFailedTests() []ContentNegotiationTestResult {
 	var failed []ContentNegotiationTestResult
-	
+
 	for _, result := range c.Results {
 		if result.TestStatus == "failed" || result.TestStatus == "error" {
 			failed = append(failed, result)
 		}
 	}
-	
+
 	return failed
 }
 
 // GetResultsByContentType returns results grouped by content type
 func (c *ContentNegotiationConformanceTests) GetResultsByContentType() map[string][]ContentNegotiationTestResult {
 	resultsByType := make(map[string][]ContentNegotiationTestResult)
-	
+
 	for _, result := range c.Results {
 		contentType := result.ExpectedContentType
 		if contentType == "" {
@@ -481,6 +481,6 @@ func (c *ContentNegotiationConformanceTests) GetResultsByContentType() map[strin
 		}
 		resultsByType[contentType] = append(resultsByType[contentType], result)
 	}
-	
+
 	return resultsByType
 }

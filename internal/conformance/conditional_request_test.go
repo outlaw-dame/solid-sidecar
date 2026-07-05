@@ -29,21 +29,21 @@ type ConditionalRequestConformanceTests struct {
 
 // ConditionalRequestTestResult represents the result of a conditional request test
 type ConditionalRequestTestResult struct {
-	TestID          string `json:"test_id"`
-	TestName        string `json:"test_name"`
-	RequestPath     string `json:"request_path"`
-	RequestMethod   string `json:"request_method"`
-	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
-	RequestBody     string `json:"request_body,omitempty"`
-	ExpectedStatus  int    `json:"expected_status"`
-	ActualStatus    int    `json:"actual_status"`
-	TestStatus      string `json:"test_status"` // "passed", "failed", "skipped", "error"
-	ErrorMessage    string `json:"error_message,omitempty"`
-	DurationMs      int64  `json:"duration_ms"`
-	StartTime       string `json:"start_time"`
-	EndTime         string `json:"end_time"`
-	Severity        string `json:"severity"`
-	SolidSpecRef    string `json:"solid_spec_ref,omitempty"`
+	TestID         string            `json:"test_id"`
+	TestName       string            `json:"test_name"`
+	RequestPath    string            `json:"request_path"`
+	RequestMethod  string            `json:"request_method"`
+	RequestHeaders map[string]string `json:"request_headers,omitempty"`
+	RequestBody    string            `json:"request_body,omitempty"`
+	ExpectedStatus int               `json:"expected_status"`
+	ActualStatus   int               `json:"actual_status"`
+	TestStatus     string            `json:"test_status"` // "passed", "failed", "skipped", "error"
+	ErrorMessage   string            `json:"error_message,omitempty"`
+	DurationMs     int64             `json:"duration_ms"`
+	StartTime      string            `json:"start_time"`
+	EndTime        string            `json:"end_time"`
+	Severity       string            `json:"severity"`
+	SolidSpecRef   string            `json:"solid_spec_ref,omitempty"`
 }
 
 // NewConditionalRequestConformanceTests creates a new conditional request test suite
@@ -66,7 +66,7 @@ func (c *ConditionalRequestConformanceTests) Run(ctx context.Context, serverURL 
 	// First, we need to create a test resource to work with
 	testResourcePath := "/test-conditional-resource.txt"
 	testResourceBody := "Hello, Solid Conformance Testing!"
-	
+
 	// Create the test resource
 	createReq, err := http.NewRequestWithContext(ctx, "PUT", serverURL+strings.TrimLeft(testResourcePath, "/"), bytes.NewReader([]byte(testResourceBody)))
 	if err != nil {
@@ -75,221 +75,221 @@ func (c *ConditionalRequestConformanceTests) Run(ctx context.Context, serverURL 
 	}
 	createReq.Header.Set("Content-Type", "text/plain")
 	createReq.Header.Set("Accept", "*/*")
-	
+
 	createResp, err := client.Do(createReq)
 	if err != nil {
 		// If we can't create the resource, we can't test conditional requests
 		return results
 	}
 	defer createResp.Body.Close()
-	
+
 	// Read the response to get ETag and Last-Modified headers
 	io.ReadAll(createResp.Body)
-	
+
 	testETag := createResp.Header.Get("ETag")
 	testLastModified := createResp.Header.Get("Last-Modified")
 
 	// Conditional request test cases
 	testCases := []struct {
 		name           string
-		method        string
-		path          string
-		headers       map[string]string
-		body          string
+		method         string
+		path           string
+		headers        map[string]string
+		body           string
 		expectedStatus int
-		severity      string
-		specRef       string
+		severity       string
+		specRef        string
 	}{
 		// If-Match tests
 		{
 			name:           "If-Match with valid ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": testETag},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": testETag},
+			body:           "",
 			expectedStatus: 200,
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 		{
 			name:           "If-Match with invalid ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": `"invalid-etag"`},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": `"invalid-etag"`},
+			body:           "",
 			expectedStatus: 412, // Precondition Failed
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 		{
 			name:           "If-Match with wildcard",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": "*"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": "*"},
+			body:           "",
 			expectedStatus: 200,
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 		{
 			name:           "If-Match with PUT (precondition for update)",
-			method:        "PUT",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": testETag, "Content-Type": "text/plain"},
-			body:          "Updated content",
+			method:         "PUT",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": testETag, "Content-Type": "text/plain"},
+			body:           "Updated content",
 			expectedStatus: 204, // No Content
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 		{
 			name:           "If-Match with PUT and invalid ETag",
-			method:        "PUT",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": `"invalid-etag"`, "Content-Type": "text/plain"},
-			body:          "Updated content",
+			method:         "PUT",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": `"invalid-etag"`, "Content-Type": "text/plain"},
+			body:           "Updated content",
 			expectedStatus: 412, // Precondition Failed
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 
 		// If-None-Match tests
 		{
 			name:           "If-None-Match with different ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-None-Match": `"different-etag"`},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-None-Match": `"different-etag"`},
+			body:           "",
 			expectedStatus: 200,
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
 		},
 		{
 			name:           "If-None-Match with same ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-None-Match": testETag},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-None-Match": testETag},
+			body:           "",
 			expectedStatus: 304, // Not Modified
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
 		},
 		{
 			name:           "If-None-Match with wildcard",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-None-Match": "*"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-None-Match": "*"},
+			body:           "",
 			expectedStatus: 304, // Not Modified (if resource exists)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
 		},
 		{
 			name:           "If-None-Match with PUT (precondition for creation)",
-			method:        "PUT",
-			path:          "/new-conditional-resource.txt",
-			headers:       map[string]string{"If-None-Match": "*", "Content-Type": "text/plain"},
-			body:          "New resource content",
+			method:         "PUT",
+			path:           "/new-conditional-resource.txt",
+			headers:        map[string]string{"If-None-Match": "*", "Content-Type": "text/plain"},
+			body:           "New resource content",
 			expectedStatus: 412, // Precondition Failed (resource already exists, but we're using * which means if any resource exists)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
 		},
 
 		// If-Modified-Since tests
 		{
 			name:           "If-Modified-Since with recent time",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Modified-Since": time.Now().UTC().Format(http.TimeFormat)},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Modified-Since": time.Now().UTC().Format(http.TimeFormat)},
+			body:           "",
 			expectedStatus: 304, // Not Modified (current time is after resource modification)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
 		},
 		{
 			name:           "If-Modified-Since with old time",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Modified-Since": "Wed, 21 Oct 1970 07:28:00 GMT"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Modified-Since": "Wed, 21 Oct 1970 07:28:00 GMT"},
+			body:           "",
 			expectedStatus: 200, // OK (old time, resource has been modified)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
 		},
 		{
 			name:           "If-Modified-Since with resource Last-Modified time",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Modified-Since": testLastModified},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Modified-Since": testLastModified},
+			body:           "",
 			expectedStatus: 304, // Not Modified (exact modification time)
-			severity:      "high",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
+			severity:       "high",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.3",
 		},
 
 		// If-Unmodified-Since tests
 		{
 			name:           "If-Unmodified-Since with old time",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Unmodified-Since": "Wed, 21 Oct 1970 07:28:00 GMT"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Unmodified-Since": "Wed, 21 Oct 1970 07:28:00 GMT"},
+			body:           "",
 			expectedStatus: 200, // OK (resource not modified since old time)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.4",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.4",
 		},
 		{
 			name:           "If-Unmodified-Since with recent time",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Unmodified-Since": time.Now().UTC().Format(http.TimeFormat)},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Unmodified-Since": time.Now().UTC().Format(http.TimeFormat)},
+			body:           "",
 			expectedStatus: 412, // Precondition Failed (resource modified since recent time)
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.4",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.4",
 		},
 
 		// If-Range tests
 		{
 			name:           "If-Range with valid ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Range": testETag, "Range": "bytes=0-10"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Range": testETag, "Range": "bytes=0-10"},
+			body:           "",
 			expectedStatus: 206, // Partial Content
-			severity:      "low",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7233#section-3.2",
+			severity:       "low",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7233#section-3.2",
 		},
 		{
 			name:           "If-Range with invalid ETag",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Range": `"invalid-etag"`, "Range": "bytes=0-10"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Range": `"invalid-etag"`, "Range": "bytes=0-10"},
+			body:           "",
 			expectedStatus: 200, // Full resource (If-Range condition not met)
-			severity:      "low",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7233#section-3.2",
+			severity:       "low",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7233#section-3.2",
 		},
 
 		// Error cases
 		{
 			name:           "Invalid If-Match header format",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-Match": "invalid-format"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-Match": "invalid-format"},
+			body:           "",
 			expectedStatus: 400, // Bad Request
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.1",
 		},
 		{
 			name:           "Invalid If-None-Match header format",
-			method:        "GET",
-			path:          testResourcePath,
-			headers:       map[string]string{"If-None-Match": "invalid-format"},
-			body:          "",
+			method:         "GET",
+			path:           testResourcePath,
+			headers:        map[string]string{"If-None-Match": "invalid-format"},
+			body:           "",
 			expectedStatus: 400, // Bad Request
-			severity:      "medium",
-			specRef:       "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
+			severity:       "medium",
+			specRef:        "https://datatracker.ietf.org/doc/html/rfc7232#section-3.2",
 		},
 	}
 
@@ -321,13 +321,13 @@ func (c *ConditionalRequestConformanceTests) executeConditionalRequestTest(
 	client *http.Client,
 	test struct {
 		name           string
-		method        string
-		path          string
-		headers       map[string]string
-		body          string
+		method         string
+		path           string
+		headers        map[string]string
+		body           string
 		expectedStatus int
-		severity      string
-		specRef       string
+		severity       string
+		specRef        string
 	},
 ) ConditionalRequestTestResult {
 	result := ConditionalRequestTestResult{
@@ -341,7 +341,7 @@ func (c *ConditionalRequestConformanceTests) executeConditionalRequestTest(
 		StartTime:      time.Now().UTC().Format(time.RFC3339),
 		Severity:       test.severity,
 		SolidSpecRef:   test.specRef,
-		TestStatus:    "error",
+		TestStatus:     "error",
 	}
 
 	// Create request URL
@@ -404,13 +404,13 @@ func (c *ConditionalRequestConformanceTests) executeConditionalRequestTest(
 func (c *ConditionalRequestConformanceTests) evaluateConditionalRequestResult(
 	test struct {
 		name           string
-		method        string
-		path          string
-		headers       map[string]string
-		body          string
+		method         string
+		path           string
+		headers        map[string]string
+		body           string
 		expectedStatus int
-		severity      string
-		specRef       string
+		severity       string
+		specRef        string
 	},
 	actualStatus int,
 ) string {
@@ -495,20 +495,20 @@ func (c *ConditionalRequestConformanceTests) GetConformanceScore() float64 {
 // GetFailedTests returns all failed conditional request tests
 func (c *ConditionalRequestConformanceTests) GetFailedTests() []ConditionalRequestTestResult {
 	var failed []ConditionalRequestTestResult
-	
+
 	for _, result := range c.Results {
 		if result.TestStatus == "failed" || result.TestStatus == "error" {
 			failed = append(failed, result)
 		}
 	}
-	
+
 	return failed
 }
 
 // GetResultsByPrecondition returns results grouped by precondition type
 func (c *ConditionalRequestConformanceTests) GetResultsByPrecondition() map[string][]ConditionalRequestTestResult {
 	resultsByPrecondition := make(map[string][]ConditionalRequestTestResult)
-	
+
 	for _, result := range c.Results {
 		// Extract precondition type from headers
 		precondition := "None"
@@ -523,9 +523,9 @@ func (c *ConditionalRequestConformanceTests) GetResultsByPrecondition() map[stri
 		} else if _, exists := result.RequestHeaders["If-Range"]; exists {
 			precondition = "If-Range"
 		}
-		
+
 		resultsByPrecondition[precondition] = append(resultsByPrecondition[precondition], result)
 	}
-	
+
 	return resultsByPrecondition
 }
