@@ -48,6 +48,9 @@ type MultiStorageLayer struct {
 	// Logger
 	logger *slog.Logger
 
+	// Tenant authentication manager
+	tenantAuthManager *TenantAuthManager
+
 	// Close state
 	closeChan chan struct{}
 	closed    bool
@@ -195,6 +198,9 @@ type TenantConfig struct {
 	// TenantID is the unique identifier for this tenant
 	TenantID string
 
+	// StorageRoot is the storage root path for this tenant
+	StorageRoot string
+
 	// StorageBackend is the default storage backend for this tenant
 	StorageBackend string
 
@@ -206,6 +212,9 @@ type TenantConfig struct {
 
 	// ACLConfig defines access control configuration for this tenant
 	ACLConfig TenantACLConfig
+
+	// AuthConfig defines authentication configuration for this tenant
+	AuthConfig *TenantAuthConfig
 
 	// Metadata contains additional tenant metadata
 	Metadata map[string]string
@@ -320,6 +329,7 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 		tenantStorage: make(map[string]string),
 		healthStatus:  make(map[string]TenantHealthStatus),
 		logger:        config.Logger,
+		tenantAuthManager: NewTenantAuthManager(config.Logger),
 		closeChan:     make(chan struct{}),
 		closed:        false,
 		metrics: MultiStorageMetrics{
@@ -347,6 +357,7 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 	// Set up default tenant
 	layer.AddTenant(&TenantConfig{
 		TenantID:               config.DefaultTenant,
+		StorageRoot:            "/",
 		StorageBackend:         config.DefaultStorage,
 		AllowedStorageBackends: []string{config.DefaultStorage},
 		ResourceQuotas: TenantQuotas{
@@ -360,6 +371,7 @@ func NewMultiStorageLayer(config MultiStorageConfig) *MultiStorageLayer {
 			InheritACL:        true,
 			PublicReadEnabled: false,
 		},
+		AuthConfig: DefaultTenantAuthConfig(),
 		Metadata: make(map[string]string),
 		Created:  time.Now().Format(time.RFC3339),
 		Modified: time.Now().Format(time.RFC3339),
@@ -605,6 +617,7 @@ func (m *MultiStorageLayer) AddTenant(tenant *TenantConfig) error {
 
 	m.tenants[tenant.TenantID] = tenant
 	m.tenantStorage[tenant.TenantID] = tenant.StorageBackend
+	m.metrics.RecordTenantOperation("create")
 
 	m.logger.Info("Tenant added",
 		"tenant_id", tenant.TenantID,
@@ -663,6 +676,8 @@ func (m *MultiStorageLayer) GetTenant(tenantID string) (*TenantConfig, error) {
 		return nil, errors.New("multi-storage layer is closed")
 	}
 
+	m.metrics.RecordTenantOperation("lookup")
+
 	tenant, exists := m.tenants[tenantID]
 	if !exists {
 		return nil, fmt.Errorf("tenant with ID %q not found", tenantID)
@@ -686,12 +701,22 @@ func (m *MultiStorageLayer) copyTenant(tenant *TenantConfig) *TenantConfig {
 		copiedMetadata[k] = v
 	}
 
+	// Create a copy of AuthConfig if it exists
+	var authConfigCopy *TenantAuthConfig
+	if tenant.AuthConfig != nil {
+		// Use a temporary manager to copy the auth config
+		tempManager := NewTenantAuthManager(nil)
+		authConfigCopy = tempManager.copyTenantAuthConfig(tenant.AuthConfig)
+	}
+
 	return &TenantConfig{
 		TenantID:               tenant.TenantID,
+		StorageRoot:            tenant.StorageRoot,
 		StorageBackend:         tenant.StorageBackend,
 		AllowedStorageBackends: copiedAllowedBackends,
 		ResourceQuotas:         tenant.ResourceQuotas,
 		ACLConfig:              tenant.ACLConfig,
+		AuthConfig:             authConfigCopy,
 		Metadata:               copiedMetadata,
 		Created:                tenant.Created,
 		Modified:               tenant.Modified,
@@ -716,6 +741,7 @@ func (m *MultiStorageLayer) RemoveTenant(tenantID string) error {
 	delete(m.tenantStorage, tenantID)
 	delete(m.healthStatus, tenantID)
 
+	m.metrics.RecordTenantOperation("delete")
 	m.logger.Info("Tenant removed", "tenant_id", tenantID)
 	return nil
 }
@@ -875,4 +901,62 @@ func (m *MultiStorageLayer) IsClosed() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.closed
+}
+
+// GetTenantAuthManager returns the tenant authentication manager
+func (m *MultiStorageLayer) GetTenantAuthManager() *TenantAuthManager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil
+	}
+	return m.tenantAuthManager
+}
+
+// AddTenantAuthConfig adds authentication configuration for a tenant
+func (m *MultiStorageLayer) AddTenantAuthConfig(tenantID string, config *TenantAuthConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return errors.New("multi-storage layer is closed")
+	}
+
+	return m.tenantAuthManager.AddTenantAuthConfig(tenantID, config)
+}
+
+// GetTenantAuthConfig returns the authentication configuration for a tenant
+func (m *MultiStorageLayer) GetTenantAuthConfig(tenantID string) (*TenantAuthConfig, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return nil, errors.New("multi-storage layer is closed")
+	}
+
+	return m.tenantAuthManager.GetTenantAuthConfig(tenantID)
+}
+
+// UpdateTenantAuthConfig updates the authentication configuration for a tenant
+func (m *MultiStorageLayer) UpdateTenantAuthConfig(tenantID string, config *TenantAuthConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return errors.New("multi-storage layer is closed")
+	}
+
+	return m.tenantAuthManager.UpdateTenantAuthConfig(tenantID, config)
+}
+
+// RemoveTenantAuthConfig removes the authentication configuration for a tenant
+func (m *MultiStorageLayer) RemoveTenantAuthConfig(tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return errors.New("multi-storage layer is closed")
+	}
+
+	return m.tenantAuthManager.RemoveTenantAuthConfig(tenantID)
 }
