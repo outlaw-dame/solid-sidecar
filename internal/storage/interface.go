@@ -181,10 +181,10 @@ type Metadata struct {
 
 // quotaUsageInfo tracks quota usage for a storage root
 type quotaUsageInfo struct {
-	UsedBytes      int64
-	UsedResources  int64
-	MaxBytes       int64
-	MaxResources   int64
+	UsedBytes     int64
+	UsedResources int64
+	MaxBytes      int64
+	MaxResources  int64
 }
 
 // Resource represents a complete resource with body and metadata

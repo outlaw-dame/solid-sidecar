@@ -79,8 +79,8 @@ func NewS3Backend(config S3BackendConfig) (StorageBackend, error) {
 	}
 
 	backend := &s3Backend{
-		config:       config,
-		logger:       config.Logger.With("backend", "s3", "bucket", config.Bucket),
+		config:        config,
+		logger:        config.Logger.With("backend", "s3", "bucket", config.Bucket),
 		metadataCache: make(map[string]*Metadata),
 	}
 
@@ -159,7 +159,7 @@ func (b *s3Backend) Initialize(ctx context.Context, config map[string]string) er
 	newBucket := config["bucket"]
 	newRegion := config["region"]
 	newEndpoint := config["endpoint"]
-	
+
 	if newBucket != "" {
 		b.config.Bucket = newBucket
 	}
@@ -565,17 +565,17 @@ func (b *s3Backend) List(ctx context.Context, containerURI string) ([]*Metadata,
 		}
 
 		uri := b.uriFromS3Key(key)
-		
+
 		// Validate the URI from S3
 		validatedURI, err := ValidateURI(uri)
 		if err != nil {
 			// Skip invalid URIs
 			continue
 		}
-		
+
 		metadata := b.s3ObjectToMetadata(validatedURI, obj)
 		result = append(result, metadata)
-		
+
 		// Limit the number of results to prevent resource exhaustion
 		if len(result) >= MaxResourceCountPerList {
 			break
@@ -1081,9 +1081,9 @@ func (b *s3Backend) Backup(ctx context.Context, writer io.Writer) error {
 
 	// Write backup manifest
 	manifest := map[string]interface{}{
-		"backend":    b.Name(),
-		"bucket":     b.config.Bucket,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"backend":     b.Name(),
+		"bucket":      b.config.Bucket,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
 		"objectCount": len(output.Contents),
 	}
 

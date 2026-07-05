@@ -436,7 +436,7 @@ func (b *filesystemBackend) getResourceNoLock(uri string) (*Resource, error) {
 	if uri == "" {
 		return nil, ErrEmptyURI
 	}
-	
+
 	filePath := b.uriToPath(uri)
 
 	// Check if tombstoned
@@ -561,12 +561,12 @@ func (b *filesystemBackend) List(ctx context.Context, containerURI string) ([]*M
 		if err != nil {
 			continue
 		}
-		
+
 		// Limit the number of results to prevent resource exhaustion
 		if len(result) >= MaxResourceCountPerList {
 			break
 		}
-		
+
 		result = append(result, metadata)
 	}
 
@@ -578,7 +578,7 @@ func (b *filesystemBackend) getMetadataNoLock(uri string) (*Metadata, error) {
 	if uri == "" {
 		return nil, ErrEmptyURI
 	}
-	
+
 	filePath := b.uriToPath(uri)
 	metadataPath := b.metadataPath(uri)
 
@@ -709,12 +709,12 @@ func (b *filesystemBackend) GetBlob(ctx context.Context, address ContentAddress)
 		}
 		return nil, SanitizeError(err)
 	}
-	
+
 	// Validate body size
 	if err := ValidateBodySize(data); err != nil {
 		return nil, SanitizeError(err)
 	}
-	
+
 	return data, nil
 }
 
@@ -1071,7 +1071,7 @@ func (b *filesystemBackend) ListTombstones(ctx context.Context, storageRoot stri
 		// Filter by storage root if specified
 		if storageRoot == "" || strings.HasPrefix(uri, storageRoot) || uri == storageRoot {
 			result = append(result, tombstone)
-			
+
 			// Limit the number of results to prevent resource exhaustion
 			if len(result) >= MaxResourceCountPerList {
 				break
@@ -1193,10 +1193,10 @@ func (b *filesystemBackend) Backup(ctx context.Context, writer io.Writer) error 
 
 	// Create backup manifest
 	manifest := map[string]interface{}{
-		"backend":    b.Name(),
-		"root_path":  b.config.RootPath,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"version":    CurrentStorageLayoutVersion,
+		"backend":   b.Name(),
+		"root_path": b.config.RootPath,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version":   CurrentStorageLayoutVersion,
 	}
 
 	var resources []string
@@ -1445,9 +1445,9 @@ func (b *filesystemBackend) scanResourceIntegrity(uri string) (*ResourceIntegrit
 				Severity:    SeverityCritical,
 				Description: "Resource digest does not match metadata",
 				Details: map[string]string{
-					"uri":           uri,
-					"expected":      resource.Metadata.Digest,
-					"computed":      computedDigest,
+					"uri":      uri,
+					"expected": resource.Metadata.Digest,
+					"computed": computedDigest,
 				},
 			})
 		}
@@ -1470,9 +1470,9 @@ func (b *filesystemBackend) scanResourceIntegrity(uri string) (*ResourceIntegrit
 			Severity:    SeverityHigh,
 			Description: "Resource size does not match metadata",
 			Details: map[string]string{
-				"uri":         uri,
-				"expected":    fmt.Sprintf("%d", resource.Metadata.Size),
-				"actual":      fmt.Sprintf("%d", len(resource.Body)),
+				"uri":      uri,
+				"expected": fmt.Sprintf("%d", resource.Metadata.Size),
+				"actual":   fmt.Sprintf("%d", len(resource.Body)),
 			},
 		})
 	}

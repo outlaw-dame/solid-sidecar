@@ -55,13 +55,13 @@ const (
 
 // Validation errors
 var (
-	ErrURITooLong         = errors.New("URI exceeds maximum length")
-	ErrBodyTooLarge       = errors.New("body exceeds maximum size")
-	ErrMetadataTooLarge   = errors.New("metadata exceeds maximum size")
-	ErrEmptyURI           = errors.New("URI cannot be empty")
-	ErrNilResource        = errors.New("resource cannot be nil")
-	ErrNilTombstone       = errors.New("tombstone cannot be nil")
-	ErrNilContext         = errors.New("context cannot be nil")
+	ErrURITooLong       = errors.New("URI exceeds maximum length")
+	ErrBodyTooLarge     = errors.New("body exceeds maximum size")
+	ErrMetadataTooLarge = errors.New("metadata exceeds maximum size")
+	ErrEmptyURI         = errors.New("URI cannot be empty")
+	ErrNilResource      = errors.New("resource cannot be nil")
+	ErrNilTombstone     = errors.New("tombstone cannot be nil")
+	ErrNilContext       = errors.New("context cannot be nil")
 )
 
 // generateETag generates an ETag for the given data
@@ -152,8 +152,8 @@ func ValidateTenant(tenant string) error {
 
 	// Tenant should only contain alphanumeric, hyphen, underscore, and period
 	for _, r := range tenant {
-		if !( (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' ) {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.') {
 			return fmt.Errorf("invalid character in tenant identifier: %c", r)
 		}
 	}
@@ -271,7 +271,7 @@ func validateTombstone(tombstone *Tombstone) error {
 func validateMetadataSize(metadata *Metadata) error {
 	// Estimate metadata size by approximating the JSON serialization size
 	// This is a rough estimate to prevent extremely large metadata
-	
+
 	// Count fields that contribute to size
 	size := 0
 	size += len(metadata.URI)
@@ -282,7 +282,7 @@ func validateMetadataSize(metadata *Metadata) error {
 	size += len(metadata.StorageRoot)
 	size += len(metadata.Tenant)
 	size += len(metadata.ContentAddress)
-	
+
 	// Add size for maps (approximate)
 	for k, v := range metadata.AuxiliaryLinks {
 		size += len(k) + len(v) + 10 // approximate JSON overhead
@@ -296,14 +296,14 @@ func validateMetadataSize(metadata *Metadata) error {
 	for k, v := range metadata.Custom {
 		size += len(k) + len(v) + 10
 	}
-	
+
 	// Add some overhead for JSON structure
 	size += 200
-	
+
 	if size > MaxMetadataSize {
 		return ErrMetadataTooLarge
 	}
-	
+
 	return nil
 }
 

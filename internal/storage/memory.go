@@ -50,12 +50,12 @@ func NewMemoryBackend(config MemoryBackendConfig) StorageBackend {
 		config.Logger = slog.Default()
 	}
 	return &memoryBackend{
-		config:       config,
-		logger:       config.Logger.With("backend", "memory"),
-		data:         make(map[string]*memoryResource),
-		blobs:        make(map[string][]byte),
-		quotaUsage:   make(map[string]*quotaUsageInfo),
-		tombstones:   make(map[string]*Tombstone),
+		config:        config,
+		logger:        config.Logger.With("backend", "memory"),
+		data:          make(map[string]*memoryResource),
+		blobs:         make(map[string][]byte),
+		quotaUsage:    make(map[string]*quotaUsageInfo),
+		tombstones:    make(map[string]*Tombstone),
 		layoutVersion: CurrentStorageLayoutVersion,
 	}
 }
@@ -350,7 +350,7 @@ func (b *memoryBackend) List(ctx context.Context, containerURI string) ([]*Metad
 		if strings.HasPrefix(uri, prefix) {
 			metadata := resource.Metadata
 			result = append(result, &metadata)
-			
+
 			// Limit the number of results to prevent resource exhaustion
 			if len(result) >= MaxResourceCountPerList {
 				break
@@ -712,7 +712,7 @@ func (b *memoryBackend) ListTombstones(ctx context.Context, storageRoot string) 
 		// Filter by storage root if specified
 		if storageRoot == "" || strings.HasPrefix(uri, storageRoot) || uri == storageRoot {
 			result = append(result, tombstone)
-			
+
 			// Limit the number of results to prevent resource exhaustion
 			if len(result) >= MaxResourceCountPerList {
 				break
@@ -930,9 +930,9 @@ func (b *memoryBackend) scanResourceIntegrity(uri string, resource *memoryResour
 				Severity:    SeverityCritical,
 				Description: "Resource digest does not match metadata",
 				Details: map[string]string{
-					"uri":           uri,
-					"expected":      resource.Metadata.Digest,
-					"computed":      computedDigest,
+					"uri":      uri,
+					"expected": resource.Metadata.Digest,
+					"computed": computedDigest,
 				},
 			})
 		}
@@ -955,9 +955,9 @@ func (b *memoryBackend) scanResourceIntegrity(uri string, resource *memoryResour
 			Severity:    SeverityHigh,
 			Description: "Resource size does not match metadata",
 			Details: map[string]string{
-				"uri":         uri,
-				"expected":    fmt.Sprintf("%d", resource.Metadata.Size),
-				"actual":      fmt.Sprintf("%d", len(resource.Body)),
+				"uri":      uri,
+				"expected": fmt.Sprintf("%d", resource.Metadata.Size),
+				"actual":   fmt.Sprintf("%d", len(resource.Body)),
 			},
 		})
 	}

@@ -23,7 +23,7 @@ import (
 func TestConformanceAllBackends(t *testing.T) {
 	// Create test backends
 	backends := []struct {
-		name string
+		name    string
 		backend StorageBackend
 		cleanup func()
 	}{
@@ -87,10 +87,10 @@ func testBasicCRUD(t *testing.T, ctx context.Context, backend StorageBackend) {
 	uri := "/test/resource"
 	body := []byte("Hello, World!")
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body,
 		Metadata: Metadata{
-			ContentType: "text/plain",
+			ContentType:  "text/plain",
 			ResourceType: ResourceTypeResource,
 		},
 	}
@@ -114,12 +114,12 @@ func testBasicCRUD(t *testing.T, ctx context.Context, backend StorageBackend) {
 	// Test Update
 	newBody := []byte("Hello, Solid!")
 	updateResource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: newBody,
 		Metadata: Metadata{
-			ContentType: "text/plain",
+			ContentType:  "text/plain",
 			ResourceType: ResourceTypeResource,
-			ETag: getResource.Metadata.ETag, // Use existing ETag
+			ETag:         getResource.Metadata.ETag, // Use existing ETag
 		},
 	}
 
@@ -175,7 +175,7 @@ func testMetadataOperations(t *testing.T, ctx context.Context, backend StorageBa
 
 	// Create resource with metadata
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body,
 		Metadata: Metadata{
 			URI:          uri,
@@ -301,8 +301,8 @@ func testTombstoneOperations(t *testing.T, ctx context.Context, backend StorageB
 
 	// Create resource
 	resource := &WriteResource{
-		URI:     uri,
-		Body:    body,
+		URI:      uri,
+		Body:     body,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}
 
@@ -312,10 +312,10 @@ func testTombstoneOperations(t *testing.T, ctx context.Context, backend StorageB
 
 	// Create tombstone
 	tombstone := &Tombstone{
-		URI:      uri,
+		URI:       uri,
 		DeletedAt: time.Now().UTC(),
 		DeletedBy: "test-user",
-		Reason:   "Testing tombstone functionality",
+		Reason:    "Testing tombstone functionality",
 	}
 
 	if err := backend.StoreTombstone(ctx, tombstone); err != nil {
@@ -409,7 +409,7 @@ func testQuotaOperations(t *testing.T, ctx context.Context, backend StorageBacke
 	uri := storageRoot + "quota-test"
 	body := make([]byte, 100)
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body,
 		Metadata: Metadata{
 			StorageRoot: storageRoot,
@@ -468,13 +468,13 @@ func testBackupRestoreOperations(t *testing.T, ctx context.Context, backend Stor
 	body2 := []byte("Backup data 2")
 
 	resource1 := &WriteResource{
-		URI:     uri1,
-		Body:    body1,
+		URI:      uri1,
+		Body:     body1,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}
 	resource2 := &WriteResource{
-		URI:     uri2,
-		Body:    body2,
+		URI:      uri2,
+		Body:     body2,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}
 
@@ -511,7 +511,7 @@ func testIntegrityScanOperations(t *testing.T, ctx context.Context, backend Stor
 	body := []byte("Integrity test data")
 
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body,
 		Metadata: Metadata{
 			ResourceType: ResourceTypeResource,
@@ -553,7 +553,7 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 	// Create initial resource
 	body1 := []byte("Initial content")
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body1,
 		Metadata: Metadata{
 			ResourceType: ResourceTypeResource,
@@ -574,8 +574,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 	// Test If-Match with correct ETag (should succeed)
 	newBody1 := []byte("Updated with matching ETag")
 	updateResource := &WriteResource{
-		URI: uri,
-		Body: newBody1,
+		URI:      uri,
+		Body:     newBody1,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfMatch: currentETag,
@@ -589,8 +589,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 	// Test If-Match with wrong ETag (should fail)
 	newBody2 := []byte("Should not be stored")
 	failResource := &WriteResource{
-		URI: uri,
-		Body: newBody2,
+		URI:      uri,
+		Body:     newBody2,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfMatch: "wrong-etag",
@@ -619,8 +619,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 
 	// Test If-None-Match with existing ETag (should fail)
 	ifNoneMatchResource := &WriteResource{
-		URI: uri,
-		Body: []byte("New content"),
+		URI:      uri,
+		Body:     []byte("New content"),
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfNoneMatch: currentETag,
@@ -637,8 +637,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 
 	// Test If-None-Match with non-existing ETag (should succeed)
 	newResource := &WriteResource{
-		URI: uri + "2",
-		Body: []byte("New resource"),
+		URI:      uri + "2",
+		Body:     []byte("New resource"),
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfNoneMatch: "nonexistent-etag",
@@ -651,8 +651,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 
 	// Test If-Match with "*" for existing resource (should succeed)
 	wildcardResource := &WriteResource{
-		URI: uri,
-		Body: []byte("Updated with wildcard"),
+		URI:      uri,
+		Body:     []byte("Updated with wildcard"),
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfMatch: "*",
@@ -665,8 +665,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 
 	// Test If-Match with "*" for non-existing resource (should fail)
 	nonExistentResource := &WriteResource{
-		URI: uri + "nonexistent",
-		Body: []byte("Should not be created"),
+		URI:      uri + "nonexistent",
+		Body:     []byte("Should not be created"),
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfMatch: "*",
@@ -683,8 +683,8 @@ func testConditionalWrites(t *testing.T, ctx context.Context, backend StorageBac
 
 	// Test If-None-Match with "*" for non-existing resource (should succeed)
 	createResource := &WriteResource{
-		URI: uri + "new",
-		Body: []byte("New resource with wildcard"),
+		URI:      uri + "new",
+		Body:     []byte("New resource with wildcard"),
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 		Preconditions: WritePrecondition{
 			IfNoneMatch: "*",
@@ -705,8 +705,8 @@ func testConcurrentWrites(t *testing.T, ctx context.Context, backend StorageBack
 	// Create initial resource
 	initialBody := []byte("Initial")
 	initialResource := &WriteResource{
-		URI:     uri,
-		Body:    initialBody,
+		URI:      uri,
+		Body:     initialBody,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}
 
@@ -728,7 +728,7 @@ func testConcurrentWrites(t *testing.T, ctx context.Context, backend StorageBack
 			for j := 0; j < writesPerWriter; j++ {
 				// Each writer writes with their own ETag to avoid conflicts
 				newBody := []byte(fmt.Sprintf("Writer %d, write %d", writerID, j))
-				
+
 				// Get current ETag first
 				current, err := backend.Get(ctx, uri)
 				if err != nil {
@@ -737,8 +737,8 @@ func testConcurrentWrites(t *testing.T, ctx context.Context, backend StorageBack
 				}
 
 				resource := &WriteResource{
-					URI: uri,
-					Body: newBody,
+					URI:      uri,
+					Body:     newBody,
 					Metadata: Metadata{ResourceType: ResourceTypeResource},
 					Preconditions: WritePrecondition{
 						IfMatch: current.Metadata.ETag,
@@ -846,8 +846,8 @@ func testErrorHandling(t *testing.T, ctx context.Context, backend StorageBackend
 	specialURI := "/test/special-uri_with.dots_and:colons?query"
 	specialBody := []byte("Special URI test")
 	specialResource := &WriteResource{
-		URI:     specialURI,
-		Body:    specialBody,
+		URI:      specialURI,
+		Body:     specialBody,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}
 
@@ -881,7 +881,9 @@ func testHealthCheck(t *testing.T, ctx context.Context, backend StorageBackend) 
 	}
 
 	// Reinitialize if possible
-	if initializer, ok := backend.(interface{ Initialize(context.Context, map[string]string) error }); ok {
+	if initializer, ok := backend.(interface {
+		Initialize(context.Context, map[string]string) error
+	}); ok {
 		if err := initializer.Initialize(ctx, map[string]string{}); err == nil {
 			// Successfully reinitialized, test health check again
 			if err := backend.HealthCheck(ctx); err != nil {
@@ -1176,8 +1178,8 @@ func testNoSilentUpdateLoss(t *testing.T, ctx context.Context, backend StorageBa
 	// Create initial resource
 	initialBody := []byte("Initial content")
 	if err := backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    initialBody,
+		URI:      uri,
+		Body:     initialBody,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}); err != nil {
 		t.Fatalf("Initial Put failed: %v", err)
@@ -1206,8 +1208,8 @@ func testNoSilentUpdateLoss(t *testing.T, ctx context.Context, backend StorageBa
 
 			// Use optimistic concurrency control
 			if err := backend.Put(ctx, uri, &WriteResource{
-				URI:     uri,
-				Body:    newContent,
+				URI:      uri,
+				Body:     newContent,
 				Metadata: Metadata{ResourceType: ResourceTypeResource},
 				Preconditions: WritePrecondition{
 					IfMatch: current.Metadata.ETag,
@@ -1268,7 +1270,7 @@ func testNoMetadataBodyDivergence(t *testing.T, ctx context.Context, backend Sto
 	// Create resource with matching metadata and body
 	body := []byte("Test content for divergence check")
 	resource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: body,
 		Metadata: Metadata{
 			ResourceType: ResourceTypeResource,
@@ -1307,12 +1309,12 @@ func testNoMetadataBodyDivergence(t *testing.T, ctx context.Context, backend Sto
 	// Create a new version
 	newBody := []byte("Updated content")
 	newResource := &WriteResource{
-		URI: uri,
+		URI:  uri,
 		Body: newBody,
 		Metadata: Metadata{
 			ResourceType: ResourceTypeResource,
-			Size:         int64(len(newBody)), // Correct size
-			ETag:         generateETag(newBody), // Correct ETag
+			Size:         int64(len(newBody)),    // Correct size
+			ETag:         generateETag(newBody),  // Correct ETag
 			Digest:       computeDigest(newBody), // Correct digest
 		},
 	}
@@ -1344,8 +1346,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 	// Create initial resource
 	initialBody := []byte("Initial")
 	if err := backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    initialBody,
+		URI:      uri,
+		Body:     initialBody,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}); err != nil {
 		t.Fatalf("Initial Put failed: %v", err)
@@ -1362,8 +1364,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 	for i := 0; i < 3; i++ {
 		newBody := []byte(fmt.Sprintf("Update %d", i))
 		if err := backend.Put(ctx, uri, &WriteResource{
-			URI:     uri,
-			Body:    newBody,
+			URI:      uri,
+			Body:     newBody,
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 			Preconditions: WritePrecondition{
 				IfMatch: currentETag,
@@ -1381,8 +1383,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 
 	// Reset for deterministic tests
 	backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    initialBody,
+		URI:      uri,
+		Body:     initialBody,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	})
 	current, _ = backend.Get(ctx, uri)
@@ -1391,8 +1393,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 	// Test 2: If-Match with wrong ETag should always fail
 	for i := 0; i < 3; i++ {
 		if err := backend.Put(ctx, uri, &WriteResource{
-			URI:     uri,
-			Body:    []byte("Should not be stored"),
+			URI:      uri,
+			Body:     []byte("Should not be stored"),
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 			Preconditions: WritePrecondition{
 				IfMatch: "wrong-etag",
@@ -1407,8 +1409,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 	// Test 3: If-None-Match with existing ETag should always fail
 	for i := 0; i < 3; i++ {
 		if err := backend.Put(ctx, uri, &WriteResource{
-			URI:     uri,
-			Body:    []byte("Should not be stored"),
+			URI:      uri,
+			Body:     []byte("Should not be stored"),
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 			Preconditions: WritePrecondition{
 				IfNoneMatch: currentETag,
@@ -1424,8 +1426,8 @@ func testDeterministicConditionalWrites(t *testing.T, ctx context.Context, backe
 	newURI := "/deterministic/new"
 	for i := 0; i < 3; i++ {
 		if err := backend.Put(ctx, newURI, &WriteResource{
-			URI:     newURI,
-			Body:    []byte(fmt.Sprintf("New resource %d", i)),
+			URI:      newURI,
+			Body:     []byte(fmt.Sprintf("New resource %d", i)),
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 			Preconditions: WritePrecondition{
 				IfNoneMatch: "nonexistent-etag",
@@ -1443,8 +1445,8 @@ func testStableURLs(t *testing.T, ctx context.Context, backend StorageBackend) {
 
 	// Create resource
 	if err := backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    body,
+		URI:      uri,
+		Body:     body,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}); err != nil {
 		t.Fatalf("Initial Put failed: %v", err)
@@ -1467,7 +1469,7 @@ func testStableURLs(t *testing.T, ctx context.Context, backend StorageBackend) {
 		if err != nil {
 			t.Fatalf("List iteration %d failed: %v", i, err)
 		}
-		
+
 		found := false
 		for _, meta := range metadata {
 			if meta.URI == uri {
@@ -1544,8 +1546,8 @@ func testNoQuotaBypass(t *testing.T, ctx context.Context, backend StorageBackend
 
 	// This should pass with default unlimited quota
 	if err := backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    largeBody,
+		URI:      uri,
+		Body:     largeBody,
 		Metadata: Metadata{StorageRoot: storageRoot},
 	}); err != nil {
 		t.Logf("Put with large body: %v (may be expected if quota is set)", err)
@@ -1580,8 +1582,8 @@ func testNoPrivateDataExposure(t *testing.T, ctx context.Context, backend Storag
 	uri := "/private/test"
 
 	if err := backend.Put(ctx, uri, &WriteResource{
-		URI:     uri,
-		Body:    sensitiveData,
+		URI:      uri,
+		Body:     sensitiveData,
 		Metadata: Metadata{ResourceType: ResourceTypeResource},
 	}); err != nil {
 		t.Fatalf("Put sensitive data failed: %v", err)
@@ -1609,8 +1611,8 @@ func testNoPrivateDataExposure(t *testing.T, ctx context.Context, backend Storag
 		}},
 		{"Put with invalid precondition", func() error {
 			return backend.Put(ctx, uri, &WriteResource{
-				URI:     uri,
-				Body:    []byte("new content"),
+				URI:      uri,
+				Body:     []byte("new content"),
 				Metadata: Metadata{ResourceType: ResourceTypeResource},
 				Preconditions: WritePrecondition{
 					IfMatch: "wrong-etag",
@@ -1647,13 +1649,13 @@ func testNoPrivateDataExposure(t *testing.T, ctx context.Context, backend Storag
 	// Test that resource body is not exposed in metadata errors
 	// (This would be a concern if metadata parsing failed and included body data)
 	// Our current implementation doesn't do this, but we test to ensure it stays that way
-	
+
 	// Test integrity scan doesn't expose private data
 	report, err := backend.ScanIntegrity(ctx)
 	if err != nil {
 		t.Fatalf("ScanIntegrity failed: %v", err)
 	}
-	
+
 	if report != nil {
 		for _, resourceReport := range report.ResourceReports {
 			for _, issue := range resourceReport.Issues {
@@ -1661,7 +1663,7 @@ func testNoPrivateDataExposure(t *testing.T, ctx context.Context, backend Storag
 				for _, detail := range issue.Details {
 					issueStr += " " + detail
 				}
-				
+
 				if strings.Contains(issueStr, string(sensitiveData)) {
 					t.Errorf("Sensitive data found in integrity issue: %s", issueStr)
 				}
@@ -1697,8 +1699,8 @@ func TestFilesystemBackendConformance(t *testing.T) {
 		body := []byte("Filesystem test content")
 
 		if err := backend.Put(ctx, uri, &WriteResource{
-			URI:     uri,
-			Body:    body,
+			URI:      uri,
+			Body:     body,
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 		}); err != nil {
 			t.Fatalf("Put failed: %v", err)
@@ -1719,8 +1721,8 @@ func TestFilesystemBackendConformance(t *testing.T) {
 		// Test special characters in filename
 		specialURI := "/fs/special:file?query"
 		if err := backend.Put(ctx, specialURI, &WriteResource{
-			URI:     specialURI,
-			Body:    []byte("Special filename test"),
+			URI:      specialURI,
+			Body:     []byte("Special filename test"),
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 		}); err != nil {
 			t.Fatalf("Put special URI failed: %v", err)
@@ -1747,17 +1749,17 @@ func TestFilesystemBackendConformance(t *testing.T) {
 		// Test tombstone storage
 		tombstoneURI := "/fs/tombstone"
 		if err := backend.Put(ctx, tombstoneURI, &WriteResource{
-			URI:     tombstoneURI,
-			Body:    []byte("To be tombstoned"),
+			URI:      tombstoneURI,
+			Body:     []byte("To be tombstoned"),
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 		}); err != nil {
 			t.Fatalf("Put tombstone test resource failed: %v", err)
 		}
 
 		tombstone := &Tombstone{
-			URI:      tombstoneURI,
+			URI:       tombstoneURI,
 			DeletedAt: time.Now().UTC(),
-			Reason:   "Test tombstone",
+			Reason:    "Test tombstone",
 		}
 
 		if err := backend.StoreTombstone(ctx, tombstone); err != nil {
@@ -1794,8 +1796,8 @@ func TestMemoryBackendConformance(t *testing.T) {
 		body := []byte("Memory test content")
 
 		if err := backend.Put(ctx, uri, &WriteResource{
-			URI:     uri,
-			Body:    body,
+			URI:      uri,
+			Body:     body,
 			Metadata: Metadata{ResourceType: ResourceTypeResource},
 		}); err != nil {
 			t.Fatalf("Put failed: %v", err)
@@ -1823,8 +1825,8 @@ func TestMemoryBackendConformance(t *testing.T) {
 				testBody := []byte(fmt.Sprintf("Concurrent test %d", id))
 
 				if err := backend.Put(ctx, testURI, &WriteResource{
-					URI:     testURI,
-					Body:    testBody,
+					URI:      testURI,
+					Body:     testBody,
 					Metadata: Metadata{ResourceType: ResourceTypeResource},
 				}); err != nil {
 					t.Errorf("Concurrent Put %d failed: %v", id, err)
