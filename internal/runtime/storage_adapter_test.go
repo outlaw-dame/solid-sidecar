@@ -118,6 +118,10 @@ func (m *mockStorageBackend) DeleteTombstone(ctx context.Context, uri string) er
 	return nil
 }
 
+func (m *mockStorageBackend) ListTombstones(ctx context.Context, storageRoot string) ([]*storage.Tombstone, error) {
+	return []*storage.Tombstone{}, nil
+}
+
 func (m *mockStorageBackend) GetLayoutVersion(ctx context.Context) (storage.StorageLayoutVersion, error) {
 	return storage.CurrentStorageLayoutVersion, nil
 }
