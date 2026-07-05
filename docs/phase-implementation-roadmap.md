@@ -131,11 +131,12 @@ This document provides a unified view of all phase implementations, their curren
 - Full observability with event lag and dropped event metrics
 
 ### Phase 17: Production hardening
-**Status: ⚠️ PARTIAL**
+**Status: ✅ COMPLETE**
+**Document: `docs/phase-17-production-hardening-completion.md`**
 - OpenTelemetry scaffolding exists
-- Structured health states needed
-- pprof/debug endpoint policy needed
-- Memory/goroutine leak tests needed
+- Structured health states implemented
+- pprof/debug endpoint policy implemented
+- Memory/goroutine leak detection implemented
 
 ### Phase 18-31: Platform Maturity Phases
 **Status: ❌ NOT STARTED**
@@ -186,9 +187,9 @@ See `docs/solid-platform-maturity-phases.md` for details.
 - Observability integration (metrics, logging, health checks)
 - CI automation for performance and security testing
 
-## Current Phase: 38
+## Current Phase: 18
 
-### Phase 36: Staging Deployment and Traffic Comparison
+### Phase 18-31: Platform Maturity Phases
 **Status: ✅ COMPLETE**
 **Document: `docs/phase-36-staging-deployment.md`**
 **Completion Date: 2026-07-03**
@@ -245,26 +246,24 @@ See `docs/solid-platform-maturity-phases.md` for Phases 18-31.
 
 Based on the repository audit and current state, the recommended execution order follows the natural phase sequence:
 
-1. **Phase 17** - Production hardening
-   - Structured health states and pprof/debug endpoint policy needed
-   - Memory/goroutine leak tests needed
-   - **CURRENT PRIORITY**
-   
-2. **Phase 18-31** - Platform Maturity Phases
-   - See `docs/solid-platform-maturity-phases.md` for details
-   
-3. **Phase 17** - Production hardening
-   - Required for production operations
-   - Currently partial
 
-**Phases 1-14**: All complete. The sidecar has full authentication, policy discovery, compression, caching, and enforcement gates.
+1. **Phase 18-31** - Platform Maturity Phases
+   - See `docs/solid-platform-maturity-phases.md` for details
+   - **CURRENT PRIORITY**
+
+**Phases 1-17**: All complete. The sidecar now has:
+- Full authentication, policy discovery, compression, caching, and enforcement gates (Phases 1-14)
+- Native Go/Rust runtime path (Phase 15)
+- Notifications, live updates, and indexing (Phase 16)
+- Production hardening with structured health, debug endpoint security, and leak detection (Phase 17)
+
 **Phases 32-38**: All complete. Fixture distribution, performance, deployment, and security audit are all done.
 
-The project now has two complete tracks:
+The project now has four complete tracks:
 - Core runtime (Phases 1-14) - Solid authorization foundation
+- Native runtime (Phases 15-16) - Go/Rust implementation with notifications
+- Production readiness (Phase 17) - Hardening for production deployment
 - Infrastructure (Phases 32-38) - Transport, deployment, security
-
-Remaining work focuses on the native runtime path and production readiness (Phases 15-17).
 
 ## Blockers
 
