@@ -253,7 +253,8 @@ func (m *ResourceIndexMetrics) RecordResourceIndexed() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.TotalResourcesIndexed++
-	m.RecordIndexOperation()
+	m.TotalIndexOperations++
+	m.LastIndexUpdate = time.Now()
 }
 
 // RecordIndexHit records an index hit
@@ -261,7 +262,8 @@ func (m *ResourceIndexMetrics) RecordIndexHit() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.IndexHits++
-	m.RecordIndexOperation()
+	m.TotalIndexOperations++
+	m.LastIndexUpdate = time.Now()
 }
 
 // RecordIndexMiss records an index miss
@@ -269,7 +271,8 @@ func (m *ResourceIndexMetrics) RecordIndexMiss() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.IndexMisses++
-	m.RecordIndexOperation()
+	m.TotalIndexOperations++
+	m.LastIndexUpdate = time.Now()
 }
 
 // RecordSearch records a search operation
