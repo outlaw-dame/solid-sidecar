@@ -127,6 +127,9 @@ func (p OutboundTransportNetworkPolicy) DialContext(ctx context.Context, dialer 
 	}
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("%w: failed to resolve outbound transport host: %v", ErrTransportConnectionFailed, err)
 	}
 	if len(ips) == 0 {
