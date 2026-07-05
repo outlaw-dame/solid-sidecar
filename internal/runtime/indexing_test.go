@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -520,6 +519,7 @@ func TestResourceIndexLayer_IndexInvalidation(t *testing.T) {
 
 	// Check storage root index
 	if index.storageRootIndex != nil {
+		var storageRootURIs []string
 		storageRootURIs, exists = index.storageRootIndex[metadata.StorageRoot]
 		if exists {
 			assert.NotContains(t, storageRootURIs, metadata.URI)
@@ -529,6 +529,7 @@ func TestResourceIndexLayer_IndexInvalidation(t *testing.T) {
 	// Check full-text index
 	if index.fullTextIndex != nil {
 		for _, term := range metadata.FullTextTerms {
+			var termURIs []string
 			termURIs, exists = index.fullTextIndex[term]
 			if exists {
 				assert.NotContains(t, termURIs, metadata.URI)
@@ -631,8 +632,8 @@ func TestResourceIndexLayer_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	// Verify all resources are indexed
-	indexSize := index.Size()
-	assert.Equal(t, numGoroutines*numResources, indexSize)
+	resourceCount, _, _, _ := index.Size()
+	assert.Equal(t, numGoroutines*numResources, resourceCount)
 
 	// Verify consistency
 	report := index.VerifyIndexConsistency()
@@ -672,7 +673,8 @@ func TestResourceIndexLayer_MaxSizeEviction(t *testing.T) {
 	}
 
 	// Verify index is full
-	assert.Equal(t, 5, index.Size())
+	resourceCount, _, _, _ := index.Size()
+	assert.Equal(t, 5, resourceCount)
 
 	// Index a 6th resource - should trigger eviction
 	uri := "https://example.com/resource_new"
@@ -693,11 +695,12 @@ func TestResourceIndexLayer_MaxSizeEviction(t *testing.T) {
 		LastUpdated:  time.Now(),
 	}
 
-	err = index.IndexResource(metadata, accessInfo)
+	err := index.IndexResource(metadata, accessInfo)
 	require.NoError(t, err)
 
 	// Verify index size is still 5
-	assert.Equal(t, 5, index.Size())
+	resourceCount, _, _, _ = index.Size()
+	assert.Equal(t, 5, resourceCount)
 
 	// Verify the new resource is in the index
 	result, err := index.GetResource(uri, metadata.OwnerWebID, true)
@@ -874,8 +877,8 @@ func TestResourceIndexLayer_CircuitBreaker(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Verify circuit breaker is not open yet
-	assert.False(t, index.indexCircuitBreaker.IsOpen())
+	// Verify circuit breaker is not open yet (Check returns true if circuit is closed/healthy)
+	assert.True(t, index.indexCircuitBreaker.Check())
 }
 
 // TestIndexConsistencyReport tests the consistency report structure

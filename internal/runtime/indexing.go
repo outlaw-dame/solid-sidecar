@@ -375,6 +375,7 @@ type IndexedResource struct {
 	LastModified time.Time
 	OwnerWebID   string
 	PrivacyLevel PrivacyLevel
+	StorageRoot  string
 	AccessInfo   *ResourceAccessInfo
 }
 
@@ -673,7 +674,7 @@ func (i *ResourceIndexLayer) removeFromOtherIndexes(uri string, metadata *Resour
 
 	// Remove from auxiliary index if enabled
 	if i.auxiliaryIndex != nil && metadata.AuxiliaryLinks != nil {
-		if auxLinks, exists := i.auxiliaryIndex[uri]; exists {
+		if _, exists := i.auxiliaryIndex[uri]; exists {
 			delete(i.auxiliaryIndex, uri)
 		}
 	}
@@ -1664,6 +1665,7 @@ func (i *ResourceIndexLayer) convertToIndexedResources(metadataList []*ResourceM
 			LastModified: metadata.LastModified,
 			OwnerWebID:   metadata.OwnerWebID,
 			PrivacyLevel: metadata.PrivacyLevel,
+			StorageRoot:  metadata.StorageRoot,
 			AccessInfo:   accessInfo,
 		})
 	}

@@ -51,6 +51,15 @@ func (m *MockSemanticPlugin) Close() error {
 	return nil
 }
 
+// FailingPrivacyPlugin is a mock plugin that always fails privacy checks
+type FailingPrivacyPlugin struct {
+	MockSemanticPlugin
+}
+
+func (f *FailingPrivacyPlugin) PrivacyCheck() error {
+	return errors.New("privacy violation detected")
+}
+
 func TestSemanticPluginManager_New(t *testing.T) {
 	t.Parallel()
 
@@ -300,8 +309,8 @@ func TestSemanticPluginManager_Search(t *testing.T) {
 	defer manager.Close()
 
 	expectedResults := []SemanticSearchResult{
-		{URI: "https://example.com/result1", Score: 0.95, Metadata: map[string]interface{}{{"type": "resource"}},
-		{URI: "https://example.com/result2", Score: 0.85, Metadata: map[string]interface{}{{"type": "resource"}},
+		{URI: "https://example.com/result1", Score: 0.95, Metadata: map[string]interface{}{"type": "resource"}},
+		{URI: "https://example.com/result2", Score: 0.85, Metadata: map[string]interface{}{"type": "resource"}},
 	}
 
 	plugin := &MockSemanticPlugin{
@@ -357,15 +366,13 @@ func TestSemanticPluginManager_PrivacyCheck(t *testing.T) {
 	}
 	manager.RegisterPlugin("p1", plugin1)
 
-	// Plugin with failing privacy check
-	plugin2 := &MockSemanticPlugin{
-		name: "plugin2",
-		version: "1.0.0",
-		indexedURIs: make(map[string]bool),
-	}
-	// Override PrivacyCheck to return error
-	plugin2.PrivacyCheck = func() error {
-		return errors.New("privacy violation detected")
+		// Plugin with failing privacy check - create a custom plugin type
+	plugin2 := &FailingPrivacyPlugin{
+		MockSemanticPlugin: MockSemanticPlugin{
+			name:        "plugin2",
+			version:     "1.0.0",
+			indexedURIs: make(map[string]bool),
+		},
 	}
 	manager.RegisterPlugin("p2", plugin2)
 
