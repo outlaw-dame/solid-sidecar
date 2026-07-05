@@ -382,6 +382,7 @@ func TestResourceIndexLayer_PolicyAwareFiltering(t *testing.T) {
 		ResourceType: "http://www.w3.org/ns/ldp#Resource",
 		OwnerWebID:   "https://example.org/alice#me",
 		PrivacyLevel: PrivacyLevelPublic,
+		IsPublic:     true,
 	}
 
 	privateMetadata := &ResourceMetadata{
