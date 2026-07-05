@@ -120,6 +120,15 @@ type ResourceIndexLayer struct {
 	// Access control index (resource URI -> access info)
 	accessIndex map[string]*ResourceAccessInfo
 
+	// Storage root index (storage root URI -> []resource URIs)
+	storageRootIndex map[string][]string
+
+	// Auxiliary resource index (main resource URI -> []auxiliary resource URIs)
+	auxiliaryIndex map[string][]string
+
+	// RDF term index (RDF term -> []resource URIs) - optional
+	rdfTermIndex map[string][]string
+
 	// Index statistics and observability
 	indexMetrics ResourceIndexMetrics
 
@@ -154,11 +163,32 @@ type ResourceIndexConfig struct {
 	// EnableAgentIndex enables agent-based indexing
 	EnableAgentIndex bool
 
+	// EnableStorageRootIndex enables storage root-based indexing
+	EnableStorageRootIndex bool
+
+	// EnableAuxiliaryIndex enables auxiliary resource indexing (optional)
+	EnableAuxiliaryIndex bool
+
+	// EnableRDFTermIndex enables RDF term indexing (optional)
+	EnableRDFTermIndex bool
+
+	// MaxRDFTermsPerResource is the maximum number of RDF terms to index per resource
+	MaxRDFTermsPerResource int
+
 	// IndexRetentionTime is how long indexed entries are retained
 	IndexRetentionTime time.Duration
 
 	// EnableObservability enables observability metrics
 	EnableObservability bool
+
+	// EnableBackgroundReindex enables background reindexing
+	EnableBackgroundReindex bool
+
+	// ReindexInterval is how often to run background reindex
+	ReindexInterval time.Duration
+
+	// ReindexBatchSize is the number of resources to reindex in each batch
+	ReindexBatchSize int
 
 	// HardeningConfig contains security and reliability settings
 	HardeningConfig ResourceIndexHardeningConfig
@@ -170,14 +200,21 @@ type ResourceIndexConfig struct {
 // DefaultResourceIndexConfig returns a safe default configuration
 func DefaultResourceIndexConfig() ResourceIndexConfig {
 	return ResourceIndexConfig{
-		MaxIndexSize:        100000, // 100K resources max
-		EnableFullTextIndex: true,
-		MaxFullTextTerms:    100, // 100 terms per resource max
-		EnableAgentIndex:    true,
-		IndexRetentionTime:  0, // Disabled by default to avoid background goroutines
-		EnableObservability: true,
-		HardeningConfig:     DefaultResourceIndexHardeningConfig(),
-		Logger:              nil,
+		MaxIndexSize:             100000, // 100K resources max
+		EnableFullTextIndex:      true,
+		MaxFullTextTerms:         100,    // 100 terms per resource max
+		EnableAgentIndex:         true,
+		EnableStorageRootIndex:   true,
+		EnableAuxiliaryIndex:     true,
+		EnableRDFTermIndex:       false,   // Disabled by default
+		MaxRDFTermsPerResource:   50,      // 50 RDF terms per resource max
+		IndexRetentionTime:       0,       // Disabled by default to avoid background goroutines
+		EnableObservability:      true,
+		EnableBackgroundReindex: false,    // Disabled by default
+		ReindexInterval:          24 * time.Hour,
+		ReindexBatchSize:         1000,
+		HardeningConfig:          DefaultResourceIndexHardeningConfig(),
+		Logger:                   nil,
 	}
 }
 
@@ -290,6 +327,21 @@ type ResourceMetadata struct {
 
 	// LastIndexed is when this resource was last indexed
 	LastIndexed time.Time
+
+	// StorageRoot is the storage root URI for this resource
+	StorageRoot string
+
+	// RDFTerms contains RDF terms extracted from the resource (optional)
+	// Only populated if RDF term indexing is enabled
+	RDFTerms map[string]bool
+
+	// FullTextTerms contains full-text search terms (optional)
+	// Only populated if full-text indexing is enabled
+	FullTextTerms []string
+
+	// AuxiliaryLinks contains links to auxiliary resources (optional)
+	// Only populated if auxiliary indexing is enabled
+	AuxiliaryLinks map[string]string
 }
 
 // ResourceAccessInfo holds access control information for a resource
@@ -378,6 +430,10 @@ type IndexQuery struct {
 
 	// SortOrder specifies the sort order (asc, desc)
 	SortOrder string
+
+	// StorageRoots are the storage roots to scope the query to
+	// If empty, query is not scoped to specific storage roots
+	StorageRoots []string
 }
 
 // IndexResult represents the result of an index query
@@ -420,6 +476,21 @@ func NewResourceIndexLayer(config ResourceIndexConfig) *ResourceIndexLayer {
 		layer.fullTextIndex = make(map[string][]string)
 	}
 
+	// Initialize storage root index if enabled
+	if config.EnableStorageRootIndex {
+		layer.storageRootIndex = make(map[string][]string)
+	}
+
+	// Initialize auxiliary index if enabled
+	if config.EnableAuxiliaryIndex {
+		layer.auxiliaryIndex = make(map[string][]string)
+	}
+
+	// Initialize RDF term index if enabled
+	if config.EnableRDFTermIndex {
+		layer.rdfTermIndex = make(map[string][]string)
+	}
+
 	// Initialize rate limiter if configured
 	if config.HardeningConfig.IndexRateLimit > 0 {
 		layer.indexRateLimiter = NewRateLimiter(
@@ -446,12 +517,23 @@ func NewResourceIndexLayer(config ResourceIndexConfig) *ResourceIndexLayer {
 		"enable_full_text_index", config.EnableFullTextIndex,
 		"max_full_text_terms", config.MaxFullTextTerms,
 		"enable_agent_index", config.EnableAgentIndex,
+		"enable_storage_root_index", config.EnableStorageRootIndex,
+		"enable_rdf_term_index", config.EnableRDFTermIndex,
+		"max_rdf_terms_per_resource", config.MaxRDFTermsPerResource,
 		"index_retention_time", config.IndexRetentionTime,
+		"enable_background_reindex", config.EnableBackgroundReindex,
+		"reindex_interval", config.ReindexInterval,
+		"reindex_batch_size", config.ReindexBatchSize,
 		"max_resource_size", config.HardeningConfig.MaxResourceSize,
 		"index_rate_limit", config.HardeningConfig.IndexRateLimit,
 		"index_burst_limit", config.HardeningConfig.IndexBurstLimit,
 		"circuit_breaker_enabled", config.HardeningConfig.CircuitBreakerFailureThreshold > 0,
 	)
+
+	// Set up background reindex if enabled
+	if config.EnableBackgroundReindex && config.ReindexInterval > 0 {
+		go layer.backgroundReindexRoutine()
+	}
 
 	return layer
 }
@@ -569,6 +651,336 @@ func (i *ResourceIndexLayer) removeFromOtherIndexes(uri string, metadata *Resour
 
 	// Remove from access index
 	delete(i.accessIndex, uri)
+
+	// Remove from storage root index if enabled
+	if i.storageRootIndex != nil {
+		if storageRoot := metadata.StorageRoot; storageRoot != "" {
+			if uris, exists := i.storageRootIndex[storageRoot]; exists {
+				newUris := make([]string, 0, len(uris))
+				for _, u := range uris {
+					if u != uri {
+						newUris = append(newUris, u)
+					}
+				}
+				if len(newUris) == 0 {
+					delete(i.storageRootIndex, storageRoot)
+				} else {
+					i.storageRootIndex[storageRoot] = newUris
+				}
+			}
+		}
+	}
+
+	// Remove from auxiliary index if enabled
+	if i.auxiliaryIndex != nil && metadata.AuxiliaryLinks != nil {
+		if auxLinks, exists := i.auxiliaryIndex[uri]; exists {
+			delete(i.auxiliaryIndex, uri)
+		}
+	}
+
+	// Remove from RDF term index if enabled
+	if i.rdfTermIndex != nil && metadata.RDFTerms != nil {
+		for term := range metadata.RDFTerms {
+			if uris, exists := i.rdfTermIndex[term]; exists {
+				newUris := make([]string, 0, len(uris))
+				for _, u := range uris {
+					if u != uri {
+						newUris = append(newUris, u)
+					}
+				}
+				if len(newUris) == 0 {
+					delete(i.rdfTermIndex, term)
+				} else {
+					i.rdfTermIndex[term] = newUris
+				}
+			}
+		}
+	}
+}
+
+// backgroundReindexRoutine periodically reindexes resources in batches
+func (i *ResourceIndexLayer) backgroundReindexRoutine() {
+	ticker := time.NewTicker(i.config.ReindexInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-i.closeChan:
+			return
+		case <-ticker.C:
+			if err := i.performBackgroundReindex(); err != nil {
+				i.logger.Error("Background reindex failed", "error", err)
+			}
+		}
+	}
+}
+
+// performBackgroundReindex performs a single batch of reindexing
+func (i *ResourceIndexLayer) performBackgroundReindex() error {
+	i.mu.RLock()
+	batchSize := i.config.ReindexBatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	i.mu.RUnlock()
+
+	// Get all resource URIs
+	i.mu.RLock()
+	allURIs := make([]string, 0, len(i.resourceIndex))
+	for uri := range i.resourceIndex {
+		allURIs = append(allURIs, uri)
+	}
+	i.mu.RUnlock()
+
+	if len(allURIs) == 0 {
+		return nil
+	}
+
+	// Process in batches
+	for offset := 0; offset < len(allURIs); offset += batchSize {
+		end := offset + batchSize
+		if end > len(allURIs) {
+			end = len(allURIs)
+		}
+		batch := allURIs[offset:end]
+
+		for _, uri := range batch {
+			// Re-index this resource
+			metadata, exists := i.resourceIndex[uri]
+			if !exists {
+				continue
+			}
+
+			accessInfo, accessExists := i.accessIndex[uri]
+			if !accessExists {
+				continue
+			}
+
+			// Remove old entries
+			if err := i.RemoveResource(uri); err != nil {
+				i.logger.Warn("Failed to remove resource during reindex", "uri", uri, "error", err)
+				continue
+			}
+
+			// Re-add with updated metadata
+			if err := i.IndexResource(metadata, accessInfo); err != nil {
+				i.logger.Warn("Failed to reindex resource", "uri", uri, "error", err)
+				// Try to restore the old entry
+				i.resourceIndex[uri] = metadata
+				i.accessIndex[uri] = accessInfo
+				continue
+			}
+
+			// Checkpoint: log progress
+			if (offset+end) % 100 == 0 {
+				i.logger.Debug("Background reindex progress", "processed", offset+end, "total", len(allURIs))
+			}
+		}
+	}
+
+	i.logger.Info("Background reindex completed", "total_resources", len(allURIs))
+	return nil
+}
+
+// IndexConsistencyReport represents the result of an index consistency check
+type IndexConsistencyReport struct {
+	// CheckedAt is when the consistency check was performed
+	CheckedAt time.Time
+
+	// ResourceCount is the number of resources in the main index
+	ResourceCount int
+
+	// ContainerCount is the number of containers in the container index
+	ContainerCount int
+
+	// Consistent indicates if all indexes are consistent
+	Consistent bool
+
+	// ErrorCount is the number of consistency errors found
+	ErrorCount int
+
+	// Errors contains descriptions of all consistency errors
+	Errors []string
+}
+
+// VerifyIndexConsistency checks the consistency of all indexes
+func (i *ResourceIndexLayer) VerifyIndexConsistency() IndexConsistencyReport {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	report := IndexConsistencyReport{
+		CheckedAt:      time.Now(),
+		ResourceCount:  len(i.resourceIndex),
+		ContainerCount: len(i.containerIndex),
+	}
+
+	// Check container index consistency
+	for containerURI, uris := range i.containerIndex {
+		for _, uri := range uris {
+			if _, exists := i.resourceIndex[uri]; !exists {
+				report.Errors = append(report.Errors, fmt.Sprintf("Container index references non-existent resource: %s -> %s", containerURI, uri))
+				report.ErrorCount++
+			}
+		}
+	}
+
+	// Check type index consistency
+	for resourceType, uris := range i.typeIndex {
+		for _, uri := range uris {
+			if _, exists := i.resourceIndex[uri]; !exists {
+				report.Errors = append(report.Errors, fmt.Sprintf("Type index references non-existent resource: %s -> %s", resourceType, uri))
+				report.ErrorCount++
+			}
+		}
+	}
+
+	// Check agent index consistency
+	if i.agentIndex != nil {
+		for agent, uris := range i.agentIndex {
+			for _, uri := range uris {
+				if _, exists := i.resourceIndex[uri]; !exists {
+					report.Errors = append(report.Errors, fmt.Sprintf("Agent index references non-existent resource: %s -> %s", agent, uri))
+					report.ErrorCount++
+				}
+			}
+		}
+	}
+
+	// Check storage root index consistency
+	if i.storageRootIndex != nil {
+		for storageRoot, uris := range i.storageRootIndex {
+			for _, uri := range uris {
+				if _, exists := i.resourceIndex[uri]; !exists {
+					report.Errors = append(report.Errors, fmt.Sprintf("Storage root index references non-existent resource: %s -> %s", storageRoot, uri))
+					report.ErrorCount++
+				}
+			}
+		}
+	}
+
+	// Check access index consistency
+	for uri := range i.accessIndex {
+		if _, exists := i.resourceIndex[uri]; !exists {
+			report.Errors = append(report.Errors, fmt.Sprintf("Access index references non-existent resource: %s", uri))
+			report.ErrorCount++
+		}
+	}
+
+	report.Consistent = report.ErrorCount == 0
+	return report
+}
+
+// InvalidateIndexesForResource invalidates all index entries for a specific resource
+// This is called when a resource is updated or deleted to ensure consistency
+func (i *ResourceIndexLayer) InvalidateIndexesForResource(uri string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	// Remove from resource index
+	delete(i.resourceIndex, uri)
+
+	// Remove from container index
+	for containerURI, uris := range i.containerIndex {
+		newUris := make([]string, 0, len(uris))
+		for _, u := range uris {
+			if u != uri {
+				newUris = append(newUris, u)
+			}
+		}
+		if len(newUris) == 0 {
+			delete(i.containerIndex, containerURI)
+		} else {
+			i.containerIndex[containerURI] = newUris
+		}
+	}
+
+	// Remove from type index
+	for resourceType, uris := range i.typeIndex {
+		newUris := make([]string, 0, len(uris))
+		for _, u := range uris {
+			if u != uri {
+				newUris = append(newUris, u)
+			}
+		}
+		if len(newUris) == 0 {
+			delete(i.typeIndex, resourceType)
+		} else {
+			i.typeIndex[resourceType] = newUris
+		}
+	}
+
+	// Remove from agent index
+	if i.agentIndex != nil {
+		for agent, uris := range i.agentIndex {
+			newUris := make([]string, 0, len(uris))
+			for _, u := range uris {
+				if u != uri {
+					newUris = append(newUris, u)
+				}
+			}
+			if len(newUris) == 0 {
+				delete(i.agentIndex, agent)
+			} else {
+				i.agentIndex[agent] = newUris
+			}
+		}
+	}
+
+	// Remove from storage root index
+	if i.storageRootIndex != nil {
+		for storageRoot, uris := range i.storageRootIndex {
+			newUris := make([]string, 0, len(uris))
+			for _, u := range uris {
+				if u != uri {
+					newUris = append(newUris, u)
+				}
+			}
+			if len(newUris) == 0 {
+				delete(i.storageRootIndex, storageRoot)
+			} else {
+				i.storageRootIndex[storageRoot] = newUris
+			}
+		}
+	}
+
+	// Remove from RDF term index
+	if i.rdfTermIndex != nil {
+		for term, uris := range i.rdfTermIndex {
+			newUris := make([]string, 0, len(uris))
+			for _, u := range uris {
+				if u != uri {
+					newUris = append(newUris, u)
+				}
+			}
+			if len(newUris) == 0 {
+				delete(i.rdfTermIndex, term)
+			} else {
+				i.rdfTermIndex[term] = newUris
+			}
+		}
+	}
+
+	// Remove from access index
+	delete(i.accessIndex, uri)
+
+	// Remove from full-text index
+	if i.fullTextIndex != nil {
+		for term, uris := range i.fullTextIndex {
+			newUris := make([]string, 0, len(uris))
+			for _, u := range uris {
+				if u != uri {
+					newUris = append(newUris, u)
+				}
+			}
+			if len(newUris) == 0 {
+				delete(i.fullTextIndex, term)
+			} else {
+				i.fullTextIndex[term] = newUris
+			}
+		}
+	}
+
+	i.logger.Debug("Invalidated all indexes for resource", "uri", uri)
 }
 
 // IndexResource indexes a resource in all applicable indexes
@@ -624,6 +1036,34 @@ func (i *ResourceIndexLayer) IndexResource(metadata *ResourceMetadata, accessInf
 		i.accessIndex[metadata.URI] = accessInfo
 	}
 
+	// Add to storage root index if enabled
+	if i.config.EnableStorageRootIndex && i.storageRootIndex != nil {
+		if metadata.StorageRoot != "" {
+			i.storageRootIndex[metadata.StorageRoot] = append(i.storageRootIndex[metadata.StorageRoot], metadata.URI)
+		}
+	}
+
+	// Add to auxiliary index if enabled
+	if i.config.EnableAuxiliaryIndex && i.auxiliaryIndex != nil && metadata.AuxiliaryLinks != nil {
+		for auxURI := range metadata.AuxiliaryLinks {
+			i.auxiliaryIndex[metadata.URI] = append(i.auxiliaryIndex[metadata.URI], auxURI)
+		}
+	}
+
+	// Add to RDF term index if enabled
+	if i.config.EnableRDFTermIndex && i.rdfTermIndex != nil && metadata.RDFTerms != nil {
+		for term := range metadata.RDFTerms {
+			i.rdfTermIndex[term] = append(i.rdfTermIndex[term], metadata.URI)
+		}
+	}
+
+	// Add to full-text index if enabled
+	if i.config.EnableFullTextIndex && i.fullTextIndex != nil && len(metadata.FullTextTerms) > 0 {
+		for _, term := range metadata.FullTextTerms {
+			i.fullTextIndex[term] = append(i.fullTextIndex[term], metadata.URI)
+		}
+	}
+
 	// Update metrics
 	if i.config.EnableObservability {
 		i.indexMetrics.RecordResourceIndexed()
@@ -634,6 +1074,7 @@ func (i *ResourceIndexLayer) IndexResource(metadata *ResourceMetadata, accessInf
 		"resource_type", metadata.ResourceType,
 		"owner", metadata.OwnerWebID,
 		"privacy_level", metadata.PrivacyLevel,
+		"storage_root", metadata.StorageRoot,
 	)
 
 	return nil
@@ -946,6 +1387,22 @@ func (i *ResourceIndexLayer) getCandidateURIs(query *IndexQuery) map[string]*Res
 			}
 		}
 		return candidates
+	}
+
+	// If storage roots are specified, get resources from those storage roots
+	if len(query.StorageRoots) > 0 && i.storageRootIndex != nil {
+		for _, storageRoot := range query.StorageRoots {
+			if uris, exists := i.storageRootIndex[storageRoot]; exists {
+				for _, uri := range uris {
+					if metadata, exists := i.resourceIndex[uri]; exists {
+						candidates[uri] = metadata
+					}
+				}
+			}
+		}
+		if len(candidates) > 0 {
+			return candidates
+		}
 	}
 
 	// If no specific filters, return all resources (with access control)
@@ -1341,6 +1798,15 @@ func (i *ResourceIndexLayer) Clear() {
 	if i.fullTextIndex != nil {
 		i.fullTextIndex = make(map[string][]string)
 	}
+	if i.auxiliaryIndex != nil {
+		i.auxiliaryIndex = make(map[string][]string)
+	}
+	if i.storageRootIndex != nil {
+		i.storageRootIndex = make(map[string][]string)
+	}
+	if i.rdfTermIndex != nil {
+		i.rdfTermIndex = make(map[string][]string)
+	}
 
 	i.logger.Info("All indexes cleared")
 }
@@ -1365,6 +1831,15 @@ func (i *ResourceIndexLayer) Close() error {
 	i.accessIndex = make(map[string]*ResourceAccessInfo)
 	if i.fullTextIndex != nil {
 		i.fullTextIndex = make(map[string][]string)
+	}
+	if i.auxiliaryIndex != nil {
+		i.auxiliaryIndex = make(map[string][]string)
+	}
+	if i.storageRootIndex != nil {
+		i.storageRootIndex = make(map[string][]string)
+	}
+	if i.rdfTermIndex != nil {
+		i.rdfTermIndex = make(map[string][]string)
 	}
 
 	i.logger.Info("Resource index layer closed")
