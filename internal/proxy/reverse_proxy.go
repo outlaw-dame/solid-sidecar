@@ -74,8 +74,12 @@ func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 				proxyRequest.Out.Header.Set("X-Request-ID", requestID)
 			}
 		},
+		// Add distributed tracing for reverse proxy operations (Phase 39.3)
+		Transport: &tracingRoundTripper{
+			base: roundTripperWithTimeout{base: transport, timeout: cfg.Backend.Timeout},
+		},
 	}
-	reverseProxy.Transport = roundTripperWithTimeout{base: transport, timeout: cfg.Backend.Timeout}
+// Note: Transport is now set in the ReverseProxy struct initialization above
 	reverseProxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
 		logger.Error("backend proxy failure",
 			"request_id", observability.RequestIDFromContext(req.Context()),
@@ -159,4 +163,47 @@ func schemeFor(req *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+// tracingRoundTripper adds distributed tracing to HTTP round trips for Phase 39.3
+type tracingRoundTripper struct {
+	base http.RoundTripper
+}
+
+func (t *tracingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Start a span for the backend request
+	ctx, span := observability.StartSpan(req.Context(), "proxy.backend_request",
+		observability.WithSpanAttributes(observability.SpanAttributes{
+			Method:    req.Method,
+			Path:      req.URL.Path,
+			Component: "proxy",
+			Operation: "backend_request",
+		})...)
+	defer span.End()
+
+	// Add request headers to span attributes
+	if req.Host != "" {
+		observability.SetSpanAttribute(span, "http.host", req.Host)
+	}
+	if req.RemoteAddr != "" {
+		observability.SetSpanAttribute(span, "http.remote_addr", req.RemoteAddr)
+	}
+
+	// Perform the actual round trip
+	resp, err := t.base.RoundTrip(req.WithContext(ctx))
+	if err != nil {
+		observability.RecordSpanError(span, err)
+		observability.EndSpanWithError(span, err)
+		return nil, err
+	}
+
+	// Record response information
+	if resp != nil {
+		observability.SetSpanAttribute(span, "http.status_code", resp.StatusCode)
+		if resp.ContentLength > 0 {
+			observability.SetSpanAttribute(span, "http.response_bytes", resp.ContentLength)
+		}
+	}
+
+	return resp, err
 }

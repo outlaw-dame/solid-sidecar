@@ -70,32 +70,46 @@ func Middleware(options MiddlewareOptions, next http.Handler) http.Handler {
 			return
 		}
 
-		decision, err := evaluator.Evaluate(r.Context(), request)
-		if err != nil {
-			message, reason := evaluationWarning(err)
-			logShadowError(options.Logger, r, message, reason)
-			recordShadowWarningMetric(options.Metrics, reason)
-			if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
-			return
-		}
-		if err := ValidateDecision(decision); err != nil {
-			logShadowError(options.Logger, r, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision)
-			recordShadowWarningMetric(options.Metrics, ShadowErrorReasonInvalidDecision)
-			if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
-			return
-		}
+		// Add distributed tracing for authorization evaluation (Phase 39.3)
+	ctx, span := observability.StartSpan(r.Context(), "authz.evaluation",
+		observability.WithContextAttributes(r.Context())...)
+	defer observability.EndSpanWithError(span, nil)
 
-		logShadowDecision(options.Logger, r, decision)
-		recordShadowDecisionMetric(options.Metrics, ShadowMetricDecision, decision)
+	decision, err := evaluator.Evaluate(ctx, request)
+	if err != nil {
+		message, reason := evaluationWarning(err)
+		logShadowError(options.Logger, r, message, reason)
+		recordShadowWarningMetric(options.Metrics, reason)
+		observability.RecordSpanError(span, err)
+		if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		next.ServeHTTP(w, r)
+		return
+	}
+	if err := ValidateDecision(decision); err != nil {
+		logShadowError(options.Logger, r, ShadowLogMessageInvalidDecision, ShadowErrorReasonInvalidDecision)
+		recordShadowWarningMetric(options.Metrics, ShadowErrorReasonInvalidDecision)
+		observability.RecordSpanError(span, err)
+		if !evaluateFallback(options.Logger, options.Metrics, r, request, options.FallbackEvaluator) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	// Record decision in span for tracing
+	observability.SetSpanAttribute(span, "authz.decision", string(decision.Decision))
+	observability.SetSpanAttribute(span, "reason.code", string(decision.ReasonCode))
+	if decision.PolicyVersion != "" {
+		observability.SetSpanAttribute(span, "policy.version", decision.PolicyVersion)
+	}
+
+	logShadowDecision(options.Logger, r, decision)
+	recordShadowDecisionMetric(options.Metrics, ShadowMetricDecision, decision)
+	next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

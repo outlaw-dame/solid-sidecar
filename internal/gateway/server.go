@@ -194,6 +194,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		inner = compression.Middleware(compressionConfig)(inner)
 	}
 
+	// Add distributed tracing middleware for Phase 39.3
+	// This wraps all requests with OpenTelemetry tracing
+	inner = observability.TracingMiddleware(inner)
+
 	handler := observability.RequestID(
 		observability.AccessLog(logger,
 			safety.SecurityHeaders(
