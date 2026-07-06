@@ -66,14 +66,14 @@ Implement advanced authorization features for production use.
 
 **Tasks:**
 - ✅ Complete RDF parser boundary with full FFI integration
-- Enable enforcement mode for WAC/ACP parsers
+- ✅ Enable enforcement mode for WAC/ACP parsers
 - Implement policy decision caching with smart invalidation
 - Add policy change notification and propagation
 - Implement cross-tenant authorization where applicable
 
 **Acceptance Criteria:**
 - ✅ RDF parser boundary complete and production-ready
-- Enforcement mode enabled and tested for WAC/ACP
+- ✅ Enforcement mode enabled and tested for WAC/ACP
 - Policy decision cache implemented with smart invalidation
 - Policy change notifications working correctly
 - Cross-tenant authorization implemented (if needed)
@@ -189,6 +189,30 @@ The RDF parser boundary was implemented by bridging the existing native Go RDF p
 - Health check functionality
 - Integration with parser registry
 - Support for multiple RDF formats (Turtle, N-Triples, JSON-LD)
+
+### WAC/ACP Parser Enforcement Mode (Phase 39.2 Task 2)
+
+**Implementation Approach:**
+Added enforcement mode configuration to both WAC and ACP parsers to allow them to be configured for enforcement or shadow mode operation. This complements the existing enforcement gate system.
+
+**Files Modified:**
+- `internal/authz/wac_parser.go` - Added EnforcementMode option and IsEnforcementModeEnabled method
+- `internal/authz/acp_parser.go` - Added EnforcementMode option and IsEnforcementModeEnabled method
+- `internal/authz/wac_parser_test.go` - Added enforcement mode tests
+- `internal/authz/acp_parser_test.go` - Added enforcement mode tests
+
+**Key Features:**
+- Enforcement mode flag in WAC and ACP parser options (defaults to shadow mode for safety)
+- IsEnforcementModeEnabled() method to check current mode
+- Logging when parsers are initialized in enforcement or shadow mode
+- Comprehensive tests for both modes
+- Complements the existing enforcement gate system
+
+**Design Notes:**
+- Enforcement mode at the parser level is independent of the enforcement gate
+- Parser-level enforcement mode controls whether the parser operates in a mode that supports enforcement
+- The actual enforcement of authorization decisions is still controlled by the enforcement gate
+- This provides defense in depth: both parser and gate can control enforcement behavior
 
 ## Notes
 

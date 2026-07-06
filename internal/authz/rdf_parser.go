@@ -48,9 +48,9 @@ type RDFTriple struct {
 	Subject    string      `json:"subject"`
 	Predicate  string      `json:"predicate"`
 	Object     string      `json:"object"`
-	ObjectType RDFTermType `json:"object_type"` // IRI, Literal, BlankNode
-	Language   string      `json:"language,omitempty"`   // Language tag (for literals)
-	Datatype   string      `json:"datatype,omitempty"`   // Datatype URI (for literals)
+	ObjectType RDFTermType `json:"object_type"`        // IRI, Literal, BlankNode
+	Language   string      `json:"language,omitempty"` // Language tag (for literals)
+	Datatype   string      `json:"datatype,omitempty"` // Datatype URI (for literals)
 }
 
 // RDFTermType represents the type of RDF term

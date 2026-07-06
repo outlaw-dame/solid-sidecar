@@ -31,6 +31,11 @@ type ACPParserOptions struct {
 	// Default: 30 seconds
 	Timeout time.Duration
 
+	// EnforcementMode determines if the parser should operate in enforcement mode
+	// When false, the parser operates in shadow mode (parse but don't enforce)
+	// Default: false (shadow mode)
+	EnforcementMode bool
+
 	// Logger is the logger to use
 	Logger *slog.Logger
 }
@@ -38,9 +43,10 @@ type ACPParserOptions struct {
 // DefaultACPParserOptions returns options with sensible defaults
 func DefaultACPParserOptions() ACPParserOptions {
 	return ACPParserOptions{
-		MaxRules: 100,
-		Timeout:  30 * time.Second,
-		Logger:   nil,
+		MaxRules:        100,
+		Timeout:         30 * time.Second,
+		EnforcementMode: false, // Shadow mode by default for safety
+		Logger:          nil,
 	}
 }
 
@@ -57,10 +63,26 @@ func NewACPParser(options ACPParserOptions, rdfParser *RDFParserRegistry) (*ACPP
 		options.Timeout = 30 * time.Second
 	}
 
-	return &ACPParser{
+	parser := &ACPParser{
 		options:   options,
 		rdfParser: rdfParser,
-	}, nil
+	}
+
+	// Log enforcement mode configuration
+	if options.Logger != nil {
+		if options.EnforcementMode {
+			options.Logger.Info("ACP parser initialized in enforcement mode")
+		} else {
+			options.Logger.Info("ACP parser initialized in shadow mode")
+		}
+	}
+
+	return parser, nil
+}
+
+// IsEnforcementModeEnabled returns true if the parser is configured for enforcement mode
+func (p *ACPParser) IsEnforcementModeEnabled() bool {
+	return p.options.EnforcementMode
 }
 
 // ACPAccess represents an ACP access grant or denial

@@ -64,13 +64,13 @@ func ValidateURI(uri string) error {
 	allowedSchemes := map[string]bool{
 		"http":     true,
 		"https":    true,
-		"boundary":  true,
+		"boundary": true,
 		"file":     true,
 		"memory":   true,
 		"internal": true,
 		"test":     true,
 	}
-	
+
 	if !allowedSchemes[parsed.Scheme] {
 		return fmt.Errorf("%w: %s", ErrInvalidURIScheme, parsed.Scheme)
 	}

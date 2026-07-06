@@ -552,3 +552,42 @@ func TestWACParserEmptyContent(t *testing.T) {
 		t.Errorf("expected content type text/turtle, got %q", result.ContentType)
 	}
 }
+
+// TestWACParserEnforcementModeShadow tests WAC parser in shadow mode
+func TestWACParserEnforcementModeShadow(t *testing.T) {
+	t.Parallel()
+
+	// Create RDF parser registry with mock parser
+	mockParser := &mockWACRDFParser{}
+	registry := createTestRDFRegistry(mockParser)
+
+	// Test shadow mode (default)
+	options := DefaultWACParserOptions()
+	parser, err := NewWACParser(options, registry)
+	if err != nil {
+		t.Fatalf("Failed to create WAC parser: %v", err)
+	}
+	if parser.IsEnforcementModeEnabled() {
+		t.Error("Default should be shadow mode")
+	}
+}
+
+// TestWACParserEnforcementModeEnabled tests WAC parser in enforcement mode
+func TestWACParserEnforcementModeEnabled(t *testing.T) {
+	t.Parallel()
+
+	// Create RDF parser registry with mock parser
+	mockParser := &mockWACRDFParser{}
+	registry := createTestRDFRegistry(mockParser)
+
+	// Test enforcement mode
+	options := DefaultWACParserOptions()
+	options.EnforcementMode = true
+	parser, err := NewWACParser(options, registry)
+	if err != nil {
+		t.Fatalf("Failed to create WAC parser: %v", err)
+	}
+	if !parser.IsEnforcementModeEnabled() {
+		t.Error("Should be enforcement mode when configured")
+	}
+}

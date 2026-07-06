@@ -32,6 +32,11 @@ type WACParserOptions struct {
 	// Default: 30 seconds
 	Timeout time.Duration
 
+	// EnforcementMode determines if the parser should operate in enforcement mode
+	// When false, the parser operates in shadow mode (parse but don't enforce)
+	// Default: false (shadow mode)
+	EnforcementMode bool
+
 	// Logger is the logger to use
 	Logger *slog.Logger
 }
@@ -39,9 +44,10 @@ type WACParserOptions struct {
 // DefaultWACParserOptions returns options with sensible defaults
 func DefaultWACParserOptions() WACParserOptions {
 	return WACParserOptions{
-		MaxRules: 100,
-		Timeout:  30 * time.Second,
-		Logger:   nil,
+		MaxRules:        100,
+		Timeout:         30 * time.Second,
+		EnforcementMode: false, // Shadow mode by default for safety
+		Logger:          nil,
 	}
 }
 
@@ -58,10 +64,26 @@ func NewWACParser(options WACParserOptions, rdfParser *RDFParserRegistry) (*WACP
 		options.Timeout = 30 * time.Second
 	}
 
-	return &WACParser{
+	parser := &WACParser{
 		options:   options,
 		rdfParser: rdfParser,
-	}, nil
+	}
+
+	// Log enforcement mode configuration
+	if options.Logger != nil {
+		if options.EnforcementMode {
+			options.Logger.Info("WAC parser initialized in enforcement mode")
+		} else {
+			options.Logger.Info("WAC parser initialized in shadow mode")
+		}
+	}
+
+	return parser, nil
+}
+
+// IsEnforcementModeEnabled returns true if the parser is configured for enforcement mode
+func (p *WACParser) IsEnforcementModeEnabled() bool {
+	return p.options.EnforcementMode
 }
 
 // WACRule represents a single Web Access Control rule

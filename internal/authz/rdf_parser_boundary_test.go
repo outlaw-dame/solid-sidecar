@@ -17,7 +17,7 @@ func TestRDFParserBoundaryBasic(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestRDFParserBoundaryParse(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -58,21 +58,21 @@ ex:subject ex:property ex:object .
 
 	result, err := boundary.Parse(ctx, turtleContent, "text/turtle")
 	require.NoError(t, err)
-	
+
 	// Verify we got some triples
 	assert.NotEmpty(t, result.Triples, "Expected to parse at least one triple")
-	
+
 	// Verify content type is set
 	assert.Equal(t, "text/turtle", result.ContentType)
-	
+
 	// Verify base URI is set (should be the synthetic URI we used)
 	assert.NotEmpty(t, result.BaseURI)
-	
+
 	// Verify triples are canonicalized (sorted)
 	for i := 1; i < len(result.Triples); i++ {
 		assert.True(t,
 			result.Triples[i-1].Subject <= result.Triples[i].Subject,
-			"Triples should be sorted by subject: %v vs %v", 
+			"Triples should be sorted by subject: %v vs %v",
 			result.Triples[i-1], result.Triples[i])
 	}
 }
@@ -83,7 +83,7 @@ func TestRDFParserBoundaryParseNtriples(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -99,10 +99,10 @@ func TestRDFParserBoundaryParseNtriples(t *testing.T) {
 
 	result, err := boundary.Parse(ctx, ntriplesContent, "application/n-triples")
 	require.NoError(t, err)
-	
+
 	// Verify we got the expected number of triples
 	assert.Len(t, result.Triples, 2, "Expected to parse 2 triples")
-	
+
 	// Verify the triples are sorted (canonicalized)
 	if len(result.Triples) >= 2 {
 		// The type triple should come first (alphabetically by predicate)
@@ -118,7 +118,7 @@ func TestRDFParserBoundaryCanonicalization(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary with canonicalization enabled
 	options := DefaultRDFParserBoundaryOptions()
 	options.EnableCanonicalization = true
@@ -136,16 +136,16 @@ func TestRDFParserBoundaryCanonicalization(t *testing.T) {
 
 	result, err := boundary.Parse(ctx, content, "text/turtle")
 	require.NoError(t, err)
-	
+
 	// Verify we got at least one triple
 	require.NotEmpty(t, result.Triples, "Expected to parse at least one triple")
-	
+
 	// Verify canonicalization removed extra whitespace from the structure
 	for _, triple := range result.Triples {
 		assert.NotContains(t, triple.Subject, " ", "Subject should not contain extra whitespace")
 		assert.NotContains(t, triple.Predicate, " ", "Predicate should not contain extra whitespace")
 		assert.NotContains(t, triple.Object, " ", "Object should not contain extra whitespace")
-		
+
 		// Verify angle brackets are removed (canonical form)
 		assert.NotContains(t, triple.Subject, "<", "Subject should not contain angle brackets")
 		assert.NotContains(t, triple.Subject, ">", "Subject should not contain angle brackets")
@@ -154,12 +154,12 @@ func TestRDFParserBoundaryCanonicalization(t *testing.T) {
 		assert.NotContains(t, triple.Object, "<", "Object should not contain angle brackets")
 		assert.NotContains(t, triple.Object, ">", "Object should not contain angle brackets")
 	}
-	
+
 	// Verify triples are sorted (part of canonicalization)
 	for i := 1; i < len(result.Triples); i++ {
 		assert.True(t,
 			result.Triples[i-1].Subject <= result.Triples[i].Subject,
-			"Triples should be sorted by subject: %v vs %v", 
+			"Triples should be sorted by subject: %v vs %v",
 			result.Triples[i-1], result.Triples[i])
 	}
 }
@@ -170,7 +170,7 @@ func TestRDFParserBoundaryInputSizeLimit(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary with small input limit
 	options := DefaultRDFParserBoundaryOptions()
 	options.MaxInputSize = 100 // Very small limit
@@ -198,24 +198,24 @@ func TestRDFParserBoundaryClosed(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
-	
+
 	// Close the boundary
 	err = boundary.Close()
 	require.NoError(t, err)
-	
+
 	// Verify it's closed
 	assert.True(t, boundary.IsClosed())
-	
+
 	// Test that parsing fails when closed
 	ctx := context.Background()
 	_, err = boundary.Parse(ctx, []byte("test"), "text/turtle")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRDFParserBoundaryClosed), "Expected boundary closed error")
-	
+
 	// Test that closing again is a no-op
 	err = boundary.Close()
 	require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestRDFParserBoundaryHealthCheck(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -248,10 +248,10 @@ func TestRDFParserBoundaryHealthCheck(t *testing.T) {
 	// Health check should pass
 	err = boundary.HealthCheck(ctx)
 	require.NoError(t, err)
-	
+
 	// Close the boundary and verify health check fails
 	boundary.Close()
-	
+
 	err = boundary.HealthCheck(ctx)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRDFParserBoundaryClosed), "Expected boundary closed error")
@@ -263,7 +263,7 @@ func TestRDFParserBoundaryStats(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	options := DefaultRDFParserBoundaryOptions()
 	options.EnableCanonicalization = true
@@ -274,7 +274,7 @@ func TestRDFParserBoundaryStats(t *testing.T) {
 
 	// Get stats
 	stats := boundary.Stats()
-	
+
 	// Verify stats
 	assert.False(t, stats.Closed)
 	assert.True(t, stats.CanonicalizationEnabled)
@@ -285,29 +285,29 @@ func TestRDFParserBoundaryStats(t *testing.T) {
 func TestRDFParserBoundaryImplementsInterface(t *testing.T) {
 	// This test ensures that RDFParserBoundary implements RDFParser interface
 	// It will fail to compile if the interface is not properly implemented
-	
+
 	// Create a variable of type RDFParser and assign a RDFParserBoundary to it
 	var parser RDFParser
-	
+
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
 	defer boundary.Close()
-	
+
 	// This assignment will fail to compile if RDFParserBoundary doesn't implement RDFParser
 	parser = boundary
-	
+
 	// Verify the interface is implemented correctly
 	ctx := context.Background()
 	content := []byte("<http://example.org/s> <http://example.org/p> <http://example.org/o> .")
-	
+
 	result, err := parser.Parse(ctx, content, "text/turtle")
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.Triples)
-	
+
 	supportedTypes := parser.SupportedContentTypes()
 	assert.Contains(t, supportedTypes, "text/turtle")
 }
@@ -318,7 +318,7 @@ func TestRDFParserBoundaryIntegration(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -326,14 +326,14 @@ func TestRDFParserBoundaryIntegration(t *testing.T) {
 
 	// Create parser registry
 	registry := NewRDFParserRegistry(DefaultRDFParserOptions())
-	
+
 	// Register the boundary as a parser
 	registry.Register(boundary)
-	
+
 	// Verify the registry can parse using the boundary
 	ctx := context.Background()
 	content := []byte("<http://example.org/subject> <http://example.org/predicate> <http://example.org/object> .")
-	
+
 	result, err := registry.Parse(ctx, content, "text/turtle")
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.Triples)
@@ -346,7 +346,7 @@ func TestRDFParserBoundaryConcurrentAccess(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestRDFParserBoundaryConcurrentAccess(t *testing.T) {
 
 	ctx := context.Background()
 	content := []byte("<http://example.org/s> <http://example.org/p> <http://example.org/o> .")
-	
+
 	// Test concurrent parsing
 	done := make(chan error, 10)
 	for i := 0; i < 10; i++ {
@@ -363,7 +363,7 @@ func TestRDFParserBoundaryConcurrentAccess(t *testing.T) {
 			done <- err
 		}()
 	}
-	
+
 	// Wait for all goroutines to complete
 	for i := 0; i < 10; i++ {
 		err := <-done
@@ -377,7 +377,7 @@ func TestRDFParserBoundaryErrorHandling(t *testing.T) {
 
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(t, err)
@@ -396,14 +396,14 @@ func TestRDFParserBoundaryErrorHandling(t *testing.T) {
 func BenchmarkRDFParserBoundaryParse(b *testing.B) {
 	// Create runtime RDF layer
 	rdfLayer := runtime.NewRDFGraphIndexLayer(runtime.DefaultRDFGraphIndexConfig())
-	
+
 	// Create boundary
 	boundary, err := NewRDFParserBoundary(rdfLayer, DefaultRDFParserBoundaryOptions())
 	require.NoError(b, err)
 	defer boundary.Close()
 
 	ctx := context.Background()
-	
+
 	// Sample Turtle content for benchmarking
 	content := []byte(`
 @prefix ex: <http://example.org/> .

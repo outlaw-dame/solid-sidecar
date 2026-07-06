@@ -61,8 +61,8 @@ func DefaultRDFParserBoundaryOptions() RDFParserBoundaryOptions {
 	return RDFParserBoundaryOptions{
 		EnableCanonicalization: true,
 		MaxInputSize:           1 << 20, // 1MB
-		Timeout:               30 * time.Second,
-		Logger:                nil,
+		Timeout:                30 * time.Second,
+		Logger:                 nil,
 	}
 }
 
@@ -202,7 +202,7 @@ func (b *RDFParserBoundary) convertRuntimeGraphToNamedGraphs(runtimeGraph *runti
 	// For now, create a single named graph with the graph URI
 	// In the future, this could handle multiple named graphs
 	graphMap := make(map[string][]RDFTriple)
-	
+
 	if runtimeGraph.URI != "" {
 		convertedTriples := make([]RDFTriple, len(runtimeGraph.Triples))
 		for i, rt := range runtimeGraph.Triples {
@@ -293,18 +293,18 @@ func (b *RDFParserBoundary) canonicalizeTriple(triple RDFTriple) RDFTriple {
 func normalizeRDFTerm(term string) string {
 	// Remove extra whitespace
 	term = strings.TrimSpace(term)
-	
+
 	// Remove angle brackets from URIs (canonical form doesn't use them)
 	if strings.HasPrefix(term, "<") && strings.HasSuffix(term, ">") {
 		return term[1 : len(term)-1]
 	}
-	
+
 	// Remove quotes from literals
 	if (strings.HasPrefix(term, "\"") && strings.HasSuffix(term, "\"")) ||
 		(strings.HasPrefix(term, "'") && strings.HasSuffix(term, "'")) {
 		return term[1 : len(term)-1]
 	}
-	
+
 	return term
 }
 
@@ -318,12 +318,12 @@ func normalizeLanguageTag(tag string) string {
 func normalizeDatatypeURI(uri string) string {
 	// Trim whitespace and ensure consistent formatting
 	uri = strings.TrimSpace(uri)
-	
+
 	// Remove angle brackets if present
 	if strings.HasPrefix(uri, "<") && strings.HasSuffix(uri, ">") {
 		return uri[1 : len(uri)-1]
 	}
-	
+
 	return uri
 }
 
@@ -338,7 +338,7 @@ func (b *RDFParserBoundary) Close() error {
 
 	b.closed = true
 	b.logger.Info("RDF parser boundary closed")
-	
+
 	return nil
 }
 
@@ -379,15 +379,15 @@ func (b *RDFParserBoundary) Stats() RDFParserBoundaryStats {
 	defer b.mu.RUnlock()
 
 	return RDFParserBoundaryStats{
-		Closed: b.closed,
+		Closed:                  b.closed,
 		CanonicalizationEnabled: b.options.EnableCanonicalization,
-		MaxInputSize: b.options.MaxInputSize,
+		MaxInputSize:            b.options.MaxInputSize,
 	}
 }
 
 // RDFParserBoundaryStats contains statistics about the boundary
 type RDFParserBoundaryStats struct {
-	Closed                   bool
+	Closed                  bool
 	CanonicalizationEnabled bool
 	MaxInputSize            int64
 }

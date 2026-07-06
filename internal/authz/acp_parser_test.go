@@ -332,3 +332,44 @@ func TestACPParserParseAccessMode(t *testing.T) {
 
 // Ensure errors import is used
 var _ = errors.New("test error")
+
+// TestACPParserEnforcementModeShadow tests ACP parser in shadow mode
+func TestACPParserEnforcementModeShadow(t *testing.T) {
+	t.Parallel()
+
+	// Create RDF parser registry with mock parser
+	mockParser := &mockACPParser{}
+	registry := NewRDFParserRegistry(DefaultRDFParserOptions())
+	registry.Register(mockParser)
+
+	// Test shadow mode (default)
+	options := DefaultACPParserOptions()
+	parser, err := NewACPParser(options, registry)
+	if err != nil {
+		t.Fatalf("Failed to create ACP parser: %v", err)
+	}
+	if parser.IsEnforcementModeEnabled() {
+		t.Error("Default should be shadow mode")
+	}
+}
+
+// TestACPParserEnforcementModeEnabled tests ACP parser in enforcement mode
+func TestACPParserEnforcementModeEnabled(t *testing.T) {
+	t.Parallel()
+
+	// Create RDF parser registry with mock parser
+	mockParser := &mockACPParser{}
+	registry := NewRDFParserRegistry(DefaultRDFParserOptions())
+	registry.Register(mockParser)
+
+	// Test enforcement mode
+	options := DefaultACPParserOptions()
+	options.EnforcementMode = true
+	parser, err := NewACPParser(options, registry)
+	if err != nil {
+		t.Fatalf("Failed to create ACP parser: %v", err)
+	}
+	if !parser.IsEnforcementModeEnabled() {
+		t.Error("Should be enforcement mode when configured")
+	}
+}
