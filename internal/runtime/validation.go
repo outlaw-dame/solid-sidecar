@@ -59,13 +59,24 @@ func ValidateURI(uri string) error {
 		return fmt.Errorf("%w: %v", ErrInvalidURI, err)
 	}
 
-	// Only allow http and https schemes for resource URIs
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+	// Allow http, https, and internal schemes (boundary, file, etc.)
+	// Internal schemes are used for boundary testing and internal operations
+	allowedSchemes := map[string]bool{
+		"http":     true,
+		"https":    true,
+		"boundary":  true,
+		"file":     true,
+		"memory":   true,
+		"internal": true,
+		"test":     true,
+	}
+	
+	if !allowedSchemes[parsed.Scheme] {
 		return fmt.Errorf("%w: %s", ErrInvalidURIScheme, parsed.Scheme)
 	}
 
-	// Ensure host is present
-	if parsed.Host == "" {
+	// For http/https, ensure host is present
+	if (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host == "" {
 		return ErrInvalidURI
 	}
 

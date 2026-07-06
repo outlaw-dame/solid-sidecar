@@ -484,6 +484,8 @@ func cleanRDFTerm(term string) string {
 	term = strings.TrimSuffix(term, ">")
 	term = strings.TrimPrefix(term, "\"")
 	term = strings.TrimSuffix(term, "\"")
+	// Trim spaces again after removing brackets/quotes
+	term = strings.TrimSpace(term)
 	return term
 }
 
