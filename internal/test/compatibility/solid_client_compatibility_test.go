@@ -15,7 +15,7 @@ import (
 // TestSolidClientCompatibility tests compatibility with various Solid clients
 func TestSolidClientCompatibility(t *testing.T) {
 	// Create a test server that simulates solid-sidecar in front of CSS
-	server := createTestServer()
+	server := CreateTestServer()
 	defer server.Close()
 
 	t.Run("MashlibClient", func(t *testing.T) {
@@ -35,8 +35,8 @@ func TestSolidClientCompatibility(t *testing.T) {
 	})
 }
 
-// createTestServer creates a test server that simulates solid-sidecar
-func createTestServer() *httptest.Server {
+// CreateTestServer creates a test server that simulates solid-sidecar
+func CreateTestServer() *httptest.Server {
 	// Create a handler that simulates sidecar behavior
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate CORS headers
@@ -391,7 +391,7 @@ func testWebIDHeader(t *testing.T) {
 
 // TestSolidClientResourceOperations tests resource CRUD operations
 func TestSolidClientResourceOperations(t *testing.T) {
-	server := createTestServer()
+	server := CreateTestServer()
 	defer server.Close()
 
 	client := &http.Client{
@@ -457,7 +457,7 @@ func TestSolidClientResourceOperations(t *testing.T) {
 
 // TestSolidClientContentNegotiation tests content negotiation
 func TestSolidClientContentNegotiation(t *testing.T) {
-	server := createTestServer()
+	server := CreateTestServer()
 	defer server.Close()
 
 	client := &http.Client{
@@ -545,7 +545,7 @@ func isValidHTTPHeader(header string) bool {
 
 // TestSolidClientCORS tests CORS compatibility
 func TestSolidClientCORS(t *testing.T) {
-	server := createTestServer()
+	server := CreateTestServer()
 	defer server.Close()
 
 	client := &http.Client{
@@ -611,7 +611,7 @@ func TestSolidClientCORS(t *testing.T) {
 
 // TestSolidClientErrorHandling tests error handling compatibility
 func TestSolidClientErrorHandling(t *testing.T) {
-	server := createTestServer()
+	server := CreateTestServer()
 	defer server.Close()
 
 	client := &http.Client{
