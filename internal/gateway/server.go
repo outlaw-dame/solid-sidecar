@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/outlaw-dame/solid-sidecar/internal/authn"
@@ -37,9 +38,21 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, fmt.Errorf("create reverse proxy: %w", err)
 	}
 
+	// Initialize comprehensive health check suite for Phase 39.4
+	// Version and build info can be set via ldflags or environment variables
+	version := os.Getenv("SOLID_SIDECAR_VERSION")
+	if version == "" {
+		version = "development"
+	}
+	buildInfo := map[string]any{
+		"commit": os.Getenv("SOLID_SIDECAR_COMMIT"),
+		"date":   os.Getenv("SOLID_SIDECAR_DATE"),
+	}
+	healthSuite := health.NewHealthCheckSuite(version, buildInfo, probe)
+
 	mux := http.NewServeMux()
-	mux.Handle("GET /healthz", health.LivenessHandler())
-	mux.Handle("GET /readyz", health.ReadinessHandler(probe))
+	// Use comprehensive health handlers for Phase 39.4
+	healthSuite.RegisterRoutes(mux)
 
 	// Add SAI routes if SAI is enabled
 	if cfg.SAI.Enabled {
