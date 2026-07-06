@@ -25,29 +25,29 @@ type SolidProtocolTestSuite struct {
 // SolidProtocolSuiteMetadata contains metadata about a test suite
 type SolidProtocolSuiteMetadata struct {
 	SpecificationURL string
-	Version         string
-	LastUpdated     string
-	Maintainer      string
-	SolidVersion    string
+	Version          string
+	LastUpdated      string
+	Maintainer       string
+	SolidVersion     string
 }
 
 // SolidProtocolTest represents a single test in the protocol suite
 type SolidProtocolTest struct {
-	ID          string
-	Name        string
-	Description string
-	Method      string
-	Endpoint    string
-	Headers     map[string]string
-	Body        string
-	Expect      SolidProtocolExpectation
-	Preconditions []string
+	ID             string
+	Name           string
+	Description    string
+	Method         string
+	Endpoint       string
+	Headers        map[string]string
+	Body           string
+	Expect         SolidProtocolExpectation
+	Preconditions  []string
 	Postconditions []string
 }
 
 // SolidProtocolExpectation defines what we expect from a test
 type SolidProtocolExpectation struct {
-	StatusCode       int
+	StatusCode      int
 	ContentType     []string
 	Headers         map[string]string
 	BodyContains    []string
@@ -58,25 +58,25 @@ type SolidProtocolExpectation struct {
 
 // SolidProtocolTestResult represents the result of a protocol test
 type SolidProtocolTestResult struct {
-	SuiteName   string
-	TestID      string
-	TestName    string
-	Passed      bool
-	Error       string
-	Duration    time.Duration
-	Timestamp   time.Time
-	Expected    SolidProtocolExpectation
-	Actual      SolidProtocolExpectation
+	SuiteName string
+	TestID    string
+	TestName  string
+	Passed    bool
+	Error     string
+	Duration  time.Duration
+	Timestamp time.Time
+	Expected  SolidProtocolExpectation
+	Actual    SolidProtocolExpectation
 }
 
 // ProtocolTestSuiteRunner manages running Solid protocol test suites
 type ProtocolTestSuiteRunner struct {
-	serverURL    string
-	client       *http.Client
-	results      []SolidProtocolTestResult
-	mu           sync.Mutex
-	startTime   time.Time
-	endTime     time.Time
+	serverURL string
+	client    *http.Client
+	results   []SolidProtocolTestResult
+	mu        sync.Mutex
+	startTime time.Time
+	endTime   time.Time
 }
 
 // NewProtocolTestSuiteRunner creates a new test suite runner
@@ -91,7 +91,7 @@ func NewProtocolTestSuiteRunner(serverURL string) *ProtocolTestSuiteRunner {
 			},
 			Timeout: 30 * time.Second,
 		},
-		results:    make([]SolidProtocolTestResult, 0),
+		results:   make([]SolidProtocolTestResult, 0),
 		startTime: time.Now(),
 	}
 }
@@ -357,10 +357,10 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 		Description: "Tests for Solid Protocol 2023 specification compliance",
 		Metadata: SolidProtocolSuiteMetadata{
 			SpecificationURL: "https://solidproject.org/TR/protocol",
-			Version:         "2023-12-20",
-			LastUpdated:     time.Now().Format(time.RFC3339),
-			Maintainer:      "Solid Community Group",
-			SolidVersion:    "1.0",
+			Version:          "2023-12-20",
+			LastUpdated:      time.Now().Format(time.RFC3339),
+			Maintainer:       "Solid Community Group",
+			SolidVersion:     "1.0",
 		},
 		Tests: []SolidProtocolTest{
 			// Root container tests
@@ -372,7 +372,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/",
 				Headers:     map[string]string{"Accept": "text/turtle"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"text/turtle"},
 					BodyContains: []string{"ldp:BasicContainer", "ldp:Container"},
 					Headers:      map[string]string{"Content-Type": "text/turtle"},
@@ -386,7 +386,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Method:      http.MethodHead,
 				Endpoint:    "/",
 				Expect: SolidProtocolExpectation{
-					StatusCode:   http.StatusOK,
+					StatusCode:  http.StatusOK,
 					ContentType: []string{"text/turtle"},
 					Headers:     map[string]string{"Content-Type": "text/turtle"},
 				},
@@ -402,8 +402,8 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 					StatusCode: http.StatusOK,
 					Headers: map[string]string{
 						"Access-Control-Allow-Origin":      "https://client.example.org",
-						"Access-Control-Allow-Methods":    "GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE",
-						"Access-Control-Allow-Headers":    "*",
+						"Access-Control-Allow-Methods":     "GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE",
+						"Access-Control-Allow-Headers":     "*",
 						"Access-Control-Allow-Credentials": "true",
 					},
 				},
@@ -418,7 +418,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/.well-known/webid",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"application/ld+json"},
 					BodyContains: []string{"@context", "subject"},
 				},
@@ -433,7 +433,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/.well-known/solid",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"application/ld+json"},
 					BodyContains: []string{"@context", "features"},
 				},
@@ -448,7 +448,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:   http.StatusOK,
+					StatusCode:  http.StatusOK,
 					ContentType: []string{"application/ld+json"},
 				},
 			},
@@ -461,7 +461,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/",
 				Headers:     map[string]string{"Accept": "application/n-triples"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:   http.StatusOK,
+					StatusCode:  http.StatusOK,
 					ContentType: []string{"application/n-triples"},
 				},
 			},
@@ -475,7 +475,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/nonexistent-resource",
 				Expect: SolidProtocolExpectation{
 					StatusCode: http.StatusNotFound,
-					Headers:   map[string]string{"Access-Control-Allow-Origin": "*"},
+					Headers:    map[string]string{"Access-Control-Allow-Origin": "*"},
 				},
 			},
 
@@ -512,7 +512,7 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 				Method:      http.MethodOptions,
 				Endpoint:    "/",
 				Headers: map[string]string{
-					"Origin":                        "https://complex-client.example.org",
+					"Origin":                         "https://complex-client.example.org",
 					"Access-Control-Request-Method":  "POST",
 					"Access-Control-Request-Headers": "authorization,dpop,content-type",
 				},
@@ -520,9 +520,9 @@ func SolidProtocol2023TestSuite() SolidProtocolTestSuite {
 					StatusCode: http.StatusOK,
 					Headers: map[string]string{
 						"Access-Control-Allow-Origin":      "https://complex-client.example.org",
-						"Access-Control-Allow-Methods":    "GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE",
-						"Access-Control-Allow-Headers":    "authorization,dpop,content-type",
-						"Access-Control-Max-Age":          "86400",
+						"Access-Control-Allow-Methods":     "GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE",
+						"Access-Control-Allow-Headers":     "authorization,dpop,content-type",
+						"Access-Control-Max-Age":           "86400",
 						"Access-Control-Allow-Credentials": "true",
 					},
 				},
@@ -538,10 +538,10 @@ func WebAccessControl2023TestSuite() SolidProtocolTestSuite {
 		Description: "Tests for WAC 2023 specification compliance",
 		Metadata: SolidProtocolSuiteMetadata{
 			SpecificationURL: "https://solidproject.org/TR/wac",
-			Version:         "2023-12-20",
-			LastUpdated:     time.Now().Format(time.RFC3339),
-			Maintainer:      "Solid Community Group",
-			SolidVersion:    "1.0",
+			Version:          "2023-12-20",
+			LastUpdated:      time.Now().Format(time.RFC3339),
+			Maintainer:       "Solid Community Group",
+			SolidVersion:     "1.0",
 		},
 		Tests: []SolidProtocolTest{
 			// ACL resource tests
@@ -553,7 +553,7 @@ func WebAccessControl2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/resource.acl",
 				Headers:     map[string]string{"Accept": "text/turtle"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"text/turtle"},
 					BodyContains: []string{"wac:", "acl:"},
 				},
@@ -607,10 +607,10 @@ func AccessControlPolicy2023TestSuite() SolidProtocolTestSuite {
 		Description: "Tests for ACP 2023 specification compliance",
 		Metadata: SolidProtocolSuiteMetadata{
 			SpecificationURL: "https://solidproject.org/TR/acp",
-			Version:         "2023-12-20",
-			LastUpdated:     time.Now().Format(time.RFC3339),
-			Maintainer:      "Solid Community Group",
-			SolidVersion:    "1.0",
+			Version:          "2023-12-20",
+			LastUpdated:      time.Now().Format(time.RFC3339),
+			Maintainer:       "Solid Community Group",
+			SolidVersion:     "1.0",
 		},
 		Tests: []SolidProtocolTest{
 			{
@@ -621,7 +621,7 @@ func AccessControlPolicy2023TestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/resource.acp",
 				Headers:     map[string]string{"Accept": "text/turtle"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"text/turtle"},
 					BodyContains: []string{"acp:", "AccessControlPolicy"},
 				},
@@ -661,10 +661,10 @@ func SolidApplicationInteroperabilityTestSuite() SolidProtocolTestSuite {
 		Description: "Tests for SAI specification compliance",
 		Metadata: SolidProtocolSuiteMetadata{
 			SpecificationURL: "https://solidproject.org/TR/sai-primer-application",
-			Version:         "2024-01-15",
-			LastUpdated:     time.Now().Format(time.RFC3339),
-			Maintainer:      "Solid Community Group",
-			SolidVersion:    "1.0",
+			Version:          "2024-01-15",
+			LastUpdated:      time.Now().Format(time.RFC3339),
+			Maintainer:       "Solid Community Group",
+			SolidVersion:     "1.0",
 		},
 		Tests: []SolidProtocolTest{
 			{
@@ -675,7 +675,7 @@ func SolidApplicationInteroperabilityTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/.well-known/solid-app",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"application/ld+json"},
 					BodyContains: []string{"@context", "application"},
 				},
@@ -689,7 +689,7 @@ func SolidApplicationInteroperabilityTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/.well-known/solid-app-registry",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"application/ld+json"},
 					BodyContains: []string{"registry"},
 				},
@@ -704,7 +704,7 @@ func SolidApplicationInteroperabilityTestSuite() SolidProtocolTestSuite {
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
 					StatusCode: http.StatusOK,
-					Headers:   map[string]string{"Vary": "Accept, Origin"},
+					Headers:    map[string]string{"Vary": "Accept, Origin"},
 				},
 			},
 		},
@@ -718,10 +718,10 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 		Description: "Tests for emerging Solid standards and specifications",
 		Metadata: SolidProtocolSuiteMetadata{
 			SpecificationURL: "https://solidproject.org/editing-in-public",
-			Version:         "2024-06-01",
-			LastUpdated:     time.Now().Format(time.RFC3339),
-			Maintainer:      "Solid Community Group",
-			SolidVersion:    "1.1",
+			Version:          "2024-06-01",
+			LastUpdated:      time.Now().Format(time.RFC3339),
+			Maintainer:       "Solid Community Group",
+			SolidVersion:     "1.1",
 		},
 		Tests: []SolidProtocolTest{
 			{
@@ -732,7 +732,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/profile/card",
 				Headers:     map[string]string{"Accept": "text/turtle"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"text/turtle"},
 					BodyContains: []string{"foaf:", "vcard:", "solid:"},
 				},
@@ -746,7 +746,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/.well-known/solid-storage",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode:    http.StatusOK,
+					StatusCode:   http.StatusOK,
 					ContentType:  []string{"application/ld+json"},
 					BodyContains: []string{"storage"},
 				},
@@ -761,7 +761,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Headers:     map[string]string{"Accept": "text/turtle"},
 				Expect: SolidProtocolExpectation{
 					StatusCode: http.StatusOK,
-					Headers:   map[string]string{"Link": "<http://www.w3.org/ns/ldp#BasicContainer>; rel=\"type\""},
+					Headers:    map[string]string{"Link": "<http://www.w3.org/ns/ldp#BasicContainer>; rel=\"type\""},
 				},
 			},
 
@@ -773,7 +773,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/resource.metadata",
 				Headers:     map[string]string{"Accept": "application/ld+json"},
 				Expect: SolidProtocolExpectation{
-					StatusCode: http.StatusOK,
+					StatusCode:  http.StatusOK,
 					ContentType: []string{"application/ld+json"},
 				},
 			},
@@ -798,7 +798,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/resource",
 				Expect: SolidProtocolExpectation{
 					StatusCode: http.StatusOK,
-					Headers:   map[string]string{"ETag": "\"some-etag-value\""},
+					Headers:    map[string]string{"ETag": "\"some-etag-value\""},
 				},
 			},
 
@@ -810,7 +810,7 @@ func EmergingStandardsTestSuite() SolidProtocolTestSuite {
 				Endpoint:    "/resource",
 				Expect: SolidProtocolExpectation{
 					StatusCode: http.StatusOK,
-					Headers:   map[string]string{"Last-Modified": ""}, // Should be present
+					Headers:    map[string]string{"Last-Modified": ""}, // Should be present
 				},
 			},
 		},
@@ -1060,7 +1060,7 @@ func ValidateSolidProtocolCompliance(t *testing.T, serverURL string) {
 
 	expectedSuites := []string{
 		"Solid Protocol 2023",
-		"Web Access Control 2023", 
+		"Web Access Control 2023",
 		"Access Control Policy 2023",
 		"Solid Application Interoperability",
 		"Emerging Solid Standards",

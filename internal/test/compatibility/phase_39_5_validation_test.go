@@ -411,7 +411,7 @@ func TestSolidEcosystemCompatibilityStructure(t *testing.T) {
 func TestPhase395AcceptanceCriteria(t *testing.T) {
 	// Validate all acceptance criteria from Phase 39.5
 	acceptanceCriteria := []struct {
-		name        string
+		name       string
 		validation func() bool
 	}{
 		{

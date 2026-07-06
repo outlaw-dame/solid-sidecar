@@ -12,34 +12,34 @@ import (
 
 // CommunityFeedback represents feedback from the Solid community
 type CommunityFeedback struct {
-	ID             string            `json:"id"`
-	Type           FeedbackType      `json:"type"`
-	Title          string            `json:"title"`
-	Description    string            `json:"description"`
-	Source         string            `json:"source"`
-	Severity       FeedbackSeverity  `json:"severity"`
-	Status         FeedbackStatus    `json:"status"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	RelatedSpec    string            `json:"related_spec,omitempty"`
-	AffectedClient string            `json:"affected_client,omitempty"`
-	Tags           []string          `json:"tags,omitempty"`
-	Priority       int               `json:"priority"`
-	Resolution     string            `json:"resolution,omitempty"`
-	ResolvedAt     *time.Time        `json:"resolved_at,omitempty"`
-	Assignee       string            `json:"assignee,omitempty"`
+	ID             string           `json:"id"`
+	Type           FeedbackType     `json:"type"`
+	Title          string           `json:"title"`
+	Description    string           `json:"description"`
+	Source         string           `json:"source"`
+	Severity       FeedbackSeverity `json:"severity"`
+	Status         FeedbackStatus   `json:"status"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+	RelatedSpec    string           `json:"related_spec,omitempty"`
+	AffectedClient string           `json:"affected_client,omitempty"`
+	Tags           []string         `json:"tags,omitempty"`
+	Priority       int              `json:"priority"`
+	Resolution     string           `json:"resolution,omitempty"`
+	ResolvedAt     *time.Time       `json:"resolved_at,omitempty"`
+	Assignee       string           `json:"assignee,omitempty"`
 }
 
 // FeedbackType defines the type of feedback
 type FeedbackType string
 
 const (
-	FeedbackTypeBug          FeedbackType = "bug"
-	FeedbackTypeFeature      FeedbackType = "feature-request"
+	FeedbackTypeBug           FeedbackType = "bug"
+	FeedbackTypeFeature       FeedbackType = "feature-request"
 	FeedbackTypeCompatibility FeedbackType = "compatibility-issue"
-	FeedbackTypeEnhancement  FeedbackType = "enhancement"
-	FeedbackTypeQuestion     FeedbackType = "question"
-	FeedbackTypePerformance  FeedbackType = "performance"
+	FeedbackTypeEnhancement   FeedbackType = "enhancement"
+	FeedbackTypeQuestion      FeedbackType = "question"
+	FeedbackTypePerformance   FeedbackType = "performance"
 )
 
 // FeedbackSeverity defines the severity of feedback
@@ -57,28 +57,28 @@ const (
 type FeedbackStatus string
 
 const (
-	StatusNew        FeedbackStatus = "new"
+	StatusNew          FeedbackStatus = "new"
 	StatusAcknowledged FeedbackStatus = "acknowledged"
-	StatusInProgress  FeedbackStatus = "in-progress"
-	StatusResolved    FeedbackStatus = "resolved"
-	StatusWontFix     FeedbackStatus = "wont-fix"
-	StatusDuplicate   FeedbackStatus = "duplicate"
+	StatusInProgress   FeedbackStatus = "in-progress"
+	StatusResolved     FeedbackStatus = "resolved"
+	StatusWontFix      FeedbackStatus = "wont-fix"
+	StatusDuplicate    FeedbackStatus = "duplicate"
 )
 
 // CommunityFeedbackRegistry manages community feedback
 type CommunityFeedbackRegistry struct {
-	feedback   []CommunityFeedback
-	mu         sync.RWMutex
+	feedback    []CommunityFeedback
+	mu          sync.RWMutex
 	feedbackDir string
-	nextID     int
+	nextID      int
 }
 
 // NewCommunityFeedbackRegistry creates a new feedback registry
 func NewCommunityFeedbackRegistry(feedbackDir string) *CommunityFeedbackRegistry {
 	registry := &CommunityFeedbackRegistry{
-		feedback:   make([]CommunityFeedback, 0),
+		feedback:    make([]CommunityFeedback, 0),
 		feedbackDir: feedbackDir,
-		nextID:     1,
+		nextID:      1,
 	}
 
 	// Ensure feedback directory exists
@@ -109,7 +109,6 @@ func (r *CommunityFeedbackRegistry) AddFeedback(feedback *CommunityFeedback) err
 	}
 
 	r.feedback = append(r.feedback, *feedback)
-	return nil
 
 	// Save to file if directory is configured
 	if r.feedbackDir != "" {
@@ -122,7 +121,7 @@ func (r *CommunityFeedbackRegistry) AddFeedback(feedback *CommunityFeedback) err
 // saveFeedbackToFile saves feedback to a JSON file
 func (r *CommunityFeedbackRegistry) saveFeedbackToFile(feedback CommunityFeedback) error {
 	filename := filepath.Join(r.feedbackDir, fmt.Sprintf("%s.json", feedback.ID))
-	
+
 	data, err := json.MarshalIndent(feedback, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal feedback: %v", err)
@@ -332,28 +331,28 @@ func (r *CommunityFeedbackRegistry) FeedbackSummary() FeedbackSummary {
 
 // FeedbackSummary contains summary statistics about feedback
 type FeedbackSummary struct {
-	Total          int                    `json:"total"`
-	OpenIssues     int                    `json:"open_issues"`
-	CriticalIssues int                    `json:"critical_issues"`
-	ByStatus       map[FeedbackStatus]int `json:"by_status"`
+	Total          int                      `json:"total"`
+	OpenIssues     int                      `json:"open_issues"`
+	CriticalIssues int                      `json:"critical_issues"`
+	ByStatus       map[FeedbackStatus]int   `json:"by_status"`
 	BySeverity     map[FeedbackSeverity]int `json:"by_severity"`
-	ByType         map[FeedbackType]int    `json:"by_type"`
+	ByType         map[FeedbackType]int     `json:"by_type"`
 }
 
 // CommunityFeedbackIntegration provides integration with community feedback systems
 type CommunityFeedbackIntegration struct {
-	registry       *CommunityFeedbackRegistry
-	githubIssues   bool
-	w3cDiscussions bool
+	registry        *CommunityFeedbackRegistry
+	githubIssues    bool
+	w3cDiscussions  bool
 	communityForums bool
 }
 
 // NewCommunityFeedbackIntegration creates a new community feedback integration
 func NewCommunityFeedbackIntegration(feedbackDir string) *CommunityFeedbackIntegration {
 	return &CommunityFeedbackIntegration{
-		registry:       NewCommunityFeedbackRegistry(feedbackDir),
-		githubIssues:   true,
-		w3cDiscussions: true,
+		registry:        NewCommunityFeedbackRegistry(feedbackDir),
+		githubIssues:    true,
+		w3cDiscussions:  true,
 		communityForums: true,
 	}
 }
@@ -417,7 +416,7 @@ func (c *CommunityFeedbackIntegration) MarkFeedbackAsAddressed(id, resolution st
 	feedback.Resolution = resolution
 	feedback.Status = StatusResolved
 	feedback.UpdatedAt = time.Now()
-	
+
 	return c.registry.UpdateFeedback(*feedback)
 }
 
@@ -440,14 +439,14 @@ func (c *CommunityFeedbackIntegration) GenerateCompatibilityReport() Compatibili
 	compatibilityFeedback := c.GetCompatibilityFeedback()
 
 	report := CompatibilityFeedbackReport{
-		GeneratedAt:     time.Now(),
-		TotalIssues:     len(compatibilityFeedback),
-		OpenIssues:      0,
-		CriticalIssues:  0,
-		HighIssues:      0,
-		IssuesByClient:  make(map[string]int),
-		IssuesBySpec:    make(map[string]int),
-		Feedback:        compatibilityFeedback,
+		GeneratedAt:    time.Now(),
+		TotalIssues:    len(compatibilityFeedback),
+		OpenIssues:     0,
+		CriticalIssues: 0,
+		HighIssues:     0,
+		IssuesByClient: make(map[string]int),
+		IssuesBySpec:   make(map[string]int),
+		Feedback:       compatibilityFeedback,
 	}
 
 	for _, feedback := range compatibilityFeedback {
@@ -473,14 +472,14 @@ func (c *CommunityFeedbackIntegration) GenerateCompatibilityReport() Compatibili
 
 // CompatibilityFeedbackReport contains a comprehensive report of compatibility issues
 type CompatibilityFeedbackReport struct {
-	GeneratedAt     time.Time             `json:"generated_at"`
-	TotalIssues     int                  `json:"total_issues"`
-	OpenIssues      int                  `json:"open_issues"`
-	CriticalIssues  int                  `json:"critical_issues"`
-	HighIssues      int                  `json:"high_issues"`
-	IssuesByClient  map[string]int        `json:"issues_by_client"`
-	IssuesBySpec    map[string]int        `json:"issues_by_spec"`
-	Feedback        []CommunityFeedback   `json:"feedback"`
+	GeneratedAt    time.Time           `json:"generated_at"`
+	TotalIssues    int                 `json:"total_issues"`
+	OpenIssues     int                 `json:"open_issues"`
+	CriticalIssues int                 `json:"critical_issues"`
+	HighIssues     int                 `json:"high_issues"`
+	IssuesByClient map[string]int      `json:"issues_by_client"`
+	IssuesBySpec   map[string]int      `json:"issues_by_spec"`
+	Feedback       []CommunityFeedback `json:"feedback"`
 }
 
 // ExportToJSON exports the report to JSON
@@ -500,32 +499,32 @@ func (r *CompatibilityFeedbackReport) SaveReportToFile(filename string) error {
 
 // SolidEcosystemCompatibility tracks compatibility with the broader Solid ecosystem
 type SolidEcosystemCompatibility struct {
-	CSSVersion        string            `json:"css_version"`
-	SolidServers      []SolidServerInfo `json:"solid_servers"`
+	CSSVersion         string            `json:"css_version"`
+	SolidServers       []SolidServerInfo `json:"solid_servers"`
 	ClientLibraries    []ClientLibrary   `json:"client_libraries"`
-	SupportedSpecs    []string          `json:"supported_specs"`
+	SupportedSpecs     []string          `json:"supported_specs"`
 	CompatibilityNotes string            `json:"compatibility_notes"`
 	LastUpdated        time.Time         `json:"last_updated"`
 }
 
 // SolidServerInfo contains information about a Solid server
 type SolidServerInfo struct {
-	Name           string    `json:"name"`
-	Version        string    `json:"version"`
-	URL            string    `json:"url,omitempty"`
-	Compatible     bool      `json:"compatible"`
+	Name               string  `json:"name"`
+	Version            string  `json:"version"`
+	URL                string  `json:"url,omitempty"`
+	Compatible         bool    `json:"compatible"`
 	CompatibilityScore float64 `json:"compatibility_score"`
-	Notes          string    `json:"notes,omitempty"`
+	Notes              string  `json:"notes,omitempty"`
 }
 
 // ClientLibrary contains information about a Solid client library
 type ClientLibrary struct {
-	Name           string    `json:"name"`
-	Language       string    `json:"language"`
-	Version        string    `json:"version"`
-	Compatible     bool      `json:"compatible"`
+	Name               string  `json:"name"`
+	Language           string  `json:"language"`
+	Version            string  `json:"version"`
+	Compatible         bool    `json:"compatible"`
 	CompatibilityScore float64 `json:"compatibility_score"`
-	Notes          string    `json:"notes,omitempty"`
+	Notes              string  `json:"notes,omitempty"`
 }
 
 // NewSolidEcosystemCompatibility creates a new ecosystem compatibility tracker
@@ -551,7 +550,7 @@ func NewSolidEcosystemCompatibility() *SolidEcosystemCompatibility {
 			"Solid-OIDC",
 			"DPoP",
 		},
-		CSSVersion: "7.0.0",
+		CSSVersion:  "7.0.0",
 		LastUpdated: time.Now(),
 	}
 }
@@ -596,8 +595,8 @@ func (s *SolidEcosystemCompatibility) GenerateEcosystemReport() SolidEcosystemRe
 	return SolidEcosystemReport{
 		SolidEcosystemCompatibility: *s,
 		GeneratedAt:                 time.Now(),
-		OverallScore:               s.calculateOverallScore(),
-		Recommendations:            s.generateRecommendations(),
+		OverallScore:                s.calculateOverallScore(),
+		Recommendations:             s.generateRecommendations(),
 	}
 }
 
@@ -644,9 +643,9 @@ func (s *SolidEcosystemCompatibility) generateRecommendations() []string {
 // SolidEcosystemReport contains a comprehensive ecosystem compatibility report
 type SolidEcosystemReport struct {
 	SolidEcosystemCompatibility
-	GeneratedAt    time.Time  `json:"generated_at"`
-	OverallScore   float64    `json:"overall_score"`
-	Recommendations []string   `json:"recommendations"`
+	GeneratedAt     time.Time `json:"generated_at"`
+	OverallScore    float64   `json:"overall_score"`
+	Recommendations []string  `json:"recommendations"`
 }
 
 // ExportToJSON exports the ecosystem report to JSON
