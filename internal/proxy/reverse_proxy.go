@@ -79,7 +79,7 @@ func New(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 			base: roundTripperWithTimeout{base: transport, timeout: cfg.Backend.Timeout},
 		},
 	}
-// Note: Transport is now set in the ReverseProxy struct initialization above
+	// Note: Transport is now set in the ReverseProxy struct initialization above
 	reverseProxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
 		logger.Error("backend proxy failure",
 			"request_id", observability.RequestIDFromContext(req.Context()),

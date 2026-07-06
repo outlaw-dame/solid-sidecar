@@ -31,10 +31,10 @@ type PrivacyConfig struct {
 // By default, privacy-safe logging is enabled with conservative redaction
 func DefaultPrivacyConfig() PrivacyConfig {
 	return PrivacyConfig{
-		Enabled:          true,
-		RedactWebIDs:     true,
-		RedactURIs:       false, // Keep path-only URIs
-		RedactTokens:     true,
+		Enabled:           true,
+		RedactWebIDs:      true,
+		RedactURIs:        false, // Keep path-only URIs
+		RedactTokens:      true,
 		RedactQueryParams: true,
 		RedactHeaders: []string{
 			"authorization",
@@ -100,7 +100,7 @@ func isWebID(value string) bool {
 	if !(strings.HasPrefix(lowerValue, "http://") || strings.HasPrefix(lowerValue, "https://")) {
 		return false
 	}
-	
+
 	// Check for common WebID patterns - be specific to avoid false positives
 	webIDPatterns := []string{
 		"/profile/card#me",
@@ -110,13 +110,13 @@ func isWebID(value string) bool {
 		"/webid",
 		"/profile/",
 	}
-	
+
 	for _, pattern := range webIDPatterns {
 		if strings.Contains(lowerValue, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -125,12 +125,12 @@ func isToken(value string) bool {
 	if value == "" {
 		return false
 	}
-	
+
 	// Check for Bearer prefix
 	if strings.HasPrefix(value, "Bearer ") {
 		return true
 	}
-	
+
 	// Check for JWT-like structure (three base64-encoded parts separated by dots)
 	parts := strings.Split(value, ".")
 	if len(parts) == 3 {
@@ -142,7 +142,7 @@ func isToken(value string) bool {
 		}
 		return true
 	}
-	
+
 	// Check for hex-encoded strings that look like tokens
 	if len(value) >= 16 && isHex(value) {
 		return true
@@ -174,7 +174,7 @@ func isBase64Like(value string) bool {
 	// Base64 strings typically only contain A-Z, a-z, 0-9, +, /, and = (for padding)
 	// Base64URL (used in JWTs) uses - and _ instead of + and /
 	for _, c := range value {
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || 
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
 			c == '+' || c == '/' || c == '=' || c == '-' || c == '_') {
 			return false
 		}
@@ -200,25 +200,25 @@ func sanitizeURI(uri string) string {
 	if uri == "" {
 		return ""
 	}
-	
+
 	// Parse the URI and remove query and fragment
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		// If parsing fails, just return the original
 		return uri
 	}
-	
+
 	// If it doesn't look like a proper URL (no scheme), return as-is
 	if parsed.Scheme == "" && parsed.Host == "" {
 		// This is not a URL, just return the original
 		return uri
 	}
-	
+
 	// Return only the scheme + host + path
 	if parsed.Scheme != "" && parsed.Host != "" {
 		return parsed.Scheme + "://" + parsed.Host + parsed.Path
 	}
-	
+
 	// If we have a scheme but no host, or host but no scheme, return what we can
 	if parsed.Scheme != "" {
 		return parsed.Scheme + ":" + parsed.Path
@@ -226,7 +226,7 @@ func sanitizeURI(uri string) string {
 	if parsed.Host != "" {
 		return "//" + parsed.Host + parsed.Path
 	}
-	
+
 	// Fallback
 	return parsed.Path
 }
@@ -236,7 +236,7 @@ func HashWebID(webID string) string {
 	if webID == "" || !globalPrivacyConfig.RedactWebIDs || !globalPrivacyConfig.Enabled {
 		return webID
 	}
-	
+
 	hash := sha256.Sum256([]byte(webID))
 	return "webid:" + hex.EncodeToString(hash[:])[:16] // Use first 16 chars of hash
 }
@@ -246,12 +246,12 @@ func HashURI(uri string) string {
 	if uri == "" || !globalPrivacyConfig.Enabled {
 		return uri
 	}
-	
+
 	// If we're not redacting URIs, just sanitize query params
 	if !globalPrivacyConfig.RedactURIs {
 		return sanitizeURI(uri)
 	}
-	
+
 	hash := sha256.Sum256([]byte(uri))
 	return "uri:" + hex.EncodeToString(hash[:])[:16]
 }
@@ -261,7 +261,7 @@ func SanitizeMap(m map[string]any) map[string]any {
 	if !globalPrivacyConfig.Enabled {
 		return m
 	}
-	
+
 	sanitized := make(map[string]any, len(m))
 	for k, v := range m {
 		sanitized[k] = sanitizeValue(k, v)
@@ -274,16 +274,16 @@ func sanitizeValue(key string, value any) any {
 	if !globalPrivacyConfig.Enabled {
 		return value
 	}
-	
+
 	keyLower := strings.ToLower(key)
-	
+
 	// Check if this key should be redacted
 	for _, header := range globalPrivacyConfig.RedactHeaders {
 		if strings.ToLower(header) == keyLower {
 			return "[REDACTED:" + key + "]"
 		}
 	}
-	
+
 	// Check for common sensitive keys
 	sensitiveKeys := []string{"webid", "agent", "authorization", "cookie", "token", "password", "secret", "credential", "api_key", "access_token", "refresh_token", "private_key", "did", "issuer"}
 	for _, sensitive := range sensitiveKeys {
@@ -291,7 +291,7 @@ func sanitizeValue(key string, value any) any {
 			return "[REDACTED:" + key + "]"
 		}
 	}
-	
+
 	// Handle specific types
 	switch v := value.(type) {
 	case string:
@@ -329,10 +329,10 @@ func NewPrivacySafeLoggerWithLevel(level slog.Level) *PrivacySafeLogger {
 func (l *PrivacySafeLogger) WithContext(ctx context.Context) *PrivacySafeLogger {
 	// Extract context fields and sanitize them
 	fields := extractAndSanitizeContext(ctx)
-	
+
 	// Create a new logger with the sanitized fields
 	newLogger := l.logger.With(fields...)
-	
+
 	return &PrivacySafeLogger{
 		logger: newLogger,
 	}
@@ -343,24 +343,24 @@ func extractAndSanitizeContext(ctx context.Context) []any {
 	if !globalPrivacyConfig.Enabled {
 		return nil
 	}
-	
+
 	fields := []any{}
-	
+
 	// Extract and sanitize request ID
 	if requestID := RequestIDFromContext(ctx); requestID != "" {
 		fields = append(fields, "request_id", requestID)
 	}
-	
+
 	// Extract and sanitize correlation ID
 	if correlationID := CorrelationIDFromContext(ctx); correlationID != "" {
 		fields = append(fields, "correlation_id", correlationID)
 	}
-	
+
 	// Extract and sanitize session ID
 	if sessionID := SessionIDFromContext(ctx); sessionID != "" {
 		fields = append(fields, "session_id", sessionID)
 	}
-	
+
 	// Extract and sanitize agent identity (hash it for privacy)
 	if agentID := AgentIdentityFromContext(ctx); agentID != "" {
 		if globalPrivacyConfig.RedactWebIDs {
@@ -369,20 +369,20 @@ func extractAndSanitizeContext(ctx context.Context) []any {
 			fields = append(fields, "agent_identity", agentID)
 		}
 	}
-	
+
 	return fields
 }
 
 // WithFields adds sanitized fields to the logger
 func (l *PrivacySafeLogger) WithFields(fields map[string]any) *PrivacySafeLogger {
 	sanitized := SanitizeMap(fields)
-	
+
 	// Convert map to slice of key-value pairs
 	attrs := make([]any, 0, len(sanitized)*2)
 	for k, v := range sanitized {
 		attrs = append(attrs, k, v)
 	}
-	
+
 	return &PrivacySafeLogger{
 		logger: l.logger.With(attrs...),
 	}
@@ -392,7 +392,7 @@ func (l *PrivacySafeLogger) WithFields(fields map[string]any) *PrivacySafeLogger
 func (l *PrivacySafeLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
 	// Sanitize the arguments
 	sanitizedArgs := sanitizeArgs(args)
-	
+
 	// Add context fields
 	logger := l.logger
 	if ctx != nil {
@@ -401,7 +401,7 @@ func (l *PrivacySafeLogger) Log(ctx context.Context, level slog.Level, msg strin
 			logger = l.logger.With(contextFields...)
 		}
 	}
-	
+
 	logger.Log(ctx, level, msg, sanitizedArgs...)
 }
 
@@ -410,30 +410,30 @@ func sanitizeArgs(args []any) []any {
 	if !globalPrivacyConfig.Enabled || len(args) == 0 {
 		return args
 	}
-	
+
 	sanitized := make([]any, 0, len(args))
-	
+
 	for i := 0; i < len(args); i += 2 {
 		if i+1 >= len(args) {
 			// Odd number of arguments - just append the last one
 			sanitized = append(sanitized, args[i])
 			break
 		}
-		
+
 		key := args[i]
 		value := args[i+1]
-		
+
 		keyStr, ok := key.(string)
 		if !ok {
 			// Key is not a string - just append as-is
 			sanitized = append(sanitized, key, value)
 			continue
 		}
-		
+
 		// Sanitize the value based on the key
 		sanitized = append(sanitized, keyStr, sanitizeValue(keyStr, value))
 	}
-	
+
 	return sanitized
 }
 

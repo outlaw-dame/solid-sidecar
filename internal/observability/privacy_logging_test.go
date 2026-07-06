@@ -11,7 +11,6 @@ import (
 
 // TestDefaultPrivacyConfig tests the default privacy configuration
 func TestDefaultPrivacyConfig(t *testing.T) {
-	
 
 	config := DefaultPrivacyConfig()
 
@@ -34,7 +33,6 @@ func TestDefaultPrivacyConfig(t *testing.T) {
 
 // TestSetGetPrivacyConfig tests setting and getting privacy configuration
 func TestSetGetPrivacyConfig(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -61,7 +59,6 @@ func TestSetGetPrivacyConfig(t *testing.T) {
 
 // TestIsPrivacyEnabled tests the IsPrivacyEnabled function
 func TestIsPrivacyEnabled(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -84,14 +81,13 @@ func TestIsPrivacyEnabled(t *testing.T) {
 
 // TestSanitizeString tests string sanitization
 func TestSanitizeString(t *testing.T) {
-	
 
 	// Save original config and enable all redaction
 	original := globalPrivacyConfig
 	SetPrivacyConfig(PrivacyConfig{
-		Enabled:          true,
-		RedactWebIDs:     true,
-		RedactTokens:     true,
+		Enabled:           true,
+		RedactWebIDs:      true,
+		RedactTokens:      true,
 		RedactQueryParams: true,
 	})
 	defer func() {
@@ -137,7 +133,6 @@ func TestSanitizeString(t *testing.T) {
 
 // TestSanitizeStringDisabled tests string sanitization when disabled
 func TestSanitizeStringDisabled(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -158,7 +153,6 @@ func TestSanitizeStringDisabled(t *testing.T) {
 
 // TestHashWebID tests WebID hashing
 func TestHashWebID(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -173,18 +167,18 @@ func TestHashWebID(t *testing.T) {
 	// Test hashing
 	webID := "https://user.example.org/profile/card#me"
 	result := HashWebID(webID)
-	
+
 	// Should start with "webid:"
 	if !strings.HasPrefix(result, "webid:") {
 		t.Errorf("Expected hashed WebID to start with 'webid:', got: %s", result)
 	}
-	
+
 	// Should be consistent
 	result2 := HashWebID(webID)
 	if result != result2 {
 		t.Errorf("Expected consistent hashing, got: %s and %s", result, result2)
 	}
-	
+
 	// Different WebIDs should have different hashes
 	webID2 := "https://other.example.org/profile/card#me"
 	result3 := HashWebID(webID2)
@@ -195,7 +189,6 @@ func TestHashWebID(t *testing.T) {
 
 // TestSanitizeURI tests URI sanitization
 func TestSanitizeURI(t *testing.T) {
-	
 
 	testCases := []struct {
 		input    string
@@ -221,7 +214,6 @@ func TestSanitizeURI(t *testing.T) {
 
 // TestSanitizeMap tests map sanitization
 func TestSanitizeMap(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -259,14 +251,13 @@ func TestSanitizeMap(t *testing.T) {
 
 // TestPrivacySafeLogger tests the PrivacySafeLogger
 func TestPrivacySafeLogger(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
 	SetPrivacyConfig(PrivacyConfig{
-		Enabled:          true,
-		RedactWebIDs:     true,
-		RedactTokens:     true,
+		Enabled:           true,
+		RedactWebIDs:      true,
+		RedactTokens:      true,
 		RedactQueryParams: true,
 	})
 	defer func() {
@@ -287,22 +278,22 @@ func TestPrivacySafeLogger(t *testing.T) {
 	)
 
 	output := buf.String()
-	
+
 	// Check that webid is redacted
 	if strings.Contains(output, "https://user.example.org") {
 		t.Error("Expected WebID to be redacted in output")
 	}
-	
+
 	// Check that token is redacted
 	if strings.Contains(output, "Bearer eyJ") {
 		t.Error("Expected token to be redacted in output")
 	}
-	
+
 	// Check that message is not redacted
 	if !strings.Contains(output, "Hello") {
 		t.Error("Expected message to not be redacted in output")
 	}
-	
+
 	// Check that redacted placeholders are present
 	if !strings.Contains(output, "REDACTED") {
 		t.Error("Expected REDACTED placeholder in output")
@@ -311,14 +302,13 @@ func TestPrivacySafeLogger(t *testing.T) {
 
 // TestPrivacySafeLoggerWithContext tests the PrivacySafeLogger with context
 func TestPrivacySafeLoggerWithContext(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
 	SetPrivacyConfig(PrivacyConfig{
-		Enabled:          true,
-		RedactWebIDs:     true,
-		RedactTokens:     true,
+		Enabled:           true,
+		RedactWebIDs:      true,
+		RedactTokens:      true,
 		RedactQueryParams: true,
 	})
 	defer func() {
@@ -343,27 +333,27 @@ func TestPrivacySafeLoggerWithContext(t *testing.T) {
 	withContext.Info("Test message with context")
 
 	output := buf.String()
-	
+
 	// Check that request ID is present
 	if !strings.Contains(output, "req-123") {
 		t.Error("Expected request ID to be in output")
 	}
-	
+
 	// Check that correlation ID is present
 	if !strings.Contains(output, "corr-456") {
 		t.Error("Expected correlation ID to be in output")
 	}
-	
+
 	// Check that session ID is present
 	if !strings.Contains(output, "sess-789") {
 		t.Error("Expected session ID to be in output")
 	}
-	
+
 	// Check that agent identity is hashed
 	if strings.Contains(output, "agent.example.org") {
 		t.Error("Expected agent identity to be hashed in output")
 	}
-	
+
 	// Check that hashed agent identity is present
 	if !strings.Contains(output, "agent_identity_hash") {
 		t.Error("Expected agent_identity_hash to be in output")
@@ -372,7 +362,6 @@ func TestPrivacySafeLoggerWithContext(t *testing.T) {
 
 // TestGlobalPrivacyFunctions tests the global privacy-safe logging functions
 func TestGlobalPrivacyFunctions(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -399,7 +388,6 @@ func TestGlobalPrivacyFunctions(t *testing.T) {
 
 // TestIsWebID tests the isWebID function
 func TestIsWebID(t *testing.T) {
-	
 
 	testCases := []struct {
 		input    string
@@ -425,7 +413,6 @@ func TestIsWebID(t *testing.T) {
 
 // TestIsToken tests the isToken function
 func TestIsToken(t *testing.T) {
-	
 
 	testCases := []struct {
 		input    string
@@ -451,7 +438,6 @@ func TestIsToken(t *testing.T) {
 
 // TestIsBase64Like tests the isBase64Like function
 func TestIsBase64Like(t *testing.T) {
-	
 
 	testCases := []struct {
 		input    string
@@ -477,7 +463,6 @@ func TestIsBase64Like(t *testing.T) {
 
 // TestSanitizeValue tests value sanitization based on key
 func TestSanitizeValue(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -518,7 +503,6 @@ func TestSanitizeValue(t *testing.T) {
 
 // TestPrivacyDisabled tests that no redaction occurs when privacy is disabled
 func TestPrivacyDisabled(t *testing.T) {
-	
 
 	// Save original config
 	original := globalPrivacyConfig

@@ -45,21 +45,21 @@ var globalMetricsExporterOnce sync.Once
 
 // MetricExporterConfig holds configuration for the metrics exporter
 type MetricExporterConfig struct {
-	ExporterType   MetricExporterType
-	ServiceName   string
+	ExporterType       MetricExporterType
+	ServiceName        string
 	ResourceAttributes map[string]string
-	Logger *slog.Logger
+	Logger             *slog.Logger
 }
 
 // DefaultMetricsExporterConfig returns default metrics exporter configuration
 func DefaultMetricsExporterConfig() MetricExporterConfig {
 	return MetricExporterConfig{
 		ExporterType: MetricExporterPrometheus,
-		ServiceName:   "solid-sidecar",
+		ServiceName:  "solid-sidecar",
 		ResourceAttributes: map[string]string{
-			"service.version":     "1.0.0",
-			"environment":        "production",
-			"telemetry.sdk.name": "opentelemetry",
+			"service.version":        "1.0.0",
+			"environment":            "production",
+			"telemetry.sdk.name":     "opentelemetry",
 			"telemetry.sdk.language": "go",
 		},
 		Logger: slog.Default(),
@@ -110,7 +110,7 @@ func InitMetricsExporter(config MetricExporterConfig) (*MetricsExporter, error) 
 			closed:       false,
 			logger:       config.Logger,
 		}
-		
+
 		otel.SetMeterProvider(provider)
 	})
 
@@ -244,9 +244,9 @@ func RecordRequestOTel(method, path, statusCode, authzDecision string) {
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	RecordRequest(method, path, statusCode, authzDecision)
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("method", method),
@@ -263,9 +263,9 @@ func RecordRequestDurationOTel(method, path, statusCode, authzDecision string, d
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	RecordRequestDuration(method, path, statusCode, authzDecision, duration.Seconds())
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("method", method),
@@ -282,9 +282,9 @@ func RecordAuthZDecisionOTel(decision, policyType, transportType string) {
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	RecordAuthZDecision(decision, policyType, transportType)
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("decision", decision),
@@ -300,9 +300,9 @@ func RecordCacheHitOTel(cacheType string) {
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	RecordCacheHit(cacheType)
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("cache.type", cacheType),
@@ -316,9 +316,9 @@ func RecordCacheRequestOTel(cacheType string) {
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	RecordCacheRequest(cacheType)
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("cache.type", cacheType),
@@ -332,13 +332,13 @@ func UpdateActiveSessionsOTel(assuranceLevel string, count int64) {
 	if !metricsInitialized {
 		InitOpenTelemetryMetrics()
 	}
-	
+
 	if count > 0 {
 		IncrementActiveSessions(assuranceLevel)
 	} else {
 		DecrementActiveSessions(assuranceLevel)
 	}
-	
+
 	if globalMetricsExporter != nil && !globalMetricsExporter.closed {
 		attrs := []attribute.KeyValue{
 			attribute.String("assurance.level", assuranceLevel),
@@ -366,13 +366,13 @@ func InitTracing(serviceName, jaegerEndpoint string, sampleRate float64) error {
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = InitMetricsExporter(DefaultMetricsExporterConfig())
 	if err != nil {
 		slog.Warn("Failed to initialize metrics exporter", "error", err)
 	}
-	
+
 	InitOpenTelemetryMetrics()
-	
+
 	return nil
 }

@@ -84,9 +84,9 @@ func sanitizeURLForTracing(urlStr string) string {
 // This implements Phase 39.3: Distributed tracing with comprehensive response tracking
 type tracingResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
-	span       trace.Span
-	startTime  time.Time
+	statusCode   int
+	span         trace.Span
+	startTime    time.Time
 	bytesWritten int64
 }
 

@@ -15,26 +15,26 @@ import (
 
 // SystemStatus represents the overall health status of the system
 type SystemStatus struct {
-	Status      string                 `json:"status"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Uptime      time.Duration         `json:"uptime"`
-	Version     string                 `json:"version"`
+	Status     string                     `json:"status"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Uptime     time.Duration              `json:"uptime"`
+	Version    string                     `json:"version"`
 	Components map[string]ComponentStatus `json:"components"`
-	Details     map[string]any         `json:"details,omitempty"`
+	Details    map[string]any             `json:"details,omitempty"`
 }
 
 // ComponentStatus represents the status of a single component
 type ComponentStatus struct {
-	Status     string `json:"status"`
-	Message    string `json:"message,omitempty"`
-	LastCheck  time.Time `json:"last_check,omitempty"`
-	LastError  string `json:"last_error,omitempty"`
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
+	LastCheck time.Time `json:"last_check,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
 }
 
 // ComprehensiveHealthHandler provides detailed health information
 // This implements Phase 39.4: Health check endpoints with comprehensive status
 type ComprehensiveHealthHandler struct {
-	startTime        time.Time
+	startTime       time.Time
 	mu              sync.Mutex
 	lastCheck       time.Time
 	componentStatus map[string]ComponentStatus
@@ -45,8 +45,8 @@ type ComprehensiveHealthHandler struct {
 // NewComprehensiveHealthHandler creates a new comprehensive health handler
 func NewComprehensiveHealthHandler(version string, buildInfo map[string]any) *ComprehensiveHealthHandler {
 	return &ComprehensiveHealthHandler{
-		startTime:        time.Now(),
-		lastCheck:        time.Now(),
+		startTime:       time.Now(),
+		lastCheck:       time.Now(),
 		componentStatus: make(map[string]ComponentStatus),
 		version:         version,
 		buildInfo:       buildInfo,
@@ -56,7 +56,7 @@ func NewComprehensiveHealthHandler(version string, buildInfo map[string]any) *Co
 // Handler returns the HTTP handler for comprehensive health checks
 func (h *ComprehensiveHealthHandler) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Record request for observability
+		// Record request for observability
 		_, span := observability.StartSpan(r.Context(), "health.comprehensive")
 		defer span.End()
 
@@ -107,12 +107,12 @@ func (h *ComprehensiveHealthHandler) createSystemStatus() SystemStatus {
 	defer h.mu.Unlock()
 
 	status := SystemStatus{
-		Status:      "healthy",
-		Timestamp:   time.Now(),
-		Uptime:      time.Since(h.startTime),
-		Version:     h.version,
+		Status:     "healthy",
+		Timestamp:  time.Now(),
+		Uptime:     time.Since(h.startTime),
+		Version:    h.version,
 		Components: make(map[string]ComponentStatus),
-		Details:     make(map[string]any),
+		Details:    make(map[string]any),
 	}
 
 	// Copy component statuses
@@ -189,7 +189,7 @@ func (h *ComprehensiveHealthHandler) checkTracing() ComponentStatus {
 			LastCheck: time.Now(),
 		}
 	}
-	
+
 	return ComponentStatus{
 		Status:    "healthy",
 		Message:   "Distributed tracing operational",
@@ -206,7 +206,7 @@ func (h *ComprehensiveHealthHandler) checkMetrics() ComponentStatus {
 			LastCheck: time.Now(),
 		}
 	}
-	
+
 	return ComponentStatus{
 		Status:    "healthy",
 		Message:   "Metrics collection operational",
@@ -224,17 +224,17 @@ func (h *ComprehensiveHealthHandler) ReadinessHandlerWithDetails(probe *Probe) h
 
 		// Check backend readiness first
 		backendStatus := h.checkBackendReadiness(probe, r.Context())
-		
+
 		// Update all component statuses
 		h.updateComponentStatuses()
 
 		// Create readiness status
 		status := ReadinessStatus{
-			Status:      backendStatus.Status,
-			Timestamp:   time.Now(),
-			Components:  h.getComponentStatusMap(),
-			Backend:     backendStatus,
-			Message:     backendStatus.Message,
+			Status:     backendStatus.Status,
+			Timestamp:  time.Now(),
+			Components: h.getComponentStatusMap(),
+			Backend:    backendStatus,
+			Message:    backendStatus.Message,
 		}
 
 		// Set response headers
@@ -257,20 +257,20 @@ func (h *ComprehensiveHealthHandler) ReadinessHandlerWithDetails(probe *Probe) h
 
 // BackendStatus represents the backend service status
 type BackendStatus struct {
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-	URL       string `json:"url,omitempty"`
-	Latency   string `json:"latency,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	URL     string `json:"url,omitempty"`
+	Latency string `json:"latency,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // ReadinessStatus represents the detailed readiness status
 type ReadinessStatus struct {
-	Status     string                 `json:"status"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Message    string                 `json:"message"`
+	Status     string                     `json:"status"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Message    string                     `json:"message"`
 	Components map[string]ComponentStatus `json:"components"`
-	Backend    BackendStatus          `json:"backend"`
+	Backend    BackendStatus              `json:"backend"`
 }
 
 // checkBackendReadiness checks if the backend service is ready
@@ -376,10 +376,10 @@ func DebugHandler() http.Handler {
 
 		// Create debug info
 		debugInfo := map[string]any{
-			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"request": map[string]any{
-				"method":     r.Method,
-				"path":       r.URL.Path,
+				"method":      r.Method,
+				"path":        r.URL.Path,
 				"remote_addr": r.RemoteAddr,
 				"user_agent":  r.UserAgent(),
 				"headers":     r.Header,
@@ -442,29 +442,29 @@ func ConfigHandler(cfg interface{}) http.Handler {
 // This implements Phase 39.4: Comprehensive health check endpoints
 func NewHealthCheckSuite(version string, buildInfo map[string]any, probe *Probe) *HealthCheckSuite {
 	comprehensiveHandler := NewComprehensiveHealthHandler(version, buildInfo)
-	
+
 	return &HealthCheckSuite{
-		LivenessHandler:        LivenessHandler(),
-		ReadinessHandler:       ReadinessHandler(probe),
-		ComprehensiveHandler:  comprehensiveHandler.Handler(),
+		LivenessHandler:          LivenessHandler(),
+		ReadinessHandler:         ReadinessHandler(probe),
+		ComprehensiveHandler:     comprehensiveHandler.Handler(),
 		ReadinessDetailedHandler: comprehensiveHandler.ReadinessHandlerWithDetails(probe),
-		VersionHandler:        VersionHandler(version, buildInfo),
-		DebugHandler:          DebugHandler(),
-		ConfigHandler:          ConfigHandler(nil), // Will be configured later
-		ComprehensiveHealth:   comprehensiveHandler,
+		VersionHandler:           VersionHandler(version, buildInfo),
+		DebugHandler:             DebugHandler(),
+		ConfigHandler:            ConfigHandler(nil), // Will be configured later
+		ComprehensiveHealth:      comprehensiveHandler,
 	}
 }
 
 // HealthCheckSuite contains all health check handlers
 type HealthCheckSuite struct {
-	LivenessHandler        http.Handler
-	ReadinessHandler       http.Handler
-	ComprehensiveHandler  http.Handler
+	LivenessHandler          http.Handler
+	ReadinessHandler         http.Handler
+	ComprehensiveHandler     http.Handler
 	ReadinessDetailedHandler http.Handler
-	VersionHandler        http.Handler
-	DebugHandler          http.Handler
-	ConfigHandler          http.Handler
-	ComprehensiveHealth   *ComprehensiveHealthHandler
+	VersionHandler           http.Handler
+	DebugHandler             http.Handler
+	ConfigHandler            http.Handler
+	ComprehensiveHealth      *ComprehensiveHealthHandler
 }
 
 // RegisterRoutes registers all health check routes with the given mux
