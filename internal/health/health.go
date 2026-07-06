@@ -63,6 +63,11 @@ func (p *Probe) Check(ctx context.Context) error {
 		return fmt.Errorf("backend %s unreachable: %w", p.backend.Host, err)
 	}
 	defer resp.Body.Close()
+	// Accept 2xx and 3xx status codes as healthy
+	// CSS may redirect from / to other pages, which is still healthy
+	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError {
+		return fmt.Errorf("backend health returned %d", resp.StatusCode)
+	}
 	if resp.StatusCode >= http.StatusInternalServerError {
 		return fmt.Errorf("backend health returned %d", resp.StatusCode)
 	}
