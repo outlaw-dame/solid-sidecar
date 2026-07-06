@@ -67,15 +67,15 @@ Implement advanced authorization features for production use.
 **Tasks:**
 - ✅ Complete RDF parser boundary with full FFI integration
 - ✅ Enable enforcement mode for WAC/ACP parsers
-- Implement policy decision caching with smart invalidation
-- Add policy change notification and propagation
+- ✅ Implement policy decision caching with smart invalidation
+- ✅ Add policy change notification and propagation
 - Implement cross-tenant authorization where applicable
 
 **Acceptance Criteria:**
 - ✅ RDF parser boundary complete and production-ready
 - ✅ Enforcement mode enabled and tested for WAC/ACP
-- Policy decision cache implemented with smart invalidation
-- Policy change notifications working correctly
+- ✅ Policy decision cache implemented with smart invalidation
+- ✅ Policy change notifications working correctly
 - Cross-tenant authorization implemented (if needed)
 
 ### Phase 39.3: Enhanced Observability
