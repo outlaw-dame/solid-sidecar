@@ -11,7 +11,7 @@ import (
 
 // TestDefaultPrivacyConfig tests the default privacy configuration
 func TestDefaultPrivacyConfig(t *testing.T) {
-	t.Parallel()
+	
 
 	config := DefaultPrivacyConfig()
 
@@ -34,7 +34,7 @@ func TestDefaultPrivacyConfig(t *testing.T) {
 
 // TestSetGetPrivacyConfig tests setting and getting privacy configuration
 func TestSetGetPrivacyConfig(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -61,7 +61,7 @@ func TestSetGetPrivacyConfig(t *testing.T) {
 
 // TestIsPrivacyEnabled tests the IsPrivacyEnabled function
 func TestIsPrivacyEnabled(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -84,7 +84,7 @@ func TestIsPrivacyEnabled(t *testing.T) {
 
 // TestSanitizeString tests string sanitization
 func TestSanitizeString(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config and enable all redaction
 	original := globalPrivacyConfig
@@ -137,7 +137,7 @@ func TestSanitizeString(t *testing.T) {
 
 // TestSanitizeStringDisabled tests string sanitization when disabled
 func TestSanitizeStringDisabled(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -158,7 +158,7 @@ func TestSanitizeStringDisabled(t *testing.T) {
 
 // TestHashWebID tests WebID hashing
 func TestHashWebID(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -195,7 +195,7 @@ func TestHashWebID(t *testing.T) {
 
 // TestSanitizeURI tests URI sanitization
 func TestSanitizeURI(t *testing.T) {
-	t.Parallel()
+	
 
 	testCases := []struct {
 		input    string
@@ -221,7 +221,7 @@ func TestSanitizeURI(t *testing.T) {
 
 // TestSanitizeMap tests map sanitization
 func TestSanitizeMap(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -259,7 +259,7 @@ func TestSanitizeMap(t *testing.T) {
 
 // TestPrivacySafeLogger tests the PrivacySafeLogger
 func TestPrivacySafeLogger(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -311,7 +311,7 @@ func TestPrivacySafeLogger(t *testing.T) {
 
 // TestPrivacySafeLoggerWithContext tests the PrivacySafeLogger with context
 func TestPrivacySafeLoggerWithContext(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -372,7 +372,7 @@ func TestPrivacySafeLoggerWithContext(t *testing.T) {
 
 // TestGlobalPrivacyFunctions tests the global privacy-safe logging functions
 func TestGlobalPrivacyFunctions(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -399,7 +399,7 @@ func TestGlobalPrivacyFunctions(t *testing.T) {
 
 // TestIsWebID tests the isWebID function
 func TestIsWebID(t *testing.T) {
-	t.Parallel()
+	
 
 	testCases := []struct {
 		input    string
@@ -425,7 +425,7 @@ func TestIsWebID(t *testing.T) {
 
 // TestIsToken tests the isToken function
 func TestIsToken(t *testing.T) {
-	t.Parallel()
+	
 
 	testCases := []struct {
 		input    string
@@ -451,7 +451,7 @@ func TestIsToken(t *testing.T) {
 
 // TestIsBase64Like tests the isBase64Like function
 func TestIsBase64Like(t *testing.T) {
-	t.Parallel()
+	
 
 	testCases := []struct {
 		input    string
@@ -477,7 +477,7 @@ func TestIsBase64Like(t *testing.T) {
 
 // TestSanitizeValue tests value sanitization based on key
 func TestSanitizeValue(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
@@ -518,7 +518,7 @@ func TestSanitizeValue(t *testing.T) {
 
 // TestPrivacyDisabled tests that no redaction occurs when privacy is disabled
 func TestPrivacyDisabled(t *testing.T) {
-	t.Parallel()
+	
 
 	// Save original config
 	original := globalPrivacyConfig
