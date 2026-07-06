@@ -48,6 +48,7 @@ const (
 	ReasonPolicyAllow             ReasonCode = "policy_allow"
 	ReasonPolicyDeny              ReasonCode = "policy_deny"
 	ReasonKernelError             ReasonCode = "kernel_error"
+	ReasonCachedDecision          ReasonCode = "cached_decision"
 )
 
 type PolicyDocument struct {
@@ -69,6 +70,8 @@ type Request struct {
 	RequestedModes   []AccessMode      `json:"requested_modes"`
 	ResourceVersion  string            `json:"resource_version,omitempty"`
 	PolicyVersion    string            `json:"policy_version,omitempty"`
+	ParserVersion    string            `json:"parser_version,omitempty"`
+	EvaluatorVersion string            `json:"evaluator_version,omitempty"`
 	ResourceMetadata map[string]string `json:"resource_metadata,omitempty"`
 	PolicyDocuments  []PolicyDocument  `json:"policy_documents,omitempty"`
 	NowUnix          int64             `json:"now_unix"`
