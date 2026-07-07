@@ -67,18 +67,23 @@ Update all status and completion documentation to accurately reflect the current
 
 ### Task 2: CI/Build Verification
 
-**Status: ⏳ PENDING**
+**Status: 🚧 IN PROGRESS**
 
 Verify CI/build/test status and address any issues.
 
 **Sub-tasks:**
-- [ ] Confirm `go test ./...` passes on main
-- [ ] Confirm `go vet` passes on main
-- [ ] Confirm `cargo test` passes on main
-- [ ] Verify Go 1.25.x availability in CI
+- [x] Confirm `go test ./...` passes on main
+- [x] Confirm `go test -race ./...` passes on main
+- [x] Confirm `go vet ./...` passes on main
+- [x] Confirm `gofmt -l .` passes on main (no formatting issues)
+- [x] Confirm `go build ./cmd/solid-sidecar` succeeds
+- [x] Confirm `cargo test --workspace --all-targets` passes on main
+- [x] Confirm `cargo fmt --all --check` passes on main
+- [x] Confirm `cargo clippy --workspace --lib -- -D warnings` passes on main
+- [x] Verify Go 1.25.x availability in CI (go.mod declares 1.25.0, CI uses 1.25.x)
+- [x] Update CI documentation to reflect current Go version requirements
 - [ ] Inspect govulncheck results after AWS/SSH dependency expansion
-- [ ] Update CI documentation to reflect current Go version requirements
-- [ ] Verify all workflows pass on main
+- [ ] Verify all workflows pass on main (requires GitHub Actions access)
 
 **Acceptance Criteria:**
 - All tests pass consistently

@@ -1,5 +1,11 @@
 # CI and Verification
 
+**Go Version Requirement: Go 1.25.x or later**
+
+The project requires Go 1.25.x as the minimum baseline (declared in `go.mod`). This represents a major baseline change from earlier Go versions and was introduced to support newer language features and dependencies (particularly AWS SDK v2 and SSH/SFTP libraries).
+
+**IMPORTANT:** Repository audit (`docs/repository-audit-2026-07-02.md` line 202) identifies this Go version change as significant and recommends explicit documentation in CI/runbooks.
+
 The repository has two GitHub Actions workflows.
 
 ## CI
