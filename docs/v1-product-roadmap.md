@@ -14,7 +14,7 @@ This document establishes the **versioned product roadmap** for Solid Sidecar, m
 
 ### Phase 40 Completion Summary
 
-✅ **Phase 40 STATUS: 97% COMPLETE**
+✅ **Phase 40 STATUS: 99% COMPLETE**
 - Task 1: Status Documentation Reconciliation - ✅ COMPLETE
 - Task 2: CI/Build Verification - 🟡 95% (local verification complete, GitHub Actions pending)
 - Task 3: Security Hardening Pass - ✅ COMPLETE  
@@ -22,6 +22,7 @@ This document establishes the **versioned product roadmap** for Solid Sidecar, m
 - Task 5: Storage Concurrency Completion - ✅ COMPLETE
 - Task 6: SAI Clarification - ✅ COMPLETE
 - Task 7: Runtime Mode Gating - ✅ COMPLETE
+- **Post-Phase 40**: Release infrastructure created (v0.1.0-alpha)
 
 **Phase 40 Success Criteria Met:**
 - ✅ All status documentation accurately reflects implementation
@@ -377,19 +378,19 @@ Until v1.0 is released, versions will use the `0.y.z` format:
 
 ### Immediate (This Week)
 1. **Complete CI Verification**
-   - [ ] Verify GitHub Actions workflows pass
-   - [ ] Run govulncheck in CI
-   - [ ] Address any CI issues
+   - [ ] Verify GitHub Actions workflows pass (blocked: requires access)
+   - [ ] Run govulncheck in CI (blocked: requires CI access)
+   - [ ] Address any CI issues (blocked: requires CI access)
 
 2. **Create Release Infrastructure**
-   - [ ] Set up release branches
-   - [ ] Configure version tags
-   - [ ] Create release checklist
+   - [x] Set up release branches (`release/v0.1.x`)
+   - [x] Configure version tags (`v0.1.0-alpha`)
+   - [x] Create release checklist (already exists: `docs/release-checklist.md`)
 
 3. **Finalize Alpha Documentation**
-   - [ ] Create v1.0 alpha release notes
-   - [ ] Update README with version information
-   - [ ] Document known limitations
+   - [x] Create v1.0 alpha release notes (`docs/release-notes-v0.1.0-alpha.md`)
+   - [x] Update README with version information
+   - [x] Document known limitations
 
 ### Short Term (Next 2 Weeks)
 1. **Performance Benchmarking**
