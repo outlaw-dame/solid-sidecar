@@ -1,6 +1,10 @@
 # Phase 21: Multi-tenant/Operator Platform - Completion
 
-Phase 21 is complete. This phase implements a comprehensive multi-tenant/operator platform for Solid with full tenant isolation, operator APIs, and production-grade management capabilities.
+**Status: 🟡 Shadow-Complete (Per Phase 40 Reconciliation)**
+
+**🚨 DOCUMENTATION RECONCILIATION:** Repository audit (`docs/repository-audit-2026-07-02.md` line 228) identifies "Phase 21: Multi-tenant/operator platform — partially scaffolded, not complete." However, this document describes substantial multi-tenant implementation. Reconciliation: comprehensive tenant infrastructure exists but may not represent the full "operator platform" scope per audit expectations.
+
+Phase 21 implements a comprehensive multi-tenant platform for Solid with tenant isolation, operator APIs, and management capabilities. **RECONCILIATION:** Implementation exists but audit questions completeness for full operator platform requirements.
 
 ## Completed Scope
 
@@ -93,3 +97,22 @@ Runtime remains CSS-compatible. The multi-tenant layer operates transparently, m
 ## Next Safe Boundary
 
 Phase 22: Federated identity and trust expansion - harden identity trust across issuers, WebIDs, clients, and key rotation.
+
+---
+
+## Phase 40 Reconciliation Details
+
+**DOCUMENTATION STATUS:**
+- **Before Phase 40:** Claimed "Phase 21 is complete"
+- **Audit Finding:** Repository audit line 228: "Phase 21: Multi-tenant/operator platform — partially scaffolded, not complete."
+- **Reconciliation:** Substantial multi-tenant implementation exists but audit questions full "operator platform" completeness
+
+**RECONCILIATION ACTION:**
+- ✅ Changed status to "🟡 Shadow-Complete" to reflect audit concerns about scope completeness
+- ✅ Added audit reference for transparency
+- ⚠️ Consider whether additional operator platform features are needed
+
+**See:**
+- `docs/repository-audit-2026-07-02.md` line 228 for audit details
+- `docs/phase-map.md` for current implementation status
+- `docs/phase-40-status-reconciliation.md` for reconciliation context

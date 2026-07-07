@@ -1,8 +1,10 @@
 # Phase 34: Fixture Distribution Transport Implementation - Completion Report
 
-## Overview
+**Status: Phase 40 - Documentation Reconciliation Updated**
 
 Phase 34 involved implementing full transport layer functionality for fixture distribution in the solid-sidecar project. This phase delivered three transport implementations: LocalFileTransport, S3Transport, and SSHTransport, each with comprehensive functionality, security features, and error handling.
+
+**DOCUMENTATION RECONCILIATION NOTE:** This document was updated as part of Phase 40 to accurately reflect the actual implementation state discovered in the repository audit (`docs/repository-audit-2026-07-02.md`, lines 39, 44, 176-177, 181-184).
 
 ## Implementation Summary
 
@@ -25,26 +27,30 @@ Phase 34 involved implementing full transport layer functionality for fixture di
 
 ### 2. S3Transport (`internal/authz/fixture_distribution_transport.go`)
 
-**Status: 100% Complete with AWS SDK Integration**
+**Status: 🟡 Implementation Exists - Requires Production Hardening**
 
-- **Full transport layer** implementation
-- **URL parsing** for `s3://bucket/key` and `bucket/key` formats
+**RECONCILIATION:** Repository audit confirmed S3 transport implementation exists with AWS SDK v2 integration (commit `b94d7286`, line 176 in audit). The following components are implemented:
+
+- **Transport layer** implementation with URL parsing for `s3://bucket/key` and `bucket/key` formats
 - **Bucket validation** with naming rules enforcement
 - **Region and endpoint configuration**
 - **Key prefix generation** with distribution metadata
 - **Retry logic** with exponential backoff
 - **Error classification** for retryable vs non-retryable S3 errors
-- **AWS SDK v2 integration**: Uses `github.com/aws/aws-sdk-go-v2/service/s3` for actual S3 operations
+- **AWS SDK v2 integration**: Uses `github.com/aws/aws-sdk-go-v2/service/s3` for S3 operations (confirmed in audit line 176)
 - **SSRF protection**: Validates S3 endpoint URLs to prevent SSRF attacks
 - **TLS enforcement**: Always uses SSL/TLS for S3 connections
 - **Public methods**: `ParseS3URL`, `SetBucket`, `SetKeyPrefix`, `SetRegion`, `SetAWSCredentials`, `SetUseDefaultAWSCredentials`
 
+**PRODUCTION READINESS:** Requires additional transport security hardening per Phase 40 Task 4 (shared outbound network policy, credential-error redaction, custom endpoint policy hardening).
+
 ### 3. SSHTransport (`internal/authz/fixture_distribution_transport.go`)
 
-**Status: 100% Complete with SSH Library Integration and Proper Host Key Verification**
+**Status: 🟡 Implementation Exists - Requires Production Hardening**
 
-- **Full transport layer** implementation
-- **URL parsing** for `ssh://`, `sftp://`, and raw formats
+**RECONCILIATION:** Repository audit confirmed SSH transport implementation exists with SSH library integration (commit `b94d7286`, line 177 in audit). The following components are implemented:
+
+- **Transport layer** implementation with URL parsing for `ssh://`, `sftp://`, and raw formats
 - **Host validation** with username extraction support
 - **Port validation** (0-65535 range)
 - **IPv6 address support** with bracket notation
@@ -52,8 +58,8 @@ Phase 34 involved implementing full transport layer functionality for fixture di
 - **SFTP mode toggle** via `SetUseSFTP`
 - **Retry logic** with exponential backoff
 - **Error classification** for retryable SSH errors
-- **SSH library integration**: Uses `golang.org/x/crypto/ssh` and `github.com/pkg/sftp` for actual SSH/SFTP operations
-- **Proper host key verification**: Implements known_hosts file parsing and verification
+- **SSH library integration**: Uses `golang.org/x/crypto/ssh` and `github.com/pkg/sftp` for SSH/SFTP operations (confirmed in audit line 177)
+- **Host key verification**: Implements known_hosts file parsing and verification
   - Supports wildcard patterns (`*.example.com`, `.example.com`)
   - Supports multiple key types (RSA, ECDSA, Ed25519)
   - Validates against configured known hosts
@@ -63,6 +69,8 @@ Phase 34 involved implementing full transport layer functionality for fixture di
   - Private key file permissions (0600)
   - Atomic file operations for local file transport
   - SSRF protection for SSH endpoints
+
+**PRODUCTION READINESS:** Requires additional transport security hardening per Phase 40 Task 4 (shared outbound network policy, host-key policy hardening to prevent silent acceptance of unknown hosts, credential-error redaction).
 - **Public methods**: `ParseSSHURL`, `SetHost`, `SetPort`, `SetUsername`, `SetUseSFTP`, `SetSSHCredentials`, `SetPrivateKey`, `SetPrivateKeyPath`, `SetKnownHosts`, `SetStrictHostKeyChecking`
 
 ## New Error Types
@@ -120,7 +128,7 @@ Added comprehensive transport-specific errors:
 - ✅ Bucket validation (valid/invalid names)
 - ✅ URL parsing (multiple formats)
 - ✅ Key prefix and region configuration
-- ✅ AWS SDK integration with actual S3 operations
+- ✅ AWS SDK v2 integration (confirmed in codebase per audit line 176)
 
 ### SSHTransport Tests
 - ✅ Transport creation and validation
@@ -128,7 +136,7 @@ Added comprehensive transport-specific errors:
 - ✅ URL parsing (SSH, SFTP, and raw formats)
 - ✅ Username extraction from URLs
 - ✅ Port extraction from host:port strings
-- ✅ Host key verification with known_hosts pattern matching
+- ✅ Host key verification with known_hosts pattern matching (confirmed in codebase per audit line 177)
 
 ## Performance Considerations
 
@@ -139,14 +147,14 @@ Added comprehensive transport-specific errors:
 
 ## Integration Points
 
-### External Dependencies (Already Integrated)
+### External Dependencies (Integrated)
 
-The following dependencies are already integrated and functional:
+The following dependencies are integrated per repository audit (commit `b94d7286`, lines 176-177):
 
-1. **S3Transport**: AWS SDK v2 (`github.com/aws/aws-sdk-go-v2`)
-2. **SSHTransport**: Go SSH library (`golang.org/x/crypto/ssh`) and SFTP library (`github.com/pkg/sftp`)
+1. **S3Transport**: AWS SDK v2 (`github.com/aws/aws-sdk-go-v2/service/s3`) - Confirmed in audit line 176
+2. **SSHTransport**: Go SSH library (`golang.org/x/crypto/ssh`) and SFTP library (`github.com/pkg/sftp`) - Confirmed in audit line 177
 
-All transports are fully functional with their respective libraries integrated.
+**DEPENDENCY SURFACE:** The S3/SSH additions expand dependency and security surface significantly per audit line 203. This requires focused supply-chain and secret-handling review per Phase 40 Task 4.
 
 ### Transport Registry
 
@@ -184,21 +192,80 @@ go vet ./...
 gofmt -d internal/authz/
 ```
 
+---
+
+## Phase 40 Documentation Reconciliation
+
+**Document updated as part of Phase 40: Status Reconciliation and Roadmap Cleanup**
+
+### Reconciliation Changes Made
+
+This document was updated to resolve documentation contradictions identified in the repository audit (`docs/repository-audit-2026-07-02.md`):
+
+**BEFORE Phase 40:**
+- This document claimed S3/SSH transports were "100% Complete with AWS SDK Integration" and "100% Complete with SSH Library Integration"
+- `docs/phase-33-completion.md` claimed LocalFile, S3, and SSH transports were "Stub implementations"
+- Contradiction between phase completion documents
+
+**AFTER Phase 40:**
+- **Clarified Status**: All transports have implementation with SDK/library integration (confirmed in code audit)
+- **Production Readiness**: Added explicit note that S3/SSH transports require additional transport security hardening (Phase 40 Task 4)
+- **Audit References**: Added specific references to audit lines (39, 44, 176-177, 181-184) where implementation was confirmed
+- **Dependency Surface**: Documented that S3/SSH additions expand security surface requiring focused review
+
+### Current Implementation State (Post-Reconciliation)
+
+| Transport | Implementation Status | SDK/Library | Production Readiness | Security Hardening Needed |
+|-----------|---------------------|------------|---------------------|----------------------------|
+| LocalFileTransport | ✅ Complete | Pure Go | ✅ Production-Ready | None |
+| S3Transport | ✅ Implementation Exists | AWS SDK v2 | ⚠️ Requires Hardening | Phase 40 Task 4 |
+| SSHTransport | ✅ Implementation Exists | golang.org/x/crypto/ssh + github.com/pkg/sftp | ⚠️ Requires Hardening | Phase 40 Task 4 |
+
+See `docs/phase-40-status-reconciliation.md` for full reconciliation details.
+
 ## Next Steps
 
+### Immediate (Phase 40)
+1. **Transport Security Hardening**: Complete Phase 40 Task 4 requirements:
+   - Shared outbound network policy for transport endpoints
+   - S3 custom endpoint policy and credential-error redaction
+   - SSH host-key policy hardening (prevent silent acceptance of unknown hosts)
+   - Update older transport security audit per `docs/transport-security-reconciliation.md`
+
+### Post-Phase 40
 1. **Performance Testing**: Load test transport implementations
-2. **Security Audit**: External review of path validation logic and host key verification
+2. **External Security Audit**: Review of path validation logic and host key verification
 3. **Monitoring**: Add metrics for transport operations
 4. **Production Readiness**: Deployment testing in staging environment
 
 ## Completion Criteria Met
 
-- ✅ LocalFileTransport: 100% complete with pure Go
-- ✅ S3Transport: 100% complete with AWS SDK v2 integration
-- ✅ SSHTransport: 100% complete with SSH library integration and proper host key verification
+**RECONCILED COMPLETION STATUS:**
+
+- ✅ **LocalFileTransport**: Complete with pure Go implementation, atomic writes, path traversal protection
+- ✅ **S3Transport**: Implementation exists with AWS SDK v2 integration (audit confirmed), requires Phase 40 transport security hardening
+- ✅ **SSHTransport**: Implementation exists with SSH/SFTP library integration and host key verification (audit confirmed), requires Phase 40 transport security hardening
 - ✅ Comprehensive test coverage for all transports (including host key verification tests)
 - ✅ Security hardening (path traversal, validation, permissions, SSRF protection)
 - ✅ Proper host key verification with known_hosts format support
 - ✅ Error handling with appropriate error types
 - ✅ Configuration management with sensible defaults
 - ✅ Code quality: go build, go test, go vet, gofmt all pass
+
+**PRODUCTION READINESS GATE:** Transport security hardening (Phase 40 Task 4) must be completed before S3/SSH transports can be considered production-ready. This includes shared outbound network policy, credential-error redaction, and host-key policy hardening.
+
+---
+
+## Related Documentation
+
+- `docs/phase-40-status-reconciliation.md` - Phase 40 reconciliation work and current status
+- `docs/repository-audit-2026-07-02.md` - Repository audit that identified the contradictions (see lines 39, 44, 176-177, 181-184)
+- `docs/phase-33-completion.md` - Phase 33 completion with reconciliation note
+- `docs/implementation-status.md` - Overall implementation status (updated in Phase 40)
+- `docs/transport-security-reconciliation.md` - Transport security guidelines for Phase 40 Task 4
+
+## Revision History
+
+| Date | Author | Change |
+|------|--------|--------|
+| 2026-07-06 | Mistral Vibe | **Phase 40**: Reconciled documentation contradictions - clarified that S3/SSH implementations exist with SDK/library integration but require transport security hardening. Added audit references and production readiness gates.

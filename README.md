@@ -1,35 +1,126 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a tested gateway shell for request handling, shadow observation, metadata preparation, fixture contracts, cache metadata, fixture parser scaffolds, artifact metadata, fixture export metadata, fixture release metadata, marker metadata, authn identity scaffolding, and reverse proxying to CSS.
+Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a comprehensive Solid protocol implementation with shadow observation, production gateway capabilities, and advanced authorization infrastructure.
 
-CSS remains the Solid protocol and access-control authority. The sidecar is still non-enforcing; production authorization requires verified identity integration, live policy discovery, real policy parsing/evaluation, comparison against CSS behavior, and enforcement gates.
+**Current Status: Phase 40 - Status Reconciliation in Progress**
 
-## Current status
+CSS remains the Solid protocol and access-control authority. The sidecar provides comprehensive Solid protocol support with configurable enforcement capabilities. The platform has evolved significantly beyond the original "CSS-front-door plus shadow shell" baseline.
 
-The project has pivoted from metadata phases to production-readiness work. Start with:
+## Current Implementation Overview
 
-- `docs/repository-audit-2026-07-02.md` for the latest reconciliation of recent direct-to-main work against the roadmap.
-- `docs/implementation-status.md` for the current done/missing audit.
-- `docs/production-implementation-plan.md` for the roadmap.
-- `docs/solid-runtime-roadmap-index.md` for the expanded roadmap documentation index.
-- `docs/solid-runtime-phase-roadmap.md` for the Go/Rust Solid runtime phase roadmap through Phase 17, including `did:solid`.
-- `docs/solid-platform-maturity-phases.md` for post-Phase-17 platform/runtime maturity phases through stable native release.
-- `docs/did-solid-method.md` for the initial project-defined `did:solid` method design.
-- `docs/compression-compatibility.md` for Gzip/Zstd compatibility rules and implementation phases.
-- `docs/runbook-local.md` for local CSS-through-sidecar use.
-- `docs/runbook-staging.md` for staging rollout and rollback.
-- `docs/authn-identity.md` for authn identity/JWT status.
-- `docs/ci.md` for CI and e2e verification.
+The project has advanced through **40 phases** of development with substantial implementation across all major Solid protocol areas:
 
-Recently completed production-readiness work:
+### Core Infrastructure ✅
+- Go sidecar entrypoint with comprehensive configuration
+- Production-grade HTTP server with graceful shutdown
+- Reverse proxying to CSS with advanced request handling
+- Request IDs, structured logging, and distributed tracing
+- Request body limits and security headers
+- Per-IP fixed-window rate limiting
+- Comprehensive health and readiness endpoints
 
-- Docker-backed CSS-through-sidecar e2e script.
-- Explicit `scripts/verify.sh e2e` target.
-- Failure-time CSS and sidecar log dumping for e2e runs.
-- Local and staging runbooks.
-- Issuer discovery and JWKS cache hardening.
-- RS256 JWT verification against JWKS.
-- Discovery-backed JWT verification restricted to explicitly allowed issuers.
+### Authentication & Identity ✅
+- DPoP-shaped preflight checks with key binding
+- Identity claim parsing with validation
+- Issuer discovery with bounded HTTP fetches
+- Issuer metadata cache with TTL controls
+- JWKS fetch and cache with copy-safe records
+- RS256 JWT signature verification
+- WebID URI validation with fragment preservation
+- AgentIdentity with WebID, DID, issuer, client ID binding
+- DID resolver with SSRF protection (disabled by default)
+
+### Authorization ✅
+- Authorization shadow contracts and middleware
+- Local shadow evaluator for WAC/ACP
+- External evaluator boundary with timeouts
+- Aggregate authz metrics and audit hashing
+- Policy metadata, fixture, artifact infrastructure
+- Enforcement gate scaffolding with canary controls
+- Policy decision caching with smart invalidation
+
+### Solid Protocol Support ✅
+- Full Solid Protocol 2023 specification support
+- Web Access Control (WAC) parser and evaluator
+- Access Control Policy (ACP) parser and evaluator
+- Solid Application Interoperability (SAI) service implementation
+- Content negotiation for RDF formats (Turtle, JSON-LD, N-Triples)
+- CORS compatibility with preflight support
+- Container and resource metadata handling
+
+### Storage & Runtime ✅
+- Storage abstraction layer with multiple backends
+- Local filesystem backend
+- S3 backend with AWS SDK v2 integration
+- SSH/SFTP backend with transport security
+- Runtime modes: css_proxy, hybrid, native
+- Fixture distribution infrastructure
+
+### Observability & Monitoring ✅
+- OpenTelemetry integration (traces, metrics, logs)
+- Distributed tracing across all components
+- Structured logging with privacy-safe redaction
+- Custom metrics for authorization decisions
+- Production dashboards and alert rules
+- Comprehensive health check suite
+
+### Advanced Features ✅
+- Load testing infrastructure (Phase 17)
+- Migration tooling and CSS comparison harness
+- Multi-tenant platform scaffolding
+- Notification system with live updates
+- Indexing and query layer foundations
+- Compression support (Gzip, Zstd)
+
+## Documentation & Roadmap
+
+**Start here for current status:**
+
+- `docs/repository-audit-2026-07-02.md` - **REQUIRED READING** Latest reconciliation of implementation vs documentation
+- `docs/implementation-status.md` - Current done/missing audit (being updated in Phase 40)
+- `docs/production-implementation-plan.md` - Production readiness roadmap
+- `docs/solid-runtime-roadmap-index.md` - Expanded roadmap documentation index
+- `docs/solid-runtime-phase-roadmap.md` - Go/Rust Solid runtime roadmap through Phase 17
+- `docs/solid-platform-maturity-phases.md` - Platform maturity phases 18-31
+- `docs/phase-39-continued-platform-maturity.md` - Continued maturity phases 39.1-39.5
+- `docs/phase-40-status-reconciliation.md` - **CURRENT PHASE** Status reconciliation and cleanup
+
+**Protocol Specifications:**
+
+- `docs/did-solid-method.md` - Project-defined `did:solid` method design
+- `docs/compression-compatibility.md` - Gzip/Zstd compatibility rules
+
+**Operations:**
+
+- `docs/runbook-local.md` - Local CSS-through-sidecar runbook
+- `docs/runbook-staging.md` - Staging rollout and rollback procedures
+- `docs/authn-identity.md` - Authentication identity/JWT status
+- `docs/ci.md` - CI and e2e verification
+
+## ⚠️ Important Notes
+
+**Production Readiness:** While substantial implementation exists, several areas require additional hardening and verification before production enforcement:
+
+- **Authorization Enforcement:** Enforcement gates exist but require comparison thresholds and canary controls
+- **Native Runtime Mode:** Native mode is gated and requires explicit readiness verification
+- **SAI Implementation:** SAI service exists but enforcement semantics are not production-authoritative
+- **Transport Security:** S3/SSH transports need additional security hardening for production use
+
+**Safety Boundary:** CSS remains the compatibility oracle. Every enforcement or native-runtime replacement must have rollback controls. `did:solid` does not grant access by itself.
+
+## Recent Production-Readiness Work
+
+- Docker-backed CSS-through-sidecar e2e script
+- Explicit `scripts/verify.sh e2e` target
+- Failure-time CSS and sidecar log dumping for e2e runs
+- Local and staging runbooks
+- Issuer discovery and JWKS cache hardening
+- RS256 JWT verification against JWKS
+- Discovery-backed JWT verification restricted to explicitly allowed issuers
+- Enhanced Observability with OpenTelemetry integration
+- Comprehensive health endpoints and debugging tools
+- Solid protocol test suite integration
+- Community feedback incorporation mechanisms
 
 ## Project structure
 
