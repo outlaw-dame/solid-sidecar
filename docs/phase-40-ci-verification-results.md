@@ -364,9 +364,11 @@ The following workflows need verification on GitHub Actions:
 **Created**: 2026-07-06
 **Author**: Mistral Vibe
 **Phase**: 40 Task 2
-**Status**: 🚧 IN PROGRESS (85% complete)
+**Status**: 🟡 95% COMPLETE (Local verification complete after Phase 40 Tasks 3-7)
 
-- ✅ Local verification complete
+- ✅ Local verification complete (re-verified after security hardening and runtime mode gating)
 - ✅ CI documentation updated  
-- ⏳ GitHub Actions verification pending
-- ⏳ govulncheck results pending
+- ✅ Go verification script passes: `gofmt`, `go vet`, `go test`, `go test -race`, `go build`
+- ✅ Rust verification script passes: `cargo fmt --all --check`, `cargo test --workspace --all-targets`, `cargo clippy`
+- ⏳ GitHub Actions verification pending (requires GitHub access)
+- ⏳ govulncheck results pending (requires CI access, govulncheck not available locally)

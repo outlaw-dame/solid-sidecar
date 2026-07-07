@@ -35,7 +35,8 @@ func TestRuntimeInitialization(t *testing.T) {
 
 // TestRuntimeModeTransitions tests mode transitions
 func TestRuntimeModeTransitions(t *testing.T) {
-	config := DefaultRuntimeConfig()
+	// Use development config for testing - disables production guardrails
+	config := TestRuntimeConfig()
 	rt, err := New(config)
 	require.NoError(t, err, "Runtime initialization should succeed")
 	defer rt.Close()
@@ -77,6 +78,41 @@ func TestRuntimeModeTransitionFailure(t *testing.T) {
 	// Test that staying in the same mode works
 	require.NoError(t, rt.SetMode(RuntimeModeCSSProxy), "Set mode should succeed")
 	require.NoError(t, rt.SetMode(RuntimeModeCSSProxy), "Same mode transition should succeed")
+}
+
+// TestRuntimeProductionGuardrails tests production safety guardrails
+func TestRuntimeProductionGuardrails(t *testing.T) {
+	// Test with production mode enabled (default)
+	config := DefaultRuntimeConfig()
+	rt, err := New(config)
+	require.NoError(t, err, "Runtime initialization should succeed")
+	defer rt.Close()
+
+	// In production mode with default settings, transitions to hybrid/native should fail
+	err = rt.SetMode(RuntimeModeHybrid)
+	require.Error(t, err, "Transition to hybrid should fail in production mode without allowances")
+	assert.Contains(t, err.Error(), "production safety guardrails prevent this transition")
+
+	err = rt.SetMode(RuntimeModeNative)
+	require.Error(t, err, "Transition to native should fail in production mode without allowances")
+	assert.Contains(t, err.Error(), "production safety guardrails prevent this transition")
+
+	// CSSProxy to CSSProxy should always work
+	require.NoError(t, rt.SetMode(RuntimeModeCSSProxy), "Staying in CSSProxy should always work")
+}
+
+// TestRuntimeDevelopmentMode tests development mode allows transitions
+func TestRuntimeDevelopmentMode(t *testing.T) {
+	// Test with development config (production guardrails disabled)
+	config := TestRuntimeConfig()
+	rt, err := New(config)
+	require.NoError(t, err, "Runtime initialization should succeed")
+	defer rt.Close()
+
+	// In development mode, all transitions should work
+	require.NoError(t, rt.SetMode(RuntimeModeHybrid), "Transition to hybrid should work in dev mode")
+	require.NoError(t, rt.SetMode(RuntimeModeNative), "Transition to native should work in dev mode")
+	assert.Equal(t, RuntimeModeNative, rt.Mode(), "Mode should be native")
 }
 
 // TestRuntimeClose tests runtime cleanup

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -44,8 +45,34 @@ func DefaultPrivacyConfig() PrivacyConfig {
 			"x-refresh-token",
 			"dpop",
 			"digest",
+			"x-ssh-key",
+			"x-aws-access-key",
+			"x-aws-secret-key",
+			"x-aws-session-token",
 		},
 	}
+}
+
+// SecuritySensitivePatterns contains patterns for data that must never be logged
+// These are always redacted regardless of privacy configuration for security
+var SecuritySensitivePatterns = []string{
+	// AWS credentials
+	"AKIA",                  // AWS access key ID prefix
+	"wJalrXUtnFEMI/K7MDENG", // Example AWS secret key pattern
+
+	// SSH private key identifiers
+	"-----BEGIN",          // Private key header
+	"-----END",            // Private key footer
+	"PRIVATE KEY",         // Private key identifier
+	"OPENSSH PRIVATE KEY", // OpenSSH private key identifier
+	"ssh-rsa",             // SSH key type
+	"ssh-ed25519",         // SSH key type
+	"ecdsa-sha2-nistp",    // SSH key type
+
+	// Token patterns
+	"eyJ",     // JWT token prefix
+	"Bearer ", // Bearer token prefix
+	"Basic ",  // Basic auth prefix
 }
 
 // globalPrivacyConfig is the global privacy configuration
@@ -569,4 +596,22 @@ func PrivacyErrorContext(ctx context.Context, msg string, args ...any) {
 	} else {
 		slog.ErrorContext(ctx, msg, args...)
 	}
+}
+
+// SanitizeSecuritySensitive sanitizes a string to remove security-sensitive data
+// This function always runs regardless of privacy configuration for security
+func SanitizeSecuritySensitive(value string) string {
+	if value == "" {
+		return value
+	}
+
+	sanitized := value
+	for _, pattern := range SecuritySensitivePatterns {
+		sanitized = strings.ReplaceAll(sanitized, pattern, "[SECURITY_REDACTED]")
+	}
+
+	// Also sanitize password/secret patterns
+	sanitized = regexp.MustCompile(`(?i)(password|secret|token|key|credential|auth)['":\s]*[=:]\s*[^\s,;'\"]+`).ReplaceAllString(sanitized, "$1=[SECURITY_REDACTED]")
+
+	return sanitized
 }

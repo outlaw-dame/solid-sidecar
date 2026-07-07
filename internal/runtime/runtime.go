@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // Common errors for the runtime package
@@ -48,6 +49,56 @@ const (
 	RuntimeModeNative RuntimeMode = "native"
 )
 
+// RuntimeModeComparisonEvidence stores CSS comparison results for mode transition verification
+type RuntimeModeComparisonEvidence struct {
+	// CSSProxyBaseline contains baseline behavior evidence from CSS proxy mode
+	CSSProxyBaseline RuntimeComparisonBaseline
+
+	// HybridComparison contains comparison results from hybrid mode testing
+	HybridComparison RuntimeComparisonResults
+
+	// NativeComparison contains comparison results from native mode testing
+	NativeComparison RuntimeComparisonResults
+
+	// LastComparisonTimestamp is when the most recent comparison was performed
+	LastComparisonTimestamp time.Time
+
+	// ComparisonPassed indicates whether comparison tests passed for transition readiness
+	ComparisonPassed bool
+}
+
+// RuntimeComparisonBaseline stores baseline behavior measurements
+type RuntimeComparisonBaseline struct {
+	// RequestCount is the number of requests processed
+	RequestCount int64
+	// SuccessRate is the percentage of successful requests
+	SuccessRate float64
+	// AverageLatency is the average request latency
+	AverageLatency time.Duration
+	// ErrorRate is the percentage of requests that resulted in errors
+	ErrorRate float64
+}
+
+// RuntimeComparisonResults stores comparison test results between modes
+type RuntimeComparisonResults struct {
+	// ComparisonTimestamp is when this comparison was performed
+	ComparisonTimestamp time.Time
+	// TestDuration is how long the comparison test ran
+	TestDuration time.Duration
+	// RequestCount is the number of test requests processed
+	RequestCount int64
+	// BehaviorMatches is the number of requests with matching behavior
+	BehaviorMatches int64
+	// BehaviorMismatches is the number of requests with different behavior
+	BehaviorMismatches int64
+	// AllowedDifferences is the number of intentionally allowed behavior differences
+	AllowedDifferences int64
+	// CriticalMismatches is the number of critical behavior differences that block transition
+	CriticalMismatches int64
+	// Passed indicates whether the comparison passed the readiness criteria
+	Passed bool
+}
+
 // RuntimeConfig holds configuration for the Solid runtime
 type RuntimeConfig struct {
 	// Mode determines which runtime path to use
@@ -70,18 +121,62 @@ type RuntimeConfig struct {
 
 	// BackoffMaxDelay is the maximum delay for exponential backoff
 	BackoffMaxDelay int
+
+	// ProductionMode controls whether production safety guardrails are enabled
+	// When true, native and hybrid modes require explicit readiness verification
+	ProductionMode bool
+
+	// AllowNativeMode allows transition to native mode (requires ProductionMode=false or explicit readiness)
+	AllowNativeMode bool
+
+	// AllowHybridMode allows transition to hybrid mode (requires ProductionMode=false or explicit readiness)
+	AllowHybridMode bool
+
+	// RequireComparisonEvidence requires CSS comparison evidence before allowing mode transitions
+	RequireComparisonEvidence bool
+
+	// ComparisonEvidence provides stored comparison results for mode transition verification
+	ComparisonEvidence RuntimeModeComparisonEvidence
 }
 
 // DefaultRuntimeConfig returns a safe default configuration
 func DefaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
-		Mode:                RuntimeModeCSSProxy,
-		EnableCSSComparison: true, // Always enabled for safety
-		DefaultStorage:      "default",
-		Logger:              nil,
-		MaxRetries:          3,
-		BackoffBaseDelay:    100,  // 100ms
-		BackoffMaxDelay:     5000, // 5s
+		Mode:                      RuntimeModeCSSProxy,
+		EnableCSSComparison:       true, // Always enabled for safety
+		DefaultStorage:            "default",
+		Logger:                    nil,
+		MaxRetries:                3,
+		BackoffBaseDelay:          100,   // 100ms
+		BackoffMaxDelay:           5000,  // 5s
+		ProductionMode:            true,  // Production safety enabled by default
+		AllowNativeMode:           false, // Native mode disabled by default in production
+		AllowHybridMode:           false, // Hybrid mode disabled by default in production
+		RequireComparisonEvidence: true,  // Require CSS comparison before mode transitions
+		ComparisonEvidence: RuntimeModeComparisonEvidence{
+			ComparisonPassed: false, // No comparison evidence by default
+		},
+	}
+}
+
+// TestRuntimeConfig returns a configuration suitable for testing
+// This disables production safety guardrails to allow mode transitions in tests
+func TestRuntimeConfig() RuntimeConfig {
+	return RuntimeConfig{
+		Mode:                      RuntimeModeCSSProxy,
+		EnableCSSComparison:       true,
+		DefaultStorage:            "default",
+		Logger:                    nil,
+		MaxRetries:                3,
+		BackoffBaseDelay:          100,
+		BackoffMaxDelay:           5000,
+		ProductionMode:            false, // Disabled for testing
+		AllowNativeMode:           true,  // Allow all modes in tests
+		AllowHybridMode:           true,  // Allow all modes in tests
+		RequireComparisonEvidence: false, // Don't require comparison evidence in tests
+		ComparisonEvidence: RuntimeModeComparisonEvidence{
+			ComparisonPassed: true, // Assume tests have passed comparison
+		},
 	}
 }
 
@@ -91,6 +186,9 @@ type Runtime struct {
 
 	config RuntimeConfig
 	mode   RuntimeMode
+
+	// Mode transition history for rollback support
+	modeHistory []RuntimeMode
 
 	// Layers
 	gateway       *GatewayCompatibilityLayer
@@ -203,19 +301,149 @@ func (rt *Runtime) SetMode(mode RuntimeMode) error {
 
 	// Validate the mode transition
 	if !rt.canTransition(rt.mode, mode) {
-		return fmt.Errorf("cannot transition from %s to %s", rt.mode, mode)
+		return fmt.Errorf("cannot transition from %s to %s: production safety guardrails prevent this transition", rt.mode, mode)
 	}
 
+	// Record current mode in history before changing
+	rt.modeHistory = append(rt.modeHistory, rt.mode)
+	// Keep only the last 10 mode transitions to prevent memory bloat
+	if len(rt.modeHistory) > 10 {
+		rt.modeHistory = rt.modeHistory[len(rt.modeHistory)-10:]
+	}
+
+	previousMode := rt.mode
 	rt.mode = mode
-	rt.config.Logger.Info("Runtime mode changed", "old_mode", rt.mode, "new_mode", mode)
+	rt.config.Logger.Info("Runtime mode changed", "old_mode", previousMode, "new_mode", mode)
 	return nil
 }
 
-// canTransition checks if a mode transition is allowed
+// RollbackMode reverts to the previous runtime mode if safe to do so
+func (rt *Runtime) RollbackMode() error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	if len(rt.modeHistory) == 0 {
+		return fmt.Errorf("no previous mode available for rollback")
+	}
+
+	previousMode := rt.modeHistory[len(rt.modeHistory)-1]
+
+	// Validate the rollback transition
+	if !rt.canTransition(rt.mode, previousMode) {
+		return fmt.Errorf("cannot rollback from %s to %s: production safety guardrails prevent this transition", rt.mode, previousMode)
+	}
+
+	// Remove the last entry from history (we're rolling back past it)
+	rt.modeHistory = rt.modeHistory[:len(rt.modeHistory)-1]
+
+	rt.config.Logger.Warn("Runtime mode rollback initiated", "from_mode", rt.mode, "to_mode", previousMode)
+	rt.mode = previousMode
+	return nil
+}
+
+// ModeHistory returns the recent mode transition history
+func (rt *Runtime) ModeHistory() []RuntimeMode {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	history := make([]RuntimeMode, len(rt.modeHistory))
+	copy(history, rt.modeHistory)
+	return history
+}
+
+// SetComparisonEvidence sets the CSS comparison evidence for mode transition verification
+func (rt *Runtime) SetComparisonEvidence(evidence RuntimeModeComparisonEvidence) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.config.ComparisonEvidence = evidence
+}
+
+// UpdateComparisonEvidence updates specific comparison results
+func (rt *Runtime) UpdateComparisonEvidence(mode RuntimeMode, results RuntimeComparisonResults) error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	switch mode {
+	case RuntimeModeCSSProxy:
+		rt.config.ComparisonEvidence.CSSProxyBaseline = RuntimeComparisonBaseline{
+			RequestCount:   results.RequestCount,
+			SuccessRate:    float64(results.BehaviorMatches) / float64(results.RequestCount) * 100,
+			AverageLatency: results.TestDuration / time.Duration(results.RequestCount),
+			ErrorRate:      float64(results.BehaviorMismatches) / float64(results.RequestCount) * 100,
+		}
+	case RuntimeModeHybrid:
+		rt.config.ComparisonEvidence.HybridComparison = results
+	case RuntimeModeNative:
+		rt.config.ComparisonEvidence.NativeComparison = results
+	default:
+		return fmt.Errorf("unknown runtime mode: %s", mode)
+	}
+
+	// Update overall comparison passed status
+	rt.config.ComparisonEvidence.ComparisonPassed =
+		rt.config.ComparisonEvidence.HybridComparison.Passed &&
+			rt.config.ComparisonEvidence.NativeComparison.Passed
+
+	rt.config.ComparisonEvidence.LastComparisonTimestamp = time.Now()
+	return nil
+}
+
+// ClearComparisonEvidence clears all comparison evidence
+func (rt *Runtime) ClearComparisonEvidence() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.config.ComparisonEvidence = RuntimeModeComparisonEvidence{
+		ComparisonPassed: false,
+	}
+}
+
+// IsModeTransitionAllowed checks if a mode transition would be allowed without actually performing it
+func (rt *Runtime) IsModeTransitionAllowed(to RuntimeMode) bool {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return rt.canTransition(rt.mode, to)
+}
+
+// canTransition checks if a mode transition is allowed with production safety guardrails
 func (rt *Runtime) canTransition(from, to RuntimeMode) bool {
 	// Always allow staying in the same mode
 	if from == to {
 		return true
+	}
+
+	// Production safety guardrails: prevent unsafe mode transitions
+	if rt.config.ProductionMode {
+		// In production mode, native and hybrid modes require explicit permission
+		switch to {
+		case RuntimeModeNative:
+			if !rt.config.AllowNativeMode {
+				return false
+			}
+			// If comparison evidence is required, check that it exists and passed
+			if rt.config.RequireComparisonEvidence {
+				if !rt.config.ComparisonEvidence.ComparisonPassed {
+					return false
+				}
+				// Ensure native comparison has been performed and passed
+				if !rt.config.ComparisonEvidence.NativeComparison.Passed {
+					return false
+				}
+			}
+		case RuntimeModeHybrid:
+			if !rt.config.AllowHybridMode {
+				return false
+			}
+			// If comparison evidence is required, check that it exists and passed
+			if rt.config.RequireComparisonEvidence {
+				if !rt.config.ComparisonEvidence.ComparisonPassed {
+					return false
+				}
+				// Ensure hybrid comparison has been performed and passed
+				if !rt.config.ComparisonEvidence.HybridComparison.Passed {
+					return false
+				}
+			}
+		}
 	}
 
 	// Define allowed transitions

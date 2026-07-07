@@ -250,6 +250,9 @@ type TransportConfig struct {
 	// AllowLocalhost controls whether localhost/loopback addresses are allowed (for testing only)
 	// WARNING: Setting this to true in production is a security risk
 	AllowLocalhost bool
+	// DevelopmentMode controls whether development-only security relaxations are allowed
+	// WARNING: Setting this to true in production is a security risk
+	DevelopmentMode bool
 }
 
 // DefaultTransportConfig returns the default transport configuration
@@ -1133,6 +1136,13 @@ func NewS3TransportWithOptions(options S3TransportOptions) (*S3Transport, error)
 		}
 	}
 
+	// Validate custom endpoint early - fail fast for unsafe configurations
+	if options.Endpoint != "" {
+		if err := validateS3Endpoint(options.Endpoint); err != nil {
+			return nil, err
+		}
+	}
+
 	// Default to SSL
 	useSSL := options.UseSSL
 	if !useSSL && options.Endpoint == "" {
@@ -1256,7 +1266,7 @@ func (t *S3Transport) SetAWSCredentials(accessKeyID, secretAccessKey, sessionTok
 			awsconfig.WithRegion(t.region),
 		)
 		if err != nil {
-			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, err)
+			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, sanitizeError(err, accessKeyID, secretAccessKey, sessionToken))
 		}
 
 		t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
@@ -1283,7 +1293,7 @@ func (t *S3Transport) SetUseDefaultAWSCredentials(useDefault bool) error {
 			awsconfig.WithRegion(t.region),
 		)
 		if err != nil {
-			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, err)
+			return fmt.Errorf("%w: failed to create AWS config: %v", ErrTransportConnectionFailed, sanitizeError(err))
 		}
 
 		t.s3Client = s3sdk.NewFromConfig(awsConfig, func(o *s3sdk.Options) {
@@ -1675,35 +1685,34 @@ func validateS3Endpoint(endpoint string) error {
 		return nil // Empty endpoint is OK - will use default AWS endpoint
 	}
 
-	// Parse the URL
+	// Parse the URL first for basic validation
 	parsedURL, err := url.Parse(endpoint)
 	if err != nil {
+		// For invalid URLs that can't be parsed, return the original error type
 		return fmt.Errorf("%w: invalid S3 endpoint URL: %v", ErrTransportInvalidPath, err)
 	}
 
-	// Check scheme - must be http or https
+	// Check scheme - must be http or https for URL parsing to work
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		// For non-http/https schemes, return the original error type
 		return fmt.Errorf("%w: S3 endpoint must use http or https scheme, got %s", ErrTransportInvalidPath, parsedURL.Scheme)
 	}
 
-	// Check for localhost or internal IP addresses to prevent SSRF
+	// Check scheme - must be https for custom endpoints (http is unsafe)
+	if parsedURL.Scheme != "https" {
+		return fmt.Errorf("%w: S3 custom endpoint must use https scheme, got %s", ErrTransportSecurityViolation, parsedURL.Scheme)
+	}
+
+	// Additional validation for known localhost variations
 	host := parsedURL.Hostname()
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return fmt.Errorf("%w: S3 endpoint cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
-	}
-
-	// Check for private IP address ranges
-	if isPrivateIPAddress(host) {
-		return fmt.Errorf("%w: S3 endpoint cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
-	}
-
-	// Check for localhost variations
 	lowerHost := strings.ToLower(host)
-	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" {
+	if lowerHost == "localhost.localdomain" {
 		return fmt.Errorf("%w: S3 endpoint cannot point to localhost", ErrTransportSecurityViolation)
 	}
 
-	return nil
+	// Use the shared outbound network policy for comprehensive SSRF validation
+	policy := DefaultOutboundTransportNetworkPolicy()
+	return policy.ValidateParsedURL(parsedURL)
 }
 
 // validateHTTPTargetURL validates an HTTP target URL to prevent SSRF attacks
@@ -1712,29 +1721,9 @@ func validateHTTPTargetURL(parsedURL *url.URL) error {
 		return fmt.Errorf("%w: URL cannot be nil", ErrTransportInvalidPath)
 	}
 
-	// Check scheme - must be http or https
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("%w: URL must use http or https scheme, got %s", ErrTransportInvalidPath, parsedURL.Scheme)
-	}
-
-	// Check for hostname
-	host := parsedURL.Hostname()
-	if host == "" {
-		return fmt.Errorf("%w: URL must have a hostname", ErrTransportInvalidPath)
-	}
-
-	// Check for localhost and loopback addresses
-	lowerHost := strings.ToLower(host)
-	if lowerHost == "localhost" || lowerHost == "localhost.localdomain" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
-		return fmt.Errorf("%w: HTTP URL cannot point to localhost or loopback addresses", ErrTransportSecurityViolation)
-	}
-
-	// Check for private IP address ranges
-	if isPrivateIPAddress(host) {
-		return fmt.Errorf("%w: HTTP URL cannot point to private IP address: %s", ErrTransportSecurityViolation, host)
-	}
-
-	return nil
+	// Use the shared outbound network policy for consistent validation
+	policy := DefaultOutboundTransportNetworkPolicy()
+	return policy.ValidateParsedURL(parsedURL)
 }
 
 // isPrivateIPAddress checks if a hostname resolves to a private IP address
@@ -2339,30 +2328,31 @@ func (t *SSHTransport) uploadViaSSH(ctx context.Context, host string, port int, 
 	// Clean remote path
 	remotePath = strings.Trim(remotePath, "/")
 
-	// Create SSH client configuration
-	sshConfig := &ssh.ClientConfig{
-		User:            username,
-		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Default - can be overridden
-		Timeout:         t.config.Timeout,
-	}
-
 	// Add authentication methods
+	var sshConfig *ssh.ClientConfig
 	if t.usePrivateKeyAuth && len(t.privateKey) > 0 {
 		// Use provided private key
 		privateKey, err := ssh.ParsePrivateKey(t.privateKey)
 		if err != nil {
-			return fmt.Errorf("%w: failed to parse SSH private key: %v", ErrTransportAuthFailed, err)
+			return fmt.Errorf("%w: failed to parse SSH private key: %v", ErrTransportAuthFailed, sanitizeError(err))
 		}
-		sshConfig.Auth = append(sshConfig.Auth, ssh.PublicKeys(privateKey))
+		sshConfig = &ssh.ClientConfig{
+			User:    username,
+			Auth:    []ssh.AuthMethod{ssh.PublicKeys(privateKey)},
+			Timeout: t.config.Timeout,
+		}
 	} else if t.password != "" {
 		// Use password authentication
-		sshConfig.Auth = append(sshConfig.Auth, ssh.Password(t.password))
+		sshConfig = &ssh.ClientConfig{
+			User:    username,
+			Auth:    []ssh.AuthMethod{ssh.Password(t.password)},
+			Timeout: t.config.Timeout,
+		}
 	} else {
 		return fmt.Errorf("%w: no SSH authentication method configured", ErrTransportAuthFailed)
 	}
 
-	// Set up host key verification if configured
+	// Set up host key verification - strict by default for production safety
 	if t.strictHostKeyChecking {
 		if t.knownHosts != "" {
 			// Parse known hosts and create callback
@@ -2372,13 +2362,19 @@ func (t *SSHTransport) uploadViaSSH(ctx context.Context, host string, port int, 
 			}
 			sshConfig.HostKeyCallback = hostKeyCallback
 		} else {
-			// Strict checking requested but no known hosts provided
+			// Strict checking requested but no known hosts provided - fail closed
 			return fmt.Errorf("%w: strict host key checking requires known hosts to be configured", ErrTransportSecurityViolation)
 		}
 	} else {
-		// Use insecure host key checking (allows any host)
-		// Note: This is insecure and should only be used in development/test environments
-		sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+		// Non-strict mode: only allowed in development/test environments
+		// If we're in production mode (strict checking is default true), this should never be reached
+		if t.config.DevelopmentMode {
+			// Explicit development mode allows insecure host key checking
+			sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+		} else {
+			// Production mode: refuse to connect without proper host key verification
+			return fmt.Errorf("%w: host key verification cannot be disabled in production mode", ErrTransportSecurityViolation)
+		}
 	}
 
 	// Connect to SSH server
@@ -2679,7 +2675,7 @@ func (t *SSHTransport) Close() error {
 	t.knownHosts = ""
 	t.port = 0
 	t.usePrivateKeyAuth = false
-	t.strictHostKeyChecking = false
+	t.strictHostKeyChecking = true
 	t.useSFTP = false
 
 	return nil
