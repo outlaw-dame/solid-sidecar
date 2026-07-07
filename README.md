@@ -2,9 +2,15 @@
 
 Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a comprehensive Solid protocol implementation with shadow observation, production gateway capabilities, and advanced authorization infrastructure.
 
-**Current Status: Phase 40 - Status Reconciliation in Progress**
+**Current Version: v0.1.0-alpha** | **Phase: Post-Phase 40 - Versioned Product Development**
 
 CSS remains the Solid protocol and access-control authority. The sidecar provides comprehensive Solid protocol support with configurable enforcement capabilities. The platform has evolved significantly beyond the original "CSS-front-door plus shadow shell" baseline.
+
+## Version Badge
+
+```markdown
+[![Version](https://img.shields.io/badge/version-v0.1.0--alpha-blue.svg)](https://github.com/outlaw-dame/solid-sidecar/releases)
+```
 
 ## Current Implementation Overview
 
@@ -76,6 +82,8 @@ The project has advanced through **40 phases** of development with substantial i
 
 **Start here for current status:**
 
+- `docs/v1-product-roadmap.md` - **v1.0 Product Roadmap** (Versioned development transition)
+- `docs/release-notes-v0.1.0-alpha.md` - **v0.1.0 Alpha Release Notes**
 - `docs/repository-audit-2026-07-02.md` - **REQUIRED READING** Latest reconciliation of implementation vs documentation
 - `docs/implementation-status.md` - Current done/missing audit (being updated in Phase 40)
 - `docs/production-implementation-plan.md` - Production readiness roadmap
@@ -83,7 +91,7 @@ The project has advanced through **40 phases** of development with substantial i
 - `docs/solid-runtime-phase-roadmap.md` - Go/Rust Solid runtime roadmap through Phase 17
 - `docs/solid-platform-maturity-phases.md` - Platform maturity phases 18-31
 - `docs/phase-39-continued-platform-maturity.md` - Continued maturity phases 39.1-39.5
-- `docs/phase-40-status-reconciliation.md` - **CURRENT PHASE** Status reconciliation and cleanup
+- `docs/phase-40-status-reconciliation.md` - **COMPLETED** Status reconciliation and cleanup (97% complete)
 
 **Protocol Specifications:**
 
@@ -99,14 +107,17 @@ The project has advanced through **40 phases** of development with substantial i
 
 ## ⚠️ Important Notes
 
-**Production Readiness:** While substantial implementation exists, several areas require additional hardening and verification before production enforcement:
+**Production Readiness:** This is an **ALPHA release** (v0.1.0-alpha). While substantial implementation exists, several areas require additional hardening and verification before production use:
 
-- **Authorization Enforcement:** Enforcement gates exist but require comparison thresholds and canary controls
-- **Native Runtime Mode:** Native mode is gated and requires explicit readiness verification
-- **SAI Implementation:** SAI service exists but enforcement semantics are not production-authoritative
-- **Transport Security:** S3/SSH transports need additional security hardening for production use
+- **Authorization Enforcement:** Enforcement gates exist but run in shadow mode; enforcement requires comparison thresholds and canary controls
+- **Native Runtime Mode:** Native mode is gated and requires explicit readiness verification and comparison evidence
+- **SAI Implementation:** SAI Application Interoperability service exists; **SAI Authorization Enforcement is explicitly deferred**
+- **Transport Security:** S3/SSH transports are implemented with security hardening; additional verification pending
+- **Known Limitations:** See `docs/release-notes-v0.1.0-alpha.md` for complete list
 
 **Safety Boundary:** CSS remains the compatibility oracle. Every enforcement or native-runtime replacement must have rollback controls. `did:solid` does not grant access by itself.
+
+**Alpha Status:** This release is suitable for development and testing but NOT for production deployment.
 
 ## Recent Production-Readiness Work
 
@@ -184,3 +195,30 @@ bash scripts/verify.sh e2e
 ```
 
 The e2e target is intentionally not part of `all` because it requires Docker and starts CSS.
+
+---
+
+## Version History
+
+| Version | Date | Status | Notes |
+|---------|------|--------|-------|
+| v0.1.0-alpha | 2026-07-07 | Current | First public alpha release (Phase 40 transition) |
+
+**Note**: This is the first versioned release. Previous development versions were tracked via phase completions (Phases 1-40).
+
+---
+
+## Release Information
+
+- **Latest Release Notes**: See `docs/release-notes-v0.1.0-alpha.md`
+- **Product Roadmap**: See `docs/v1-product-roadmap.md`
+- **Phase Status**: See `docs/phase-40-status-reconciliation.md` (97% complete)
+
+---
+
+## Support
+
+- **Documentation**: Comprehensive documentation in `docs/` directory
+- **Issues**: Report on GitHub Issues
+- **Discussions**: GitHub Discussions for non-bug questions
+- **Security**: See `docs/VULNERABILITY-DISCLOSURE.md`
