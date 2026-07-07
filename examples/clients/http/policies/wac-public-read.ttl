@@ -1,0 +1,10 @@
+@prefix acl: <http://www.w3.org/ns/auth/acl#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+# Web Access Control (WAC) Policy: Public Read Access
+# This policy allows anyone to read the resource
+
+<> a acl:Authorization;
+    acl:accessTo </resource.ttl>;
+    acl:agentClass foaf:Agent;
+    acl:mode acl:Read.

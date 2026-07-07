@@ -1,0 +1,20 @@
+@prefix acl: <http://www.w3.org/ns/auth/acl#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix solid: <http://www.w3.org/ns/solid/terms#> .
+
+# This is a Web Access Control (WAC) policy example
+# It demonstrates a basic read/write policy for a resource owner
+
+# Owner Authorization
+# Grants the owner full access (Read, Write, Control) to the resource
+<> a acl:Authorization;
+    acl:accessTo </resource.ttl>;
+    acl:agent <https://alice.webid>;
+    acl:mode acl:Read, acl:Write, acl:Control.
+
+# Public Read Authorization
+# Allows anyone (foaf:Agent) to read the resource
+<#public> a acl:Authorization;
+    acl:accessTo </resource.ttl>;
+    acl:agentClass foaf:Agent;
+    acl:mode acl:Read.

@@ -1,0 +1,20 @@
+@prefix acl: <http://www.w3.org/ns/solid/acp#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+# Access Control Policy (ACP) Example
+# This demonstrates a basic ACP policy with allow rules
+
+<> a acl:AccessPolicy;
+    acl:appliesTo </resource.ttl>;
+    
+    # Allow owner full access
+    acl:allow [
+        acl:actor <https://alice.webid>;
+        acl:operation acl:Read, acl:Write, acl:Control, acl:Delete
+    ];
+    
+    # Allow public read access
+    acl:allow [
+        acl:actorClass foaf:Agent;
+        acl:operation acl:Read
+    ].
