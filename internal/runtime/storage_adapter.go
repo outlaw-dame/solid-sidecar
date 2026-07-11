@@ -13,6 +13,20 @@ import (
 	"github.com/outlaw-dame/solid-sidecar/internal/storage"
 )
 
+// PolicyCacheInvalidator is the interface for invalidating policy evaluation cache
+// This is part of Phase 19 (Native Authorization Authority) for cache consistency
+type PolicyCacheInvalidator interface {
+	// InvalidateAllCache invalidates all cached policy evaluation results
+	InvalidateAllCache()
+}
+
+// AuthzCacheInvalidator is the interface for invalidating authorization decision cache
+// This is part of Phase 19 (Native Authorization Authority) for cache consistency
+type AuthzCacheInvalidator interface {
+	// InvalidateResource invalidates all cached decisions for a specific resource
+	InvalidateResource(ctx context.Context, resource string) error
+}
+
 // Errors for the storage adapter
 var (
 	ErrResourceNotFound   = errors.New("resource not found")
@@ -32,6 +46,11 @@ type StorageEngineAdapter struct {
 
 	// Metrics for tracking adapter operations
 	metrics StorageEngineAdapterMetrics
+
+	// Cache invalidation hooks for Phase 19 (Native Authorization Authority)
+	// These are optional and may be nil if cache invalidation is not enabled
+	policyCacheInvalidator PolicyCacheInvalidator
+	authzCacheInvalidator  AuthzCacheInvalidator
 }
 
 // StorageEngineAdapterMetrics holds metrics for the storage engine adapter
@@ -101,14 +120,28 @@ func (m *StorageEngineAdapterMetrics) GetMetrics() StorageEngineAdapterMetrics {
 }
 
 // NewStorageEngineAdapter creates a new adapter that wraps a production storage backend
+// For Phase 19 cache invalidation support, use NewStorageEngineAdapterWithCache
 func NewStorageEngineAdapter(backend storage.StorageBackend, logger *slog.Logger) *StorageEngineAdapter {
+	return NewStorageEngineAdapterWithCache(backend, logger, nil, nil)
+}
+
+// NewStorageEngineAdapterWithCache creates a new adapter with cache invalidation hooks
+// This is the primary constructor for Phase 19 (Native Authorization Authority) support
+func NewStorageEngineAdapterWithCache(
+	backend storage.StorageBackend,
+	logger *slog.Logger,
+	policyCacheInvalidator PolicyCacheInvalidator,
+	authzCacheInvalidator AuthzCacheInvalidator,
+) *StorageEngineAdapter {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &StorageEngineAdapter{
-		backend: backend,
-		logger:  logger,
+		backend:                backend,
+		logger:                 logger,
+		policyCacheInvalidator: policyCacheInvalidator,
+		authzCacheInvalidator:  authzCacheInvalidator,
 	}
 }
 
@@ -227,6 +260,10 @@ func (a *StorageEngineAdapter) Put(ctx context.Context, uri string, resource *St
 		return fmt.Errorf("storage error: %w", err)
 	}
 
+	// Phase 19: Invalidate caches after successful write
+	// This ensures authorization decisions are re-evaluated with current state
+	a.invalidateCaches(ctx, uri)
+
 	a.metrics.RecordRequest("put", true, nil)
 	return nil
 }
@@ -269,6 +306,10 @@ func (a *StorageEngineAdapter) Delete(ctx context.Context, uri string) error {
 		a.logger.Error("Delete failed", "uri", uri, "error", err)
 		return fmt.Errorf("storage error: %w", err)
 	}
+
+	// Phase 19: Invalidate caches after successful deletion
+	// This ensures authorization decisions are re-evaluated with current state
+	a.invalidateCaches(ctx, uri)
 
 	a.metrics.RecordRequest("delete", true, nil)
 	return nil
@@ -558,11 +599,12 @@ func (a *StorageEngineAdapter) convertMetadataToRuntimeMetadata(prodMetadata *st
 // NewStorageEngineAdapterWithBackend creates a new storage engine adapter with a specific backend
 // This is the primary integration point between the runtime's storage abstraction
 // and the production storage engine.
+// For Phase 19 cache invalidation support, use NewStorageEngineAdapterWithCache directly
 func NewStorageEngineAdapterWithBackend(backend storage.StorageBackend, logger *slog.Logger) *StorageEngineAdapter {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return NewStorageEngineAdapter(backend, logger)
+	return NewStorageEngineAdapterWithCache(backend, logger, nil, nil)
 }
 
 // HealthCheck implements the StorageBackend interface for health checking
@@ -572,4 +614,27 @@ func (a *StorageEngineAdapter) HealthCheck(ctx context.Context) error {
 	// For now, we just return nil to indicate healthy
 	// In a production implementation, this would actually check backend health
 	return nil
+}
+
+// invalidateCaches invalidates authorization caches after storage writes/deletes
+// This is part of Phase 19 (Native Authorization Authority) to ensure cache consistency
+func (a *StorageEngineAdapter) invalidateCaches(ctx context.Context, uri string) {
+	// Invalidate policy engine cache
+	if a.policyCacheInvalidator != nil {
+		a.policyCacheInvalidator.InvalidateAllCache()
+		a.logger.Debug("Invalidated policy cache after resource write", "uri", uri)
+	}
+
+	// Invalidate authorization cache for this specific resource
+	if a.authzCacheInvalidator != nil {
+		if err := a.authzCacheInvalidator.InvalidateResource(ctx, uri); err != nil {
+			a.logger.Warn("Failed to invalidate authz cache after resource write",
+				"uri", uri,
+				"error", err)
+			// Don't return error - cache invalidation failure should not block storage operations
+			// This is a fail-safe design to prevent cache bugs from causing availability issues
+		} else {
+			a.logger.Debug("Invalidated authz cache after resource write", "uri", uri)
+		}
+	}
 }

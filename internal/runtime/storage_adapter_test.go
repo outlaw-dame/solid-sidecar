@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -375,6 +376,257 @@ func TestStorageEngineAdapter_Name(t *testing.T) {
 	adapter := NewStorageEngineAdapter(mockBackend, logger)
 
 	assert.Equal(t, "test-backend", adapter.Name())
+}
+
+// =============================================================================
+// Mock Implementations for Cache Invalidation Tests (Phase 19)
+// =============================================================================
+
+// MockPolicyCacheInvalidator implements PolicyCacheInvalidator interface for testing
+type MockPolicyCacheInvalidator struct {
+	mu                 sync.Mutex
+	invalidateAllCalls int
+}
+
+func NewMockPolicyCacheInvalidator() *MockPolicyCacheInvalidator {
+	return &MockPolicyCacheInvalidator{}
+}
+
+// InvalidateAllCache implements PolicyCacheInvalidator
+func (m *MockPolicyCacheInvalidator) InvalidateAllCache() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.invalidateAllCalls++
+}
+
+// GetInvalidateAllCalls returns the number of times InvalidateAllCache was called
+func (m *MockPolicyCacheInvalidator) GetInvalidateAllCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.invalidateAllCalls
+}
+
+// MockAuthzCacheInvalidator implements AuthzCacheInvalidator interface for testing
+type MockAuthzCacheInvalidator struct {
+	mu                      sync.Mutex
+	invalidateResourceCalls []string
+}
+
+func NewMockAuthzCacheInvalidator() *MockAuthzCacheInvalidator {
+	return &MockAuthzCacheInvalidator{
+		invalidateResourceCalls: make([]string, 0),
+	}
+}
+
+// InvalidateResource implements AuthzCacheInvalidator
+func (m *MockAuthzCacheInvalidator) InvalidateResource(ctx context.Context, resource string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.invalidateResourceCalls = append(m.invalidateResourceCalls, resource)
+	return nil
+}
+
+// GetInvalidateResourceCalls returns the list of resources that were invalidated
+func (m *MockAuthzCacheInvalidator) GetInvalidateResourceCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.invalidateResourceCalls))
+	copy(result, m.invalidateResourceCalls)
+	return result
+}
+
+// =============================================================================
+// Cache Invalidation Tests for Phase 19
+// =============================================================================
+
+func TestStorageEngineAdapter_CacheInvalidation(t *testing.T) {
+	ctx := context.Background()
+	logger := testLogger()
+
+	t.Run("Put invalidates caches", func(t *testing.T) {
+		t.Parallel()
+
+		// Create mock backend
+		mockBackend := newMockStorageBackend("mock")
+
+		// Create mock cache invalidators
+		mockPolicyCacheInvalidator := NewMockPolicyCacheInvalidator()
+		mockAuthzCacheInvalidator := NewMockAuthzCacheInvalidator()
+
+		// Create adapter with cache hooks
+		adapter := NewStorageEngineAdapterWithCache(
+			mockBackend,
+			logger,
+			mockPolicyCacheInvalidator,
+			mockAuthzCacheInvalidator,
+		)
+
+		// Create a resource to write
+		testURI := "https://example.com/test-resource"
+		runtimeResource := &StorageResource{
+			URI:          testURI,
+			ContentType:  "text/plain",
+			Body:         []byte("test content"),
+			LastModified: time.Now(),
+			Metadata: StorageResourceMetadata{
+				Size:         12,
+				ContentType:  "text/plain",
+				LastModified: time.Now(),
+				Created:      time.Now(),
+				Custom: map[string]string{
+					"resourceType": "Resource",
+				},
+			},
+		}
+
+		// Put the resource
+		err := adapter.Put(ctx, testURI, runtimeResource)
+		require.NoError(t, err)
+
+		// Verify cache invalidation was called
+		assert.Equal(t, 1, mockPolicyCacheInvalidator.GetInvalidateAllCalls(), "Policy cache should be invalidated on Put")
+
+		invalidateResourceCalls := mockAuthzCacheInvalidator.GetInvalidateResourceCalls()
+		assert.Len(t, invalidateResourceCalls, 1, "Authz cache should be invalidated for resource on Put")
+		assert.Equal(t, testURI, invalidateResourceCalls[0], "Authz cache should be invalidated for correct URI")
+	})
+
+	t.Run("Delete invalidates caches", func(t *testing.T) {
+		t.Parallel()
+
+		// Create mock backend
+		mockBackend := newMockStorageBackend("mock")
+
+		// Create mock cache invalidators
+		mockPolicyCacheInvalidator := NewMockPolicyCacheInvalidator()
+		mockAuthzCacheInvalidator := NewMockAuthzCacheInvalidator()
+
+		// Create adapter with cache hooks
+		adapter := NewStorageEngineAdapterWithCache(
+			mockBackend,
+			logger,
+			mockPolicyCacheInvalidator,
+			mockAuthzCacheInvalidator,
+		)
+
+		// Put a resource first
+		testURI := "https://example.com/delete-test"
+		runtimeResource := &StorageResource{
+			URI:          testURI,
+			ContentType:  "text/plain",
+			Body:         []byte("test content"),
+			LastModified: time.Now(),
+		}
+		err := adapter.Put(ctx, testURI, runtimeResource)
+		require.NoError(t, err)
+
+		// Get current counts to reset tracking
+		putInvalidations := mockPolicyCacheInvalidator.GetInvalidateAllCalls()
+		_ = mockAuthzCacheInvalidator.GetInvalidateResourceCalls()
+
+		// Delete the resource
+		err = adapter.Delete(ctx, testURI)
+		require.NoError(t, err)
+
+		// Verify cache invalidation was called for Delete
+		assert.Equal(t, putInvalidations+1, mockPolicyCacheInvalidator.GetInvalidateAllCalls(), "Policy cache should be invalidated on Delete")
+
+		invalidateResourceCalls := mockAuthzCacheInvalidator.GetInvalidateResourceCalls()
+		assert.Len(t, invalidateResourceCalls, 2, "Authz cache should be invalidated for resource on Put and Delete")
+		assert.Equal(t, testURI, invalidateResourceCalls[1], "Authz cache should be invalidated for correct URI on Delete")
+	})
+
+	t.Run("Get does not invalidate caches", func(t *testing.T) {
+		t.Parallel()
+
+		// Create mock backend
+		mockBackend := newMockStorageBackend("mock")
+
+		// Create mock cache invalidators
+		mockPolicyCacheInvalidator := NewMockPolicyCacheInvalidator()
+		mockAuthzCacheInvalidator := NewMockAuthzCacheInvalidator()
+
+		// Create adapter with cache hooks
+		adapter := NewStorageEngineAdapterWithCache(
+			mockBackend,
+			logger,
+			mockPolicyCacheInvalidator,
+			mockAuthzCacheInvalidator,
+		)
+
+		// Put a resource first
+		testURI := "https://example.com/get-test"
+		runtimeResource := &StorageResource{
+			URI:          testURI,
+			ContentType:  "text/plain",
+			Body:         []byte("test content"),
+			LastModified: time.Now(),
+			Metadata: StorageResourceMetadata{
+				Size:         12,
+				ContentType:  "text/plain",
+				LastModified: time.Now(),
+				Created:      time.Now(),
+				Custom: map[string]string{
+					"resourceType": "Resource",
+				},
+			},
+		}
+		err := adapter.Put(ctx, testURI, runtimeResource)
+		require.NoError(t, err)
+
+		// Get current counts to establish baseline
+		baselinePolicyInvalidations := mockPolicyCacheInvalidator.GetInvalidateAllCalls()
+		baselineAuthzInvalidations := len(mockAuthzCacheInvalidator.GetInvalidateResourceCalls())
+
+		// Get the resource (should NOT trigger cache invalidation)
+		_, err = adapter.Get(ctx, testURI)
+		require.NoError(t, err)
+
+		// Verify cache invalidation was NOT called
+		assert.Equal(t, baselinePolicyInvalidations, mockPolicyCacheInvalidator.GetInvalidateAllCalls(), "Policy engine cache should NOT be invalidated on Get")
+
+		assert.Equal(t, baselineAuthzInvalidations, len(mockAuthzCacheInvalidator.GetInvalidateResourceCalls()), "Authz cache should NOT be invalidated on Get")
+	})
+
+	t.Run("Cache invalidation with nil invalidators does not panic", func(t *testing.T) {
+		t.Parallel()
+
+		// Create mock backend
+		mockBackend := newMockStorageBackend("mock")
+
+		// Create adapter with nil cache invalidators (should not panic)
+		adapter := NewStorageEngineAdapterWithCache(
+			mockBackend,
+			logger,
+			nil, // policyCacheInvalidator
+			nil, // authzCacheInvalidator
+		)
+
+		// Put a resource - should not panic with nil invalidators
+		testURI := "https://example.com/nil-cache-test"
+		runtimeResource := &StorageResource{
+			URI:          testURI,
+			ContentType:  "text/plain",
+			Body:         []byte("test content"),
+			LastModified: time.Now(),
+			Metadata: StorageResourceMetadata{
+				Size:         12,
+				ContentType:  "text/plain",
+				LastModified: time.Now(),
+				Created:      time.Now(),
+				Custom: map[string]string{
+					"resourceType": "Resource",
+				},
+			},
+		}
+
+		err := adapter.Put(ctx, testURI, runtimeResource)
+		require.NoError(t, err)
+
+		// Delete should also not panic
+		err = adapter.Delete(ctx, testURI)
+		require.NoError(t, err)
+	})
 }
 
 // Helper function to create a test logger
