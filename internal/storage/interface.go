@@ -427,6 +427,12 @@ type StorageEngine interface {
 
 	// RegisterBackend registers a new storage backend
 	RegisterBackend(name string, backend StorageBackend) error
+
+	// RegisterCacheInvalidator registers a cache invalidator to be notified of resource changes
+	RegisterCacheInvalidator(invalidator CacheInvalidator)
+
+	// UnregisterCacheInvalidator unregisters a cache invalidator
+	UnregisterCacheInvalidator(invalidator CacheInvalidator)
 }
 
 // MetadataStore is the interface for metadata operations
@@ -598,6 +604,33 @@ func SetStorageEngine(engine StorageEngine) {
 
 // Global storage engine instance
 var storageEngine StorageEngine
+
+// CacheInvalidationEvent represents an event that should trigger cache invalidation
+type CacheInvalidationEvent struct {
+	// ResourceURI is the URI of the resource that was modified
+	ResourceURI string
+
+	// IsPolicy indicates whether this is a policy resource
+	IsPolicy bool
+
+	// PolicyURI is the URI of the policy (if IsPolicy is true)
+	PolicyURI string
+
+	// AgentURI is the URI of the agent affected (if applicable)
+	AgentURI string
+
+	// Action is the type of action (put, delete, etc.)
+	Action string
+
+	// Timestamp is when the event occurred
+	Timestamp time.Time
+}
+
+// CacheInvalidator is an interface for components that need to be notified of cache invalidation events
+type CacheInvalidator interface {
+	// OnCacheInvalidation is called when a resource is modified and caches should be invalidated
+	OnCacheInvalidation(ctx context.Context, event CacheInvalidationEvent) error
+}
 
 // Ensure interfaces are satisfied at compile time
 // These will be defined in their respective implementation files

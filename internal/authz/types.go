@@ -36,7 +36,9 @@ const (
 	DecisionAbstain DecisionValue = "abstain"
 )
 
-type ReasonCode string
+// ReasonCode is an alias for DecisionReason to maintain backward compatibility
+// with existing code that uses ReasonCode type
+type ReasonCode = DecisionReason
 
 const (
 	ReasonKernelAbstainShadowMode ReasonCode = "kernel_abstain_shadow_mode"

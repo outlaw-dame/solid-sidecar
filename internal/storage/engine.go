@@ -51,6 +51,9 @@ type storageEngineImpl struct {
 	// Close state
 	closed    bool
 	closeChan chan struct{}
+
+	// Cache invalidators
+	cacheInvalidators []CacheInvalidator
 }
 
 // EngineConfig holds configuration for the storage engine
@@ -713,8 +716,29 @@ func (s *storageEngineImpl) Put(ctx context.Context, resource *WriteResource) er
 		}
 	}
 
+	// Phase 19: Trigger cache invalidation for authorization caches
+	// This ensures that policy and decision caches are invalidated when resources change
+	event := CacheInvalidationEvent{
+		ResourceURI: resource.URI,
+		IsPolicy:    isPolicyResource(resource.Metadata.ResourceType),
+		PolicyURI:   resource.URI, // For policy resources, the URI is the policy URI
+		Action:      "put",
+		Timestamp:   time.Now().UTC(),
+	}
+	s.triggerCacheInvalidation(ctx, event)
+
 	s.metrics.RecordSuccess("put")
 	return nil
+}
+
+// isPolicyResource checks if a resource is a policy resource
+func isPolicyResource(resourceType ResourceType) bool {
+	switch resourceType {
+	case ResourceTypeACL, ResourceTypeACP:
+		return true
+	default:
+		return false
+	}
 }
 
 // Delete implements StorageEngine.Delete
@@ -737,6 +761,23 @@ func (s *storageEngineImpl) Delete(ctx context.Context, uri string) error {
 	if err := s.metadataStore.DeleteMetadata(ctx, uri); err != nil {
 		s.logger.Warn("Failed to delete metadata", "uri", uri, "error", err)
 	}
+
+	// Phase 19: Trigger cache invalidation for authorization caches
+	// Try to determine if this was a policy resource by checking the metadata
+	metadata, err := s.defaultBackend.GetMetadata(ctx, uri)
+	isPolicy := false
+	if err == nil && metadata != nil {
+		isPolicy = isPolicyResource(metadata.ResourceType)
+	}
+
+	event := CacheInvalidationEvent{
+		ResourceURI: uri,
+		IsPolicy:    isPolicy,
+		PolicyURI:   uri, // For policy resources, the URI is the policy URI
+		Action:      "delete",
+		Timestamp:   time.Now().UTC(),
+	}
+	s.triggerCacheInvalidation(ctx, event)
 
 	s.metrics.RecordSuccess("delete")
 	return nil
@@ -1131,6 +1172,40 @@ func (s *storageEngineImpl) Backup() BackupRestore {
 	return &backupRestoreImpl{
 		engine: s,
 		logger: s.logger.With("component", "backup_restore"),
+	}
+}
+
+// RegisterCacheInvalidator registers a cache invalidator to be notified of resource changes
+func (s *storageEngineImpl) RegisterCacheInvalidator(invalidator CacheInvalidator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cacheInvalidators = append(s.cacheInvalidators, invalidator)
+	s.logger.Info("Registered cache invalidator")
+}
+
+// UnregisterCacheInvalidator unregisters a cache invalidator
+func (s *storageEngineImpl) UnregisterCacheInvalidator(invalidator CacheInvalidator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, inv := range s.cacheInvalidators {
+		if inv == invalidator {
+			s.cacheInvalidators = append(s.cacheInvalidators[:i], s.cacheInvalidators[i+1:]...)
+			break
+		}
+	}
+	s.logger.Info("Unregistered cache invalidator")
+}
+
+// triggerCacheInvalidation triggers cache invalidation for all registered invalidators
+func (s *storageEngineImpl) triggerCacheInvalidation(ctx context.Context, event CacheInvalidationEvent) {
+	s.mu.RLock()
+	invalidators := s.cacheInvalidators
+	s.mu.RUnlock()
+
+	for _, invalidator := range invalidators {
+		if err := invalidator.OnCacheInvalidation(ctx, event); err != nil {
+			s.logger.Warn("Cache invalidation failed", "error", err)
+		}
 	}
 }
 
