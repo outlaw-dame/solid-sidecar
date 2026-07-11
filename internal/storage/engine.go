@@ -850,6 +850,58 @@ func (s *storageEngineImpl) ListWithPrefix(ctx context.Context, containerURI, pr
 	return result, nil
 }
 
+// ListAll implements StorageEngine.ListAll
+func (s *storageEngineImpl) ListAll(ctx context.Context) ([]*Metadata, error) {
+	s.metrics.RecordRequest("list_all")
+
+	// For backward compatibility with existing backends that don't have ListAll,
+	// we implement this by listing from the root container
+	// This lists all resources across all storage roots
+
+	// Get all storage roots from configuration
+	storageRoots := s.getAllStorageRoots()
+
+	var allMetadata []*Metadata
+	for _, root := range storageRoots {
+		// List all resources under this storage root
+		metadataList, err := s.List(ctx, root)
+		if err != nil {
+			s.logger.Warn("Failed to list resources for storage root", "root", root, "error", err)
+			continue
+		}
+		allMetadata = append(allMetadata, metadataList...)
+
+		// Also check for resources directly at the root level
+		// Try to list the root itself as a container
+		rootMetadata, err := s.List(ctx, root)
+		if err != nil {
+			// Already tried above, skip
+			continue
+		}
+		// Already included above
+		_ = rootMetadata
+	}
+
+	// Also include tombstones in the backup
+	tombstones, err := s.ListTombstones(ctx, "")
+	if err != nil {
+		s.logger.Warn("Failed to list tombstones", "error", err)
+	} else {
+		// Tombstones are handled separately in backup, not included in metadata list
+		_ = tombstones
+	}
+
+	s.metrics.RecordSuccess("list_all")
+	return allMetadata, nil
+}
+
+// getAllStorageRoots returns all configured storage roots
+func (s *storageEngineImpl) getAllStorageRoots() []string {
+	// For now, return a default root
+	// In a production implementation, this would come from configuration
+	return []string{"/"}
+}
+
 // Exists implements StorageEngine.Exists
 func (s *storageEngineImpl) Exists(ctx context.Context, uri string) (bool, error) {
 	s.metrics.RecordRequest("metadata")

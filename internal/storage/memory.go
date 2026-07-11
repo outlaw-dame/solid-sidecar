@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -784,62 +785,56 @@ func (b *memoryBackend) Backup(ctx context.Context, writer io.Writer) error {
 		return SanitizeError(err)
 	}
 
-	// Create backup manifest
-	manifest := map[string]interface{}{
+	// Create backup header
+	backupHeader := map[string]interface{}{
 		"backend":   b.Name(),
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"version":   CurrentStorageLayoutVersion,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
-	var resources []string
-	var metadata []string
-	var blobs []string
-	var tombstones []string
-
-	// Collect resource data
-	for uri := range b.data {
-		resources = append(resources, uri)
-		metadata = append(metadata, uri+".meta")
+	headerData, err := json.Marshal(backupHeader)
+	if err != nil {
+		return fmt.Errorf("failed to marshal backup header: %w", err)
 	}
 
-	// Collect blob data
-	for address := range b.blobs {
-		blobs = append(blobs, address)
+	// Write header with newline
+	if _, err := writer.Write(append(headerData, '\n')); err != nil {
+		return fmt.Errorf("failed to write backup header: %w", err)
 	}
 
-	// Collect tombstone data
-	for uri := range b.tombstones {
-		tombstones = append(tombstones, uri)
-	}
-
-	manifest["resources"] = resources
-	manifest["metadata"] = metadata
-	manifest["blobs"] = blobs
-	manifest["tombstones"] = tombstones
-
-	data, _ := json.MarshalIndent(manifest, "", "  ")
-	if _, err := writer.Write(append(data, '\n')); err != nil {
-		return err
-	}
-
-	// Write all resources
+	// Backup all resources
 	for uri, resource := range b.data {
-		fileHeader := fmt.Sprintf("---- FILE: %s ----\n", uri)
-		if _, err := writer.Write([]byte(fileHeader)); err != nil {
-			return err
+		backupResource := map[string]interface{}{
+			"uri":      uri,
+			"body":     string(resource.Body),
+			"metadata": resource.Metadata,
 		}
 
-		sizeHeader := fmt.Sprintf("Content-Length: %d\n\n", len(resource.Body))
-		if _, err := writer.Write([]byte(sizeHeader)); err != nil {
-			return err
+		data, err := json.Marshal(backupResource)
+		if err != nil {
+			return fmt.Errorf("failed to marshal resource: %w", err)
 		}
 
-		if _, err := writer.Write(resource.Body); err != nil {
-			return err
+		if _, err := writer.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("failed to write resource: %w", err)
+		}
+	}
+
+	// Backup tombstones
+	for uri, tombstone := range b.tombstones {
+		backupTombstone := map[string]interface{}{
+			"uri":          uri,
+			"tombstone":    tombstone,
+			"is_tombstone": true,
 		}
 
-		if _, err := writer.Write([]byte("\n")); err != nil {
-			return err
+		data, err := json.Marshal(backupTombstone)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tombstone: %w", err)
+		}
+
+		if _, err := writer.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("failed to write tombstone: %w", err)
 		}
 	}
 
@@ -862,20 +857,103 @@ func (b *memoryBackend) Restore(ctx context.Context, reader io.Reader) error {
 		return SanitizeError(err)
 	}
 
-	// Read manifest
-	var manifest map[string]interface{}
-	data, err := io.ReadAll(reader)
+	// Use buffered reader for line-by-line parsing
+	bufReader := bufio.NewReader(reader)
+
+	// Read and validate header
+	headerLine, err := bufReader.ReadString('\n')
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read backup header: %w", err)
 	}
 
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("failed to parse backup manifest: %w", err)
+	headerLine = strings.TrimSuffix(headerLine, "\n")
+	if headerLine == "" {
+		return fmt.Errorf("empty backup header")
+	}
+
+	var backupHeader map[string]interface{}
+	if err := json.Unmarshal([]byte(headerLine), &backupHeader); err != nil {
+		return fmt.Errorf("failed to parse backup header: %w", err)
 	}
 
 	// Check backend compatibility
-	if backend, ok := manifest["backend"].(string); !ok || backend != "memory" {
-		return SanitizeError(fmt.Errorf("incompatible backup: expected memory backend"))
+	if backend, ok := backupHeader["backend"].(string); !ok || backend != "memory" {
+		return SanitizeError(fmt.Errorf("incompatible backup: expected memory backend, got %s", backend))
+	}
+
+	// Restore resources
+	for {
+		line, err := bufReader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read backup line: %w", err)
+		}
+
+		line = strings.TrimSuffix(line, "\n")
+		if line == "" {
+			continue
+		}
+
+		var item map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			return fmt.Errorf("failed to parse backup item: %w", err)
+		}
+
+		// Check if this is a tombstone
+		if isTombstone, ok := item["is_tombstone"].(bool); ok && isTombstone {
+			// Restore tombstone
+			if tombstoneData, ok := item["tombstone"].(map[string]interface{}); ok {
+				tombstone := &Tombstone{}
+				if uri, ok := item["uri"].(string); ok {
+					tombstone.URI = uri
+				}
+				// Parse tombstone fields
+				if deletedAtStr, ok := tombstoneData["DeletedAt"].(string); ok {
+					if deletedAt, err := time.Parse(time.RFC3339, deletedAtStr); err == nil {
+						tombstone.DeletedAt = deletedAt
+					}
+				}
+				if deletedBy, ok := tombstoneData["DeletedBy"].(string); ok {
+					tombstone.DeletedBy = deletedBy
+				}
+				if reason, ok := tombstoneData["Reason"].(string); ok {
+					tombstone.Reason = reason
+				}
+				if restoreToken, ok := tombstoneData["RestoreToken"].(string); ok {
+					tombstone.RestoreToken = restoreToken
+				}
+				b.tombstones[tombstone.URI] = tombstone
+			}
+		} else {
+			// Restore regular resource
+			if uri, ok := item["uri"].(string); ok {
+				if body, ok := item["body"].(string); ok {
+					if metadataData, ok := item["metadata"].(map[string]interface{}); ok {
+						metadata := Metadata{}
+						// Parse metadata fields
+						if metadataURI, ok := metadataData["URI"].(string); ok {
+							metadata.URI = metadataURI
+						}
+						if resourceType, ok := metadataData["ResourceType"].(string); ok {
+							metadata.ResourceType = ResourceType(resourceType)
+						}
+						if contentType, ok := metadataData["ContentType"].(string); ok {
+							metadata.ContentType = contentType
+						}
+						// Add more metadata fields as needed
+
+						// Store the resource
+						b.data[uri] = &memoryResource{
+							URI:      uri,
+							Body:     []byte(body),
+							Metadata: metadata,
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil

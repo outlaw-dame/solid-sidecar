@@ -383,6 +383,7 @@ type StorageEngine interface {
 	// Container operations
 	List(ctx context.Context, containerURI string) ([]*Metadata, error)
 	ListWithPrefix(ctx context.Context, containerURI, prefix string) ([]*Metadata, error)
+	ListAll(ctx context.Context) ([]*Metadata, error)
 
 	// Existence checks
 	Exists(ctx context.Context, uri string) (bool, error)

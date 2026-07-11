@@ -437,6 +437,42 @@ func (b *s3Backend) Put(ctx context.Context, uri string, resource *WriteResource
 		return SanitizeError(err)
 	}
 
+	// Handle conditional writes (preconditions)
+	if resource.Preconditions.IfMatch != "" || resource.Preconditions.IfNoneMatch != "" {
+		currentResource, err := b.Get(ctx, validatedURI)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return SanitizeError(fmt.Errorf("failed to check preconditions: %w", err))
+		}
+
+		if resource.Preconditions.IfMatch != "" {
+			if resource.Preconditions.IfMatch == "*" {
+				// Requires resource to exist
+				if err != nil {
+					return ErrPreconditionFailed
+				}
+			} else {
+				// Requires specific ETag match
+				if currentResource == nil || currentResource.Metadata.ETag != resource.Preconditions.IfMatch {
+					return ErrPreconditionFailed
+				}
+			}
+		}
+
+		if resource.Preconditions.IfNoneMatch != "" {
+			if resource.Preconditions.IfNoneMatch == "*" {
+				// Requires resource to NOT exist
+				if currentResource != nil {
+					return ErrPreconditionFailed
+				}
+			} else {
+				// Requires specific ETag to NOT match
+				if currentResource != nil && currentResource.Metadata.ETag == resource.Preconditions.IfNoneMatch {
+					return ErrPreconditionFailed
+				}
+			}
+		}
+	}
+
 	key := b.s3KeyFromURI(validatedURI)
 
 	// Calculate size for quota: body size + estimated metadata size
