@@ -99,6 +99,18 @@ type EnforcementGateOptions struct {
 	// Default: true (requires multiple operators to enable enforcement)
 	RequireMultipleAuthors bool
 
+	// RequireComparisonThreshold requires CSS comparison thresholds to be met before allowing enforcement
+	// Default: true (enforcement requires passing comparison tests)
+	RequireComparisonThreshold bool
+
+	// ComparisonThresholdPercentage is the minimum percentage of matching decisions (0-100) required
+	// Default: 100 (100% match rate required for enforcement)
+	ComparisonThresholdPercentage int
+
+	// ComparisonThresholdCount is the minimum number of consecutive matching decisions required
+	// Default: 0 (disabled, use percentage only)
+	ComparisonThresholdCount int
+
 	// AuditLogger is the logger for enforcement audit events (separate from operational logs)
 	AuditLogger *slog.Logger
 
@@ -144,9 +156,12 @@ func DefaultEnforcementGateOptions() EnforcementGateOptions {
 			Mode:       CanaryModePercentage,
 			Percentage: 1, // 1% by default
 		},
-		RequireMultipleAuthors: true,
-		AuditLogger:            nil,
-		Logger:                 nil,
+		RequireMultipleAuthors:        true,
+		RequireComparisonThreshold:    false, // Disabled by default for backward compatibility; operators should enable
+		ComparisonThresholdPercentage: 100,   // 100% match rate required
+		ComparisonThresholdCount:      0,     // Disabled by default (use percentage only)
+		AuditLogger:                   nil,
+		Logger:                        nil,
 	}
 }
 
@@ -353,6 +368,13 @@ type EnforcementGate struct {
 	// Canary tracking
 	canaryRequestCount int64 // atomic counter for percentage-based canary
 
+	// CSS comparison threshold tracking
+	comparisonTotalCount  int64     // Total number of comparison results recorded
+	comparisonMatchCount  int64     // Number of matching comparison results
+	consecutiveMatchCount int64     // Number of consecutive matching results
+	thresholdMet          bool      // Whether comparison thresholds have been met
+	thresholdMetAt        time.Time // When thresholds were first met
+
 	// Metrics
 	metrics EnforcementGateMetrics
 }
@@ -402,6 +424,16 @@ func NewEnforcementGate(options EnforcementGateOptions) (*EnforcementGate, error
 		return nil, errors.New("auto-disable mismatch threshold must be between 0 and 100")
 	}
 
+	// Validate comparison threshold percentage
+	if options.ComparisonThresholdPercentage < 0 || options.ComparisonThresholdPercentage > 100 {
+		return nil, errors.New("comparison threshold percentage must be between 0 and 100")
+	}
+
+	// Validate comparison threshold count
+	if options.ComparisonThresholdCount < 0 {
+		return nil, errors.New("comparison threshold count must be non-negative")
+	}
+
 	if options.InitialMode == "" {
 		options.InitialMode = EnforcementModeShadow
 	}
@@ -411,11 +443,15 @@ func NewEnforcementGate(options EnforcementGateOptions) (*EnforcementGate, error
 	}
 
 	return &EnforcementGate{
-		options:           options,
-		mode:              options.InitialMode,
-		bypassSet:         make(map[string]struct{}),
-		closed:            false,
-		mismatchThreshold: options.AutoDisableOnMismatchThreshold,
+		options:               options,
+		mode:                  options.InitialMode,
+		bypassSet:             make(map[string]struct{}),
+		closed:                false,
+		mismatchThreshold:     options.AutoDisableOnMismatchThreshold,
+		comparisonTotalCount:  0,
+		comparisonMatchCount:  0,
+		consecutiveMatchCount: 0,
+		thresholdMet:          false,
 	}, nil
 }
 
@@ -509,6 +545,7 @@ func (g *EnforcementGate) CloseReason() string {
 
 // SetMode sets the enforcement mode
 // Returns error if enforcement is not allowed or gate is closed
+// Critical Phase 19 requirement: enforcement modes cannot be enabled without passing CSS comparison thresholds
 func (g *EnforcementGate) SetMode(mode EnforcementMode) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -521,6 +558,14 @@ func (g *EnforcementGate) SetMode(mode EnforcementMode) error {
 	if mode == EnforcementModeEnforce || mode == EnforcementModeDryRun || mode == EnforcementModeCanary {
 		if !g.options.AllowEnforcement {
 			return fmt.Errorf("%w: enforcement mode not configured as allowed", ErrEnforcementNotAllowed)
+		}
+
+		// Phase 19: Critical safety check - enforcement requires passing CSS comparison thresholds
+		// This prevents enabling enforcement without proven CSS compatibility
+		if g.options.RequireComparisonThreshold && !g.thresholdMet {
+			return fmt.Errorf("enforcement mode requires CSS comparison thresholds to be met first. Current: %d/%d matches (%.1f%%)",
+				g.comparisonMatchCount, g.comparisonTotalCount,
+				float64(g.comparisonMatchCount)/float64(g.comparisonTotalCount)*100)
 		}
 	}
 
@@ -927,6 +972,173 @@ func (g *EnforcementGate) ShouldAddCanaryHeader() bool {
 	defer g.mu.RUnlock()
 
 	return g.mode == EnforcementModeCanary && !g.closed
+}
+
+// ThresholdMet returns true if CSS comparison thresholds have been met
+// This is a critical Phase 19 requirement: enforcement cannot be enabled without passing thresholds
+func (g *EnforcementGate) ThresholdMet() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.thresholdMet
+}
+
+// ThresholdMetAt returns when the comparison thresholds were first met
+func (g *EnforcementGate) ThresholdMetAt() time.Time {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.thresholdMetAt
+}
+
+// RecordComparisonResult records the result of a CSS comparison test
+// match = true means the sidecar decision matched CSS decision
+// This updates internal counters and checks if thresholds are met
+// Thread-safe: uses mutex for all state modifications
+func (g *EnforcementGate) RecordComparisonResult(match bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.comparisonTotalCount++
+
+	if match {
+		g.comparisonMatchCount++
+		g.consecutiveMatchCount++
+
+		// Log the match
+		if g.options.Logger != nil {
+			g.options.Logger.Debug("CSS comparison match recorded",
+				"total", g.comparisonTotalCount,
+				"matches", g.comparisonMatchCount,
+				"consecutive", g.consecutiveMatchCount)
+		}
+
+		// Check if we've met the thresholds
+		// Both percentage and consecutive thresholds must be met if both are configured
+		percentageMet := false
+		consecutiveMet := false
+
+		// Check consecutive threshold
+		if g.options.ComparisonThresholdCount > 0 {
+			consecutiveMet = g.consecutiveMatchCount >= int64(g.options.ComparisonThresholdCount)
+		} else {
+			consecutiveMet = true // If not configured, consider it met
+		}
+
+		// Check percentage threshold
+		if g.options.ComparisonThresholdPercentage > 0 && g.comparisonTotalCount > 0 {
+			matchPercentage := float64(g.comparisonMatchCount) / float64(g.comparisonTotalCount) * 100
+			percentageMet = matchPercentage >= float64(g.options.ComparisonThresholdPercentage)
+		} else {
+			percentageMet = true // If not configured, consider it met
+		}
+
+		// Both must be met to trigger threshold
+		if consecutiveMet && percentageMet {
+			g.setThresholdMet()
+			return
+		}
+	} else {
+		// Reset consecutive counter on mismatch
+		g.consecutiveMatchCount = 0
+
+		// Log the mismatch
+		if g.options.Logger != nil {
+			g.options.Logger.Warn("CSS comparison mismatch recorded",
+				"total", g.comparisonTotalCount,
+				"matches", g.comparisonMatchCount,
+				"consecutive", g.consecutiveMatchCount)
+		}
+
+		// Reset threshold if it was met - a mismatch means we're no longer meeting consecutive requirements
+		// Note: The threshold can be re-met later if we achieve the required consecutive matches again
+		if g.thresholdMet {
+			g.thresholdMet = false
+			g.thresholdMetAt = time.Time{}
+			if g.options.Logger != nil {
+				g.options.Logger.Info("CSS comparison threshold reset due to mismatch")
+			}
+		}
+	}
+
+	// If we haven't met thresholds yet, log current progress
+	if !g.thresholdMet && g.options.Logger != nil && g.comparisonTotalCount > 0 {
+		var matchRate float64
+		if g.comparisonTotalCount > 0 {
+			matchRate = float64(g.comparisonMatchCount) / float64(g.comparisonTotalCount) * 100
+		}
+		g.options.Logger.Info("CSS comparison threshold progress",
+			"matches", g.comparisonMatchCount,
+			"total", g.comparisonTotalCount,
+			"match_rate_percentage", matchRate,
+			"required_percentage", g.options.ComparisonThresholdPercentage,
+			"consecutive_matches", g.consecutiveMatchCount,
+			"required_consecutive", g.options.ComparisonThresholdCount)
+	}
+}
+
+// setThresholdMet marks that comparison thresholds have been met
+// Must be called with g.mu held (Lock, not RLock)
+func (g *EnforcementGate) setThresholdMet() {
+	if !g.thresholdMet {
+		g.thresholdMet = true
+		g.thresholdMetAt = time.Now()
+		g.metrics.RecordAuditEvent()
+
+		if g.options.Logger != nil {
+			g.options.Logger.Info("CSS comparison thresholds MET - enforcement can be enabled",
+				"matches", g.comparisonMatchCount,
+				"total", g.comparisonTotalCount,
+				"match_rate_percentage", float64(g.comparisonMatchCount)/float64(g.comparisonTotalCount)*100,
+				"consecutive_matches", g.consecutiveMatchCount,
+				"timestamp", g.thresholdMetAt)
+		}
+
+		if g.options.AuditLogger != nil {
+			g.options.AuditLogger.Info("AUDIT: CSS comparison thresholds met",
+				"matches", g.comparisonMatchCount,
+				"total", g.comparisonTotalCount,
+				"timestamp", g.thresholdMetAt.UTC().Format(time.RFC3339))
+		}
+	}
+}
+
+// ResetComparisonResults resets all comparison tracking counters
+// Useful for testing or when starting fresh comparison runs
+func (g *EnforcementGate) ResetComparisonResults() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.comparisonTotalCount = 0
+	g.comparisonMatchCount = 0
+	g.consecutiveMatchCount = 0
+	g.thresholdMet = false
+	g.thresholdMetAt = time.Time{}
+
+	if g.options.Logger != nil {
+		g.options.Logger.Info("CSS comparison results reset")
+	}
+}
+
+// GetComparisonStats returns current comparison statistics
+func (g *EnforcementGate) GetComparisonStats() (total int64, matches int64, consecutive int64, met bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.comparisonTotalCount, g.comparisonMatchCount, g.consecutiveMatchCount, g.thresholdMet
+}
+
+// GetMatchPercentage returns the current match percentage (0-100)
+func (g *EnforcementGate) GetMatchPercentage() float64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.comparisonTotalCount == 0 {
+		return 0
+	}
+	return float64(g.comparisonMatchCount) / float64(g.comparisonTotalCount) * 100
+}
+
+// ResetComparisonThresholds resets all comparison tracking (alias for ResetComparisonResults for backward compatibility)
+func (g *EnforcementGate) ResetComparisonThresholds() {
+	g.ResetComparisonResults()
 }
 
 // EnforcementGateMiddleware creates middleware that checks the enforcement gate

@@ -1,7 +1,7 @@
 // Package conformance provides comprehensive Solid protocol conformance testing
 // for Phase 20: Solid Conformance and Interoperability Suite.
 //
-// This file implements content negotiation conformance tests.
+// This file implements content negotiation conformance testing.
 package conformance
 
 import (
@@ -42,24 +42,6 @@ type ContentNegotiationTestResult struct {
 	EndTime             string            `json:"end_time"`
 	Severity            string            `json:"severity"`
 	SolidSpecRef        string            `json:"solid_spec_ref,omitempty"`
-}
-
-// ConformanceTestResult for interface compatibility
-type ConformanceTestResult struct {
-	TestID          string `json:"test_id"`
-	TestName        string `json:"test_name"`
-	TestCategory    string `json:"test_category"`
-	TestDescription string `json:"test_description"`
-	TestStatus      string `json:"test_status"` // "passed", "failed", "skipped", "error"
-	ErrorMessage    string `json:"error_message,omitempty"`
-	ErrorDetails    string `json:"error_details,omitempty"`
-	StartTime       string `json:"start_time"`
-	EndTime         string `json:"end_time"`
-	DurationMs      int64  `json:"duration_ms"`
-	Expectation     string `json:"expectation"`
-	ActualResult    string `json:"actual_result"`
-	Severity        string `json:"severity"`                 // "critical", "high", "medium", "low"
-	SolidSpecRef    string `json:"solid_spec_ref,omitempty"` // Reference to Solid spec
 }
 
 // NewContentNegotiationConformanceTests creates a new content negotiation test suite
@@ -176,8 +158,8 @@ func (c *ContentNegotiationConformanceTests) Run(ctx context.Context, serverURL 
 		{
 			name:             "No Accept Header",
 			path:             "/resource",
-			acceptHeader:     "",
-			expectedMimeType: "", // Server default is acceptable
+			acceptHeader:     "", // Server default is acceptable
+			expectedMimeType: "",
 			severity:         "low",
 			specRef:          "https://datatracker.ietf.org/doc/html/rfc7231#section-5.3.5",
 		},
