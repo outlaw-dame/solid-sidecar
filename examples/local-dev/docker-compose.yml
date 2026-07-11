@@ -1,0 +1,85 @@
+version: '3.8'
+
+# Local Development Environment for Solid Sidecar
+#
+# This docker-compose file sets up a complete local development environment
+# including:
+# - Community Solid Server (CSS) as the backend
+# - solid-sidecar in shadow mode
+# - A sample Solid pod for testing
+#
+# Usage:
+#   docker-compose up -d
+#
+# The sidecar will be available at http://localhost:8080
+# CSS will be available at http://localhost:3000
+
+services:
+  # Community Solid Server (CSS)
+  css:
+    image: solidproject/community-server:6.0.0
+    container_name: solid-css
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - css-data:/data
+      - ./css-config.json:/config.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/.well-known/solid"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Solid Sidecar
+  sidecar:
+    image: ghcr.io/outlaw-dame/solid-sidecar:latest
+    # For local development, build the image first:
+    # docker build -t solid-sidecar-local .
+    # Then uncomment the following and comment the image line above:
+    # build:
+    #   context: ../..
+    #   dockerfile: Dockerfile
+    container_name: solid-sidecar
+    ports:
+      - "8080:8080"
+    environment:
+      # Shadow mode - compares with CSS but doesn't enforce
+      - SIDECAR_MODE=shadow
+      - CSS_COMPARISON_ENABLED=true
+      - CSS_BASE_URL=http://css:3000
+      - SIDECAR_PORT=8080
+      - SIDECAR_LOG_LEVEL=debug
+      - SIDECAR_METRICS_ENABLED=true
+      - SIDECAR_HEALTH_CHECK_ENABLED=true
+    depends_on:
+      css:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: solid-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  css-data:
+  redis-data:
