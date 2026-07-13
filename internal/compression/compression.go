@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Response compression constants
@@ -176,7 +178,7 @@ func (DefaultConfig) Requests() RequestsConfig {
 	return RequestsConfig{
 		// Must default to false until limits, threat model, and CSS compatibility are proven
 		Enabled:              false,
-		AllowedEncodings:     []string{"gzip"},
+		AllowedEncodings:     []string{"gzip", "zstd"},
 		MaxDecompressedBytes: 10485760, // 10 MiB
 		ZstdEnabled:          false,
 	}
@@ -454,11 +456,37 @@ func compressGzip(data []byte, level int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// compressZstd compresses data with Zstd (placeholder - would use actual zstd library)
+// compressZstd compresses data with Zstd
 func compressZstd(data []byte, level int) ([]byte, error) {
-	// Placeholder: In a real implementation, this would use the zstd library
-	// For now, return an error indicating zstd is not implemented
-	return nil, errors.New("zstd compression not implemented - enable with explicit feature flag")
+	// Convert level to zstd encoder level
+	// klauspost/compress zstd uses EncoderLevel constants
+	encoderLevel := zstd.SpeedDefault
+	if level > 0 {
+		// Map our 1-22 level to zstd's level system
+		encoderLevel = zstd.EncoderLevelFromZstd(level)
+	} else if level == 0 {
+		encoderLevel = zstd.SpeedDefault
+	}
+
+	// Create buffer for compressed data
+	var buf bytes.Buffer
+	encoder, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(encoderLevel))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+
+	// Write data
+	if _, err := encoder.Write(data); err != nil {
+		encoder.Close()
+		return nil, fmt.Errorf("failed to write zstd compressed data: %w", err)
+	}
+
+	// Close encoder to finalize compression
+	if err := encoder.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close zstd encoder: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // decompressRequestBody decompresses the request body if it's compressed
@@ -484,7 +512,7 @@ func decompressRequestBody(req *http.Request, cfg RequestsConfig) (io.ReadCloser
 		return decompressGzip(req.Body, cfg.MaxDecompressedBytes)
 	case EncodingZstd:
 		if cfg.ZstdEnabled {
-			return nil, errors.New("zstd decompression not implemented")
+			return decompressZstd(req.Body, cfg.MaxDecompressedBytes)
 		}
 		// Zstd not enabled, return original body
 		return req.Body, nil
@@ -545,17 +573,62 @@ func decompressGzip(body io.ReadCloser, maxDecompressedBytes int64) (io.ReadClos
 	}, nil
 }
 
+// decompressZstd decompresses a zstd-compressed body
+func decompressZstd(body io.ReadCloser, maxDecompressedBytes int64) (io.ReadCloser, error) {
+	// Create zstd decoder
+	decoder, err := zstd.NewReader(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+
+	// Create a limited reader for the decompressed data
+	limitedReader := &io.LimitedReader{
+		R: decoder,
+		N: maxDecompressedBytes + 1, // +1 to detect overflow
+	}
+
+	// Create a pipe to handle the streaming decompression
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer decoder.Close()
+		defer pw.Close()
+
+		// Use a buffered reader for efficiency
+		bufReader := bufio.NewReader(limitedReader)
+		if _, err := io.Copy(pw, bufReader); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		// Check if we exceeded the limit
+		if limitedReader.N == 0 {
+			pw.CloseWithError(fmt.Errorf("decompressed body exceeds maximum size of %d bytes", maxDecompressedBytes))
+		}
+	}()
+
+	return &decompressReadCloser{
+		Reader: pr,
+		body:   body,
+		zstd:   decoder,
+	}, nil
+}
+
 // decompressReadCloser wraps an io.ReadCloser to properly clean up resources
 type decompressReadCloser struct {
 	io.Reader
-	body io.ReadCloser
-	gz   *gzip.Reader
+	body   io.ReadCloser
+	gz     *gzip.Reader
+	zstd   *zstd.Decoder
 }
 
 // Close implements io.ReadCloser
 func (d *decompressReadCloser) Close() error {
 	if d.gz != nil {
 		d.gz.Close()
+	}
+	if d.zstd != nil {
+		d.zstd.Close()
 	}
 	if d.body != nil {
 		return d.body.Close()
