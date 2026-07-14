@@ -39,7 +39,7 @@ type ResolvedDpopKeyStoreConfig = Omit<
   Required<DpopKeyStoreConfig>,
   'storage'
 > & {
-  storage?: DpopKeyStorage;
+  storage: DpopKeyStorage | undefined;
 };
 
 export const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<
@@ -178,7 +178,7 @@ export class SecureKeyStore implements DpopKeyStorage {
       privateKey: JSON.parse(
         this.decrypt(stored.encryptedPrivateKey)
       ) as JsonWebKey,
-      kid: stored.kid,
+      ...(stored.kid && { kid: stored.kid }),
       createdAt: stored.createdAt,
     };
   }
@@ -187,7 +187,7 @@ export class SecureKeyStore implements DpopKeyStorage {
     this.storage.set(kid, {
       publicKey: keyPair.publicKey,
       encryptedPrivateKey: this.encrypt(JSON.stringify(keyPair.privateKey)),
-      kid: keyPair.kid,
+      ...(keyPair.kid && { kid: keyPair.kid }),
       createdAt: keyPair.createdAt,
     });
     if (this.activeKeyId === null) {
@@ -369,9 +369,10 @@ export class DpopKeyStore {
       );
     }
 
+    const algorithm = this.getAlgorithmFromKey(keyPair.publicKey);
     const header: DpopHeader = {
       typ: 'dpop+jwt',
-      alg: this.getAlgorithmFromKey(keyPair.publicKey),
+      alg: algorithm,
       jwk: this.toPublicJwk(keyPair.publicKey),
     };
     const normalizedUrl = new URL(options.url);
@@ -393,7 +394,7 @@ export class DpopKeyStore {
     const signature = await this.sign(
       signingInput,
       keyPair.privateKey,
-      header.alg
+      algorithm
     );
     const encodedSignature = base64UrlEncode(signature);
     return {
