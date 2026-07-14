@@ -617,9 +617,9 @@ func decompressZstd(body io.ReadCloser, maxDecompressedBytes int64) (io.ReadClos
 // decompressReadCloser wraps an io.ReadCloser to properly clean up resources
 type decompressReadCloser struct {
 	io.Reader
-	body   io.ReadCloser
-	gz     *gzip.Reader
-	zstd   *zstd.Decoder
+	body io.ReadCloser
+	gz   *gzip.Reader
+	zstd *zstd.Decoder
 }
 
 // Close implements io.ReadCloser
