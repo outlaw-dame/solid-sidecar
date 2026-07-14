@@ -1,0 +1,61 @@
+name: TypeScript SDK DPoP baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/auth/dpop-keystore.ts'
+      - 'sdk/ts/test/dpop-keystore-security.test.ts'
+      - '.github/workflows/typescript-sdk-dpop-baseline.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdk/ts/src/auth/dpop-keystore.ts'
+      - 'sdk/ts/test/dpop-keystore-security.test.ts'
+      - '.github/workflows/typescript-sdk-dpop-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-dpop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify DPoP key-store baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run strict SDK typecheck and isolate DPoP diagnostics
+        run: |
+          set -o pipefail
+          npm run typecheck > typecheck.log 2>&1 || true
+          cat typecheck.log
+          if grep -Fq 'src/auth/dpop-keystore.ts' typecheck.log; then
+            echo 'dpop-keystore.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+      - name: Run focused DPoP security tests
+        run: npx jest --runInBand test/dpop-keystore-security.test.ts
+      - name: Verify structural security invariants
+        run: |
+          ! grep -Fq '...(jwk.d && { d: jwk.d })' src/auth/dpop-keystore.ts
+          ! grep -Fq 'export { InMemoryKeyStore, SecureKeyStore };' src/auth/dpop-keystore.ts
+          ! grep -Fq 'export type { DpopKeyStorage };' src/auth/dpop-keystore.ts
+          grep -Fq "dsaEncoding: 'ieee-p1363'" src/auth/dpop-keystore.ts
+          grep -Fq "crypto.createHash('sha256').update(encryptionKey" src/auth/dpop-keystore.ts
+
+# Trigger EC-size compatibility repair.
