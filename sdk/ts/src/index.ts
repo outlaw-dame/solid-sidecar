@@ -155,6 +155,7 @@ export class SolidSidecarClient {
     this.http = new SolidSidecarHttpClient({
       baseUrl: this.config.baseUrl,
       timeout: this.config.timeout,
+      defaultTimeout: this.config.timeout,
       maxRetries: this.config.maxRetries,
       logger: this.config.logger,
     });
@@ -173,7 +174,7 @@ export class SolidSidecarClient {
   ): AuthManager {
     this.authManagerInstance = new AuthManager({
       ...config,
-      issuerUrl: config.issuerUrl || this.config.baseUrl,
+      issuerUrl: config.issuerUrl ?? this.config.baseUrl,
     });
 
     const httpClientConfig = this.http.getConfig();
