@@ -12,7 +12,6 @@ import {
   environment,
   generateUuid,
   nullLogger,
-  sha256Base64UrlSync,
 } from '../utils';
 
 export type DpopAlgorithm =
@@ -41,6 +40,18 @@ type ResolvedDpopKeyStoreConfig = Omit<
 > & {
   storage: DpopKeyStorage | undefined;
 };
+
+function base64UrlEncodeBytes(value: Uint8Array): string {
+  return Buffer.from(value).toString('base64url');
+}
+
+function sha256Base64UrlBytes(value: string): string {
+  const crypto = require('crypto');
+  return crypto
+    .createHash('sha256')
+    .update(value, 'utf8')
+    .digest('base64url');
+}
 
 export const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<
   ResolvedDpopKeyStoreConfig,
@@ -74,9 +85,7 @@ export class InMemoryKeyStore implements DpopKeyStorage {
 
   public async setKey(kid: string, keyPair: DpopKeyPair): Promise<void> {
     this.keys.set(kid, keyPair);
-    if (this.activeKeyId === null) {
-      this.activeKeyId = kid;
-    }
+    if (this.activeKeyId === null) this.activeKeyId = kid;
   }
 
   public async deleteKey(kid: string): Promise<void> {
@@ -97,9 +106,7 @@ export class InMemoryKeyStore implements DpopKeyStorage {
   }
 
   public async setActiveKey(kid: string): Promise<void> {
-    if (!this.keys.has(kid)) {
-      throw new Error(`Key ${kid} not found`);
-    }
+    if (!this.keys.has(kid)) throw new Error(`Key ${kid} not found`);
     this.activeKeyId = kid;
   }
 
@@ -134,17 +141,12 @@ export class SecureKeyStore implements DpopKeyStorage {
   private encrypt(data: string): string {
     const crypto = require('crypto');
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv(
-      'aes-256-gcm',
-      this.encryptionKey,
-      iv
-    );
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
     const ciphertext = Buffer.concat([
       cipher.update(data, 'utf8'),
       cipher.final(),
     ]);
-    const authTag = cipher.getAuthTag();
-    return Buffer.concat([iv, authTag, ciphertext]).toString('base64');
+    return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64');
   }
 
   private decrypt(encoded: string): string {
@@ -153,31 +155,24 @@ export class SecureKeyStore implements DpopKeyStorage {
     if (data.length < 29) {
       throw new Error('Encrypted DPoP key record is malformed');
     }
-    const iv = data.subarray(0, 12);
-    const authTag = data.subarray(12, 28);
-    const ciphertext = data.subarray(28);
     const decipher = crypto.createDecipheriv(
       'aes-256-gcm',
       this.encryptionKey,
-      iv
+      data.subarray(0, 12)
     );
-    decipher.setAuthTag(authTag);
+    decipher.setAuthTag(data.subarray(12, 28));
     return Buffer.concat([
-      decipher.update(ciphertext),
+      decipher.update(data.subarray(28)),
       decipher.final(),
     ]).toString('utf8');
   }
 
   public async getKey(kid: string): Promise<DpopKeyPair | null> {
     const stored = this.storage.get(kid);
-    if (!stored) {
-      return null;
-    }
+    if (!stored) return null;
     return {
       publicKey: stored.publicKey,
-      privateKey: JSON.parse(
-        this.decrypt(stored.encryptedPrivateKey)
-      ) as JsonWebKey,
+      privateKey: JSON.parse(this.decrypt(stored.encryptedPrivateKey)) as JsonWebKey,
       ...(stored.kid && { kid: stored.kid }),
       createdAt: stored.createdAt,
     };
@@ -190,9 +185,7 @@ export class SecureKeyStore implements DpopKeyStorage {
       ...(keyPair.kid && { kid: keyPair.kid }),
       createdAt: keyPair.createdAt,
     });
-    if (this.activeKeyId === null) {
-      this.activeKeyId = kid;
-    }
+    if (this.activeKeyId === null) this.activeKeyId = kid;
   }
 
   public async deleteKey(kid: string): Promise<void> {
@@ -207,15 +200,11 @@ export class SecureKeyStore implements DpopKeyStorage {
   }
 
   public async getActiveKey(): Promise<DpopKeyPair | null> {
-    return this.activeKeyId === null
-      ? null
-      : this.getKey(this.activeKeyId);
+    return this.activeKeyId === null ? null : this.getKey(this.activeKeyId);
   }
 
   public async setActiveKey(kid: string): Promise<void> {
-    if (!this.storage.has(kid)) {
-      throw new Error(`Key ${kid} not found`);
-    }
+    if (!this.storage.has(kid)) throw new Error(`Key ${kid} not found`);
     this.activeKeyId = kid;
   }
 }
@@ -231,17 +220,12 @@ export class DpopKeyStore {
       ...config,
       storage: config.storage,
       defaultAlgorithm:
-        config.defaultAlgorithm ??
-        DEFAULT_DPOP_KEYSTORE_CONFIG.defaultAlgorithm,
-      ecKeySize:
-        config.ecKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.ecKeySize,
-      rsaKeySize:
-        config.rsaKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rsaKeySize,
-      autoRotate:
-        config.autoRotate ?? DEFAULT_DPOP_KEYSTORE_CONFIG.autoRotate,
+        config.defaultAlgorithm ?? DEFAULT_DPOP_KEYSTORE_CONFIG.defaultAlgorithm,
+      ecKeySize: config.ecKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.ecKeySize,
+      rsaKeySize: config.rsaKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rsaKeySize,
+      autoRotate: config.autoRotate ?? DEFAULT_DPOP_KEYSTORE_CONFIG.autoRotate,
       rotationInterval:
-        config.rotationInterval ??
-        DEFAULT_DPOP_KEYSTORE_CONFIG.rotationInterval,
+        config.rotationInterval ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rotationInterval,
       maxKeys: config.maxKeys ?? DEFAULT_DPOP_KEYSTORE_CONFIG.maxKeys,
       logger: config.logger ?? DEFAULT_DPOP_KEYSTORE_CONFIG.logger,
     };
@@ -254,7 +238,6 @@ export class DpopKeyStore {
   ): Promise<DpopKeyPair> {
     const crypto = require('crypto');
     let generated: { publicKey: JsonWebKey; privateKey: JsonWebKey };
-
     if (algorithm.startsWith('ES')) {
       const curves: Record<string, string> = {
         ES256: 'P-256',
@@ -279,7 +262,6 @@ export class DpopKeyStore {
         privateKeyEncoding: { type: 'pkcs8', format: 'jwk' },
       });
     }
-
     generated.publicKey.alg = algorithm;
     generated.privateKey.alg = algorithm;
     return {
@@ -294,19 +276,14 @@ export class DpopKeyStore {
     algorithm: DpopAlgorithm = this.config.defaultAlgorithm
   ): Promise<DpopKeyPair> {
     if (!environment.isNode) {
-      throw new Error(
-        'DPoP key generation currently requires the Node.js crypto runtime'
-      );
+      throw new Error('DPoP key generation currently requires Node.js crypto');
     }
     const keyPair = await this.generateNodeKeyPair(algorithm);
     const kid = keyPair.kid ?? generateUuid();
     keyPair.kid = kid;
     await this.storage.setKey(kid, keyPair);
     await this.storage.setActiveKey(kid);
-    this.logger.debug('Generated new DPoP key pair', {
-      kid,
-      algorithm,
-    });
+    this.logger.debug('Generated new DPoP key pair', { kid, algorithm });
     return keyPair;
   }
 
@@ -331,29 +308,22 @@ export class DpopKeyStore {
   }
 
   public async rotateKeyPair(): Promise<DpopKeyPair> {
-    const newKeyPair = await this.generateKeyPair(
-      this.config.defaultAlgorithm
-    );
-    const keys = await Promise.all(
+    const newKeyPair = await this.generateKeyPair(this.config.defaultAlgorithm);
+    const records = await Promise.all(
       (await this.storage.listKeys()).map(async kid => ({
         kid,
         pair: await this.storage.getKey(kid),
       }))
     );
-    const removable = keys
-      .filter(
-        item =>
-          item.kid !== newKeyPair.kid && item.pair !== null
-      )
+    const removable = records
+      .filter(item => item.kid !== newKeyPair.kid && item.pair !== null)
       .sort(
         (left, right) =>
           (left.pair?.createdAt ?? 0) - (right.pair?.createdAt ?? 0)
       );
     while ((await this.storage.listKeys()).length > this.config.maxKeys) {
       const oldest = removable.shift();
-      if (!oldest) {
-        break;
-      }
+      if (!oldest) break;
       await this.storage.deleteKey(oldest.kid);
     }
     return newKeyPair;
@@ -364,11 +334,8 @@ export class DpopKeyStore {
   ): Promise<DpopProof> {
     const keyPair = await this.storage.getActiveKey();
     if (!keyPair) {
-      throw new Error(
-        'No active DPoP key pair available. Generate a key pair first.'
-      );
+      throw new Error('No active DPoP key pair available. Generate a key pair first.');
     }
-
     const algorithm = this.getAlgorithmFromKey(keyPair.publicKey);
     const header: DpopHeader = {
       typ: 'dpop+jwt',
@@ -384,19 +351,14 @@ export class DpopKeyStore {
       jti: options.jti ?? generateUuid(),
       iat: options.iat ?? Math.floor(Date.now() / 1000),
       ...(options.accessToken && {
-        ath: sha256Base64UrlSync(options.accessToken),
+        ath: sha256Base64UrlBytes(options.accessToken),
       }),
     };
-
     const encodedHeader = base64UrlEncode(JSON.stringify(header));
     const encodedClaims = base64UrlEncode(JSON.stringify(claims));
     const signingInput = `${encodedHeader}.${encodedClaims}`;
-    const signature = await this.sign(
-      signingInput,
-      keyPair.privateKey,
-      algorithm
-    );
-    const encodedSignature = base64UrlEncode(signature);
+    const signature = await this.sign(signingInput, keyPair.privateKey, algorithm);
+    const encodedSignature = base64UrlEncodeBytes(signature);
     return {
       jwt: `${signingInput}.${encodedSignature}`,
       header,
@@ -407,13 +369,7 @@ export class DpopKeyStore {
 
   private getAlgorithmFromKey(jwk: JsonWebKey): DpopAlgorithm {
     const supported = new Set<DpopAlgorithm>([
-      'ES256',
-      'ES384',
-      'ES512',
-      'RS256',
-      'RS384',
-      'RS512',
-      'EdDSA',
+      'ES256', 'ES384', 'ES512', 'RS256', 'RS384', 'RS512', 'EdDSA',
     ]);
     if (jwk.alg && supported.has(jwk.alg as DpopAlgorithm)) {
       return jwk.alg as DpopAlgorithm;
@@ -449,17 +405,11 @@ export class DpopKeyStore {
       throw new Error('DPoP signing currently requires Node.js crypto');
     }
     const crypto = require('crypto');
-    const keyObject = crypto.createPrivateKey({
-      key: privateKey,
-      format: 'jwk',
-    });
-    const digest =
-      algorithm === 'EdDSA' ? null : `sha${algorithm.slice(2)}`;
+    const keyObject = crypto.createPrivateKey({ key: privateKey, format: 'jwk' });
+    const digest = algorithm === 'EdDSA' ? null : `sha${algorithm.slice(2)}`;
     return crypto.sign(digest, Buffer.from(data, 'utf8'), {
       key: keyObject,
-      ...(algorithm.startsWith('ES') && {
-        dsaEncoding: 'ieee-p1363',
-      }),
+      ...(algorithm.startsWith('ES') && { dsaEncoding: 'ieee-p1363' }),
     });
   }
 
