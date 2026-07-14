@@ -58,4 +58,4 @@ jobs:
           grep -Fq "dsaEncoding: 'ieee-p1363'" src/auth/dpop-keystore.ts
           grep -Fq "crypto.createHash('sha256').update(encryptionKey" src/auth/dpop-keystore.ts
 
-# Trigger byte-preserving DPoP repair.
+# Trigger EC-size compatibility repair.
