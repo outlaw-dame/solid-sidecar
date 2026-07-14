@@ -1,0 +1,54 @@
+name: TypeScript SDK security policy
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/security/**'
+      - 'sdk/ts/test/network-policy.test.ts'
+      - '.github/workflows/typescript-sdk.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdk/ts/src/security/**'
+      - 'sdk/ts/test/network-policy.test.ts'
+      - '.github/workflows/typescript-sdk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck and test network policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: sdk/ts/package.json
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck network policy
+        run: >-
+          npx tsc --noEmit --strict --target ES2020 --module commonjs
+          --moduleResolution node --lib ES2020,DOM --esModuleInterop
+          --skipLibCheck src/security/network-policy.ts
+
+      - name: Test network policy
+        run: npm test -- --runTestsByPath test/network-policy.test.ts
