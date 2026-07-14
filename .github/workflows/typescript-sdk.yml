@@ -35,21 +35,43 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: sdk/ts/package.json
 
       - name: Install dependencies without lifecycle scripts
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm install --ignore-scripts --no-audit --no-fund 2>&1 | tee install.log
 
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
 
       - name: Test
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
 
       - name: Build
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
 
       - name: Verify package contents
-        run: npm run pack:check
+        run: |
+          set -o pipefail
+          npm run pack:check 2>&1 | tee pack.log
+
+      - name: Upload verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-sdk-verify-${{ github.run_id }}
+          path: |
+            sdk/ts/install.log
+            sdk/ts/typecheck.log
+            sdk/ts/test.log
+            sdk/ts/build.log
+            sdk/ts/pack.log
+          if-no-files-found: warn
+          retention-days: 7
