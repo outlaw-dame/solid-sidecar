@@ -23,9 +23,7 @@
     }
   },
   "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
+    "dist"
   ],
   "scripts": {
     "clean": "rm -rf dist coverage",
