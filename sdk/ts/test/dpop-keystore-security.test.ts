@@ -3,6 +3,7 @@ import {
   DpopKeyStore,
   InMemoryKeyStore,
   SecureKeyStore,
+  type DpopKeyStoreConfig,
 } from '../src/auth/dpop-keystore';
 
 function decodeJwtPart<T>(part: string): T {
@@ -35,13 +36,17 @@ describe('DPoP key-store security baseline', () => {
       iat: 1234,
     });
 
-    const [encodedHeader, encodedClaims, encodedSignature] = proof.jwt.split('.');
+    const parts = proof.jwt.split('.');
+    expect(parts).toHaveLength(3);
+    const encodedHeader = parts[0]!;
+    const encodedClaims = parts[1]!;
+    const encodedSignature = parts[2]!;
     expect(decodeJwtPart(encodedHeader)).toEqual(proof.header);
     expect(decodeJwtPart(encodedClaims)).toEqual(proof.claims);
     expect(Buffer.from(encodedSignature, 'base64url')).toHaveLength(64);
 
     const publicKey = createPublicKey({
-      key: keyPair.publicKey,
+      key: keyPair.publicKey as globalThis.JsonWebKey,
       format: 'jwk',
     });
     expect(
@@ -67,7 +72,7 @@ describe('DPoP key-store security baseline', () => {
   });
 
   it('retains defaults when optional values are explicitly undefined', async () => {
-    const store = new DpopKeyStore({
+    const explicitUndefinedConfig = {
       defaultAlgorithm: undefined,
       ecKeySize: undefined,
       rsaKeySize: undefined,
@@ -75,7 +80,8 @@ describe('DPoP key-store security baseline', () => {
       rotationInterval: undefined,
       maxKeys: undefined,
       logger: undefined,
-    });
+    } as unknown as DpopKeyStoreConfig;
+    const store = new DpopKeyStore(explicitUndefinedConfig);
     const generated = await store.generateKeyPair();
     expect(generated.publicKey.alg).toBe('ES256');
   });
