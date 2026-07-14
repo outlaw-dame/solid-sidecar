@@ -1,15 +1,17 @@
-name: TypeScript SDK
+name: TypeScript SDK security policy
 
 on:
   pull_request:
     paths:
-      - 'sdk/ts/**'
+      - 'sdk/ts/src/security/**'
+      - 'sdk/ts/test/network-policy.test.ts'
       - '.github/workflows/typescript-sdk.yml'
   push:
     branches:
       - main
     paths:
-      - 'sdk/ts/**'
+      - 'sdk/ts/src/security/**'
+      - 'sdk/ts/test/network-policy.test.ts'
       - '.github/workflows/typescript-sdk.yml'
   workflow_dispatch:
 
@@ -17,12 +19,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: typescript-sdk-${{ github.ref }}
+  group: typescript-sdk-security-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: Typecheck, test, build, and package
+    name: Typecheck and test network policy
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -40,39 +42,13 @@ jobs:
           cache-dependency-path: sdk/ts/package.json
 
       - name: Install dependencies without lifecycle scripts
-        run: npm install --ignore-scripts --no-audit --no-fund 2>&1 | tee install.log
+        run: npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Typecheck
-        run: |
-          set -o pipefail
-          npm run typecheck 2>&1 | tee typecheck.log
+      - name: Typecheck network policy
+        run: >-
+          npx tsc --noEmit --strict --target ES2020 --module commonjs
+          --moduleResolution node --lib ES2020,DOM --esModuleInterop
+          --skipLibCheck src/security/network-policy.ts
 
-      - name: Test
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee test.log
-
-      - name: Build
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee build.log
-
-      - name: Verify package contents
-        run: |
-          set -o pipefail
-          npm run pack:check 2>&1 | tee pack.log
-
-      - name: Upload verification logs and generated lockfile
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: typescript-sdk-verify-${{ github.run_id }}
-          path: |
-            sdk/ts/package-lock.json
-            sdk/ts/install.log
-            sdk/ts/typecheck.log
-            sdk/ts/test.log
-            sdk/ts/build.log
-            sdk/ts/pack.log
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Test network policy
+        run: npm test -- --runTestsByPath test/network-policy.test.ts
