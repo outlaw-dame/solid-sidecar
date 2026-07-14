@@ -62,12 +62,13 @@ jobs:
           set -o pipefail
           npm run pack:check 2>&1 | tee pack.log
 
-      - name: Upload verification logs
+      - name: Upload verification logs and generated lockfile
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: typescript-sdk-verify-${{ github.run_id }}
           path: |
+            sdk/ts/package-lock.json
             sdk/ts/install.log
             sdk/ts/typecheck.log
             sdk/ts/test.log
