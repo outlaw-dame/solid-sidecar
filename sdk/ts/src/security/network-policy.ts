@@ -190,7 +190,8 @@ function canonicalScopeUrl(input: string): URL | null {
 
 /**
  * Checks scope containment using canonical origin and path-segment boundaries.
- * Query strings and fragments never widen access.
+ * Relative resources are resolved against the canonical scope URL. Query
+ * strings and fragments never widen access.
  */
 export function isResourceWithinScope(resource: string, scope: string): boolean {
   const scopeUrl = canonicalScopeUrl(scope);
