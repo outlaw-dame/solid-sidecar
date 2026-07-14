@@ -22,7 +22,7 @@ import type {
 } from '../types';
 import { AuthenticationError, ValidationError } from '../types';
 import { DpopKeyStore, DEFAULT_DPOP_KEYSTORE_CONFIG, type DpopKeyStoreConfig } from './dpop-keystore';
-import { generateUuid, base64UrlEncode, sha256Base64UrlSync } from '../utils';
+import { generateUuid, base64UrlEncode, nullLogger, sha256Base64UrlSync } from '../utils';
 
 // ============================================================================
 // Authentication Configuration
@@ -60,10 +60,18 @@ export interface AuthManagerConfig {
 /**
  * Default authentication configuration
  */
-export const DEFAULT_AUTH_MANAGER_CONFIG: Partial<AuthManagerConfig> = {
+type ResolvedAuthManagerConfig = Omit<Required<AuthManagerConfig>, 'clientSecret'> & {
+  clientSecret?: string;
+};
+
+export const DEFAULT_AUTH_MANAGER_CONFIG: Pick<
+  ResolvedAuthManagerConfig,
+  'scopes' | 'useDpop' | 'dpopKeyStoreConfig' | 'logger'
+> = {
   scopes: ['openid', 'profile', 'webid'],
   useDpop: true,
   dpopKeyStoreConfig: DEFAULT_DPOP_KEYSTORE_CONFIG,
+  logger: nullLogger,
 };
 
 // ============================================================================
@@ -268,7 +276,7 @@ export function generatePkcePair(): PkcePair {
  * - Session management
  */
 export class AuthManager {
-  private readonly config: Required<AuthManagerConfig>;
+  private readonly config: ResolvedAuthManagerConfig;
   private readonly dpopKeyStore: DpopKeyStore;
   private readonly tokenStorage: TokenStorage;
   private readonly logger: SolidSidecarLogger;
@@ -289,7 +297,7 @@ export class AuthManager {
     this.config = {
       ...DEFAULT_AUTH_MANAGER_CONFIG,
       ...config,
-      logger: config.logger || console,
+      logger: config.logger ?? DEFAULT_AUTH_MANAGER_CONFIG.logger,
     };
 
     // Initialize DPoP key store
@@ -695,9 +703,3 @@ export class AuthManager {
   }
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export { InMemoryTokenStorage, SecureTokenStorage, generatePkcePair };
-export type { TokenStorage };
