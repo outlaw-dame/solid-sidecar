@@ -33,4 +33,14 @@ describe('public SDK entry point', () => {
     expect(sdk.SolidSidecarClient).toBe(SolidSidecarClient);
     expect(sdk.SolidSidecarHttpClient).toBe(SolidSidecarHttpClient);
   });
+
+  it('propagates the facade timeout to the HTTP request default', () => {
+    const client = new SolidSidecarClient({
+      baseUrl: 'https://pod.example',
+      timeout: 12_345,
+    });
+
+    expect(client.http.getConfig().timeout).toBe(12_345);
+    expect(client.http.getConfig().defaultTimeout).toBe(12_345);
+  });
 });
