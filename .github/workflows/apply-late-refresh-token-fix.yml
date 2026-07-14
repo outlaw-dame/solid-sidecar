@@ -53,3 +53,5 @@ jobs:
           git add sdk/ts/src/auth/auth-manager.ts .github/workflows/apply-late-refresh-token-fix.yml
           git commit -m "Preserve concurrent refresh token updates"
           git push origin HEAD:agent/pr13-late-refresh-token-fix
+
+# Trigger after workflow registration.
