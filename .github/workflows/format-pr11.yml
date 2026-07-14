@@ -1,0 +1,41 @@
+name: Format PR 11 compression file
+
+on:
+  push:
+    branches:
+      - agent/phase-pr2-sdk-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  gofmt:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/phase-pr2-sdk-hardening
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Format compression file
+        run: gofmt -w internal/compression/compression.go
+
+      - name: Commit formatting if needed
+        run: |
+          if git diff --quiet -- internal/compression/compression.go; then
+            echo "No formatting changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/compression/compression.go
+          git commit -m "Format compression implementation"
+          git push origin HEAD:agent/phase-pr2-sdk-hardening
