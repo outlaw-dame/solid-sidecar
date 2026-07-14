@@ -1,8 +1,8 @@
 {
   "name": "@outlaw-dame/solid-sidecar-client",
   "version": "1.0.0-beta.1",
-  "description": "Solid Sidecar TypeScript/JS Client SDK - Phase 27",
-  "author": "Mistral Vibe",
+  "description": "Solid Sidecar TypeScript/JavaScript client SDK",
+  "author": "outlaw-dame contributors",
   "license": "MIT",
   "keywords": [
     "solid",
@@ -15,26 +15,28 @@
     "notifications"
   ],
   "main": "dist/index.js",
-  "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.esm.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "build:clean": "rm -rf dist && tsc -b",
+    "clean": "rm -rf dist coverage",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src/**/*.ts test/**/*.ts",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "prepack": "npm run build"
+    "test:coverage": "jest --coverage --runInBand",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "cross-fetch": "^4.0.0",
