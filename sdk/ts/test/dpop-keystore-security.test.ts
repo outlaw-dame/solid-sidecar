@@ -86,6 +86,13 @@ describe('DPoP key-store security baseline', () => {
     expect(generated.publicKey.alg).toBe('ES256');
   });
 
+  it('derives the default EC algorithm from the configured key size', async () => {
+    const store = new DpopKeyStore({ ecKeySize: 384 });
+    const generated = await store.generateKeyPair();
+    expect(generated.publicKey.alg).toBe('ES384');
+    expect(generated.publicKey.crv).toBe('P-384');
+  });
+
   it('rotates by creation time and retains the configured maximum', async () => {
     const store = new DpopKeyStore({ maxKeys: 2 });
     const first = await store.generateKeyPair('ES256');
