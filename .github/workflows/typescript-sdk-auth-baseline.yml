@@ -61,3 +61,9 @@ jobs:
           grep -Fq 'config.dpopKeyStoreConfig ??' src/auth/auth-manager.ts
           grep -Fq 'DEFAULT_AUTH_MANAGER_CONFIG.dpopKeyStoreConfig' src/auth/auth-manager.ts
           grep -Fq 'logger: config.logger ?? DEFAULT_AUTH_MANAGER_CONFIG.logger' src/auth/auth-manager.ts
+
+      - name: Verify refresh-token concurrency fallback
+        run: |
+          grep -Fq 'const latestRefreshToken = await this.tokenStorage.getRefreshToken();' src/auth/auth-manager.ts
+          grep -Fq 'tokenResponse.refresh_token ?? latestRefreshToken ?? existingRefreshToken' src/auth/auth-manager.ts
+          ! grep -Fq 'refresh_token: tokenResponse.refresh_token || existingRefreshToken' src/auth/auth-manager.ts
