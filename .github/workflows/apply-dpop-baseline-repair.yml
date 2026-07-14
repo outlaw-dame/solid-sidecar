@@ -18,65 +18,306 @@ jobs:
         with:
           ref: agent/phase-pr5-sdk-dpop-baseline
           fetch-depth: 0
+
       - name: Repair DPoP key-store baseline
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('sdk/ts/src/auth/dpop-keystore.ts')
           text = path.read_text()
-          text = text.replace(
-            "import type { DpopKeyPair, JsonWebKey, DpopProof, DpopProofOptions } from '../types';",
-            "import type { DpopClaims, DpopHeader, DpopKeyPair, JsonWebKey, DpopProof, DpopProofOptions, SolidSidecarLogger } from '../types';"
-          )
-          text = text.replace(
-            "import { generateUuid, sha256Base64UrlSync, base64UrlEncode } from '../utils';\nimport { environment } from '../utils';",
-            "import { generateUuid, sha256Base64UrlSync, base64UrlEncode, environment, nullLogger } from '../utils';"
-          )
-          text = text.replace(
-            "export const DEFAULT_DPOP_KEYSTORE_CONFIG: Required<DpopKeyStoreConfig> = {\n  storage: undefined,",
-            "type ResolvedDpopKeyStoreConfig = Omit<Required<DpopKeyStoreConfig>, 'storage'> & {\n  storage?: DpopKeyStorage;\n};\n\nexport const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<ResolvedDpopKeyStoreConfig, 'storage'> = {"
-          )
-          text = text.replace(
-            "  private readonly config: Required<DpopKeyStoreConfig>;\n  private readonly storage: DpopKeyStorage;\n  private readonly logger: Console;",
-            "  private readonly config: ResolvedDpopKeyStoreConfig;\n  private readonly storage: DpopKeyStorage;\n  private readonly logger: SolidSidecarLogger;"
-          )
-          text = text.replace(
-            "    this.config = {\n      ...DEFAULT_DPOP_KEYSTORE_CONFIG,\n      ...config,\n    };",
-            "    this.config = {\n      ...DEFAULT_DPOP_KEYSTORE_CONFIG,\n      ...config,\n      storage: config.storage,\n      defaultAlgorithm: config.defaultAlgorithm ?? DEFAULT_DPOP_KEYSTORE_CONFIG.defaultAlgorithm,\n      ecKeySize: config.ecKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.ecKeySize,\n      rsaKeySize: config.rsaKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rsaKeySize,\n      autoRotate: config.autoRotate ?? DEFAULT_DPOP_KEYSTORE_CONFIG.autoRotate,\n      rotationInterval: config.rotationInterval ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rotationInterval,\n      maxKeys: config.maxKeys ?? DEFAULT_DPOP_KEYSTORE_CONFIG.maxKeys,\n    };"
-          )
-          text = text.replace(
-            "    this.storage = this.config.storage || new InMemoryKeyStore();\n    this.logger = console;",
-            "    this.storage = this.config.storage ?? new InMemoryKeyStore();\n    this.logger = nullLogger;"
-          )
-          text = text.replace("    const header = {", "    const header: DpopHeader = {")
-          text = text.replace("    const claims: Record<string, unknown> = {", "    const claims: DpopClaims = {")
-          text = text.replace("      htm: method.toUpperCase(),", "      htm: method.toUpperCase() as DpopClaims['htm'],")
-          text = text.replace("      ...(jwk.e && { e: jwk.e }),\n      ...(jwk.d && { d: jwk.d }),", "      ...(jwk.e && { e: jwk.e }),")
-          old = """      const algorithm = this.getAlgorithmFromKey(privateKey as JsonWebKey);
+
+          replacements = [
+            (
+              "import type { DpopKeyPair, JsonWebKey, DpopProof, DpopProofOptions } from '../types';",
+              "import type { DpopClaims, DpopHeader, DpopKeyPair, JsonWebKey, DpopProof, DpopProofOptions, SolidSidecarLogger } from '../types';",
+            ),
+            (
+              "import { generateUuid, sha256Base64UrlSync, base64UrlEncode } from '../utils';\nimport { environment } from '../utils';",
+              "import { generateUuid, sha256Base64UrlSync, base64UrlEncode, environment, nullLogger } from '../utils';",
+            ),
+            (
+              "export const DEFAULT_DPOP_KEYSTORE_CONFIG: Required<DpopKeyStoreConfig> = {\n  storage: undefined,",
+              "type ResolvedDpopKeyStoreConfig = Omit<Required<DpopKeyStoreConfig>, 'storage'> & {\n  storage?: DpopKeyStorage;\n};\n\nexport const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<ResolvedDpopKeyStoreConfig, 'storage'> = {",
+            ),
+            (
+              "  private readonly config: Required<DpopKeyStoreConfig>;\n  private readonly storage: DpopKeyStorage;\n  private readonly logger: Console;",
+              "  private readonly config: ResolvedDpopKeyStoreConfig;\n  private readonly storage: DpopKeyStorage;\n  private readonly logger: SolidSidecarLogger;",
+            ),
+            (
+              "    this.config = {\n      ...DEFAULT_DPOP_KEYSTORE_CONFIG,\n      ...config,\n    };",
+              "    this.config = {\n      ...DEFAULT_DPOP_KEYSTORE_CONFIG,\n      ...config,\n      storage: config.storage,\n      defaultAlgorithm: config.defaultAlgorithm ?? DEFAULT_DPOP_KEYSTORE_CONFIG.defaultAlgorithm,\n      ecKeySize: config.ecKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.ecKeySize,\n      rsaKeySize: config.rsaKeySize ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rsaKeySize,\n      autoRotate: config.autoRotate ?? DEFAULT_DPOP_KEYSTORE_CONFIG.autoRotate,\n      rotationInterval: config.rotationInterval ?? DEFAULT_DPOP_KEYSTORE_CONFIG.rotationInterval,\n      maxKeys: config.maxKeys ?? DEFAULT_DPOP_KEYSTORE_CONFIG.maxKeys,\n    };",
+            ),
+            (
+              "    this.storage = this.config.storage || new InMemoryKeyStore();\n    this.logger = console;",
+              "    this.storage = this.config.storage ?? new InMemoryKeyStore();\n    this.logger = nullLogger;",
+            ),
+            ("    const header = {", "    const header: DpopHeader = {"),
+            ("    const claims: Record<string, unknown> = {", "    const claims: DpopClaims = {"),
+            ("      htm: method.toUpperCase(),", "      htm: method.toUpperCase() as DpopClaims['htm'],"),
+            ("    const nonce = jti || generateUuid();", "    const nonce = jti ?? generateUuid();"),
+            ("    const issuedAt = iat || Math.floor(Date.now() / 1000);", "    const issuedAt = iat ?? Math.floor(Date.now() / 1000);"),
+            (
+              "      ...(jwk.e && { e: jwk.e }),\n      ...(jwk.d && { d: jwk.d }),",
+              "      ...(jwk.e && { e: jwk.e }),",
+            ),
+          ]
+
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f'repair marker not found: {old[:80]}')
+            text = text.replace(old, new, 1)
+
+          old_storage_type = "  private readonly storage: Map<string, { publicKey: JsonWebKey; encryptedPrivateKey: string }> = new Map();"
+          new_storage_type = "  private readonly storage: Map<string, { publicKey: JsonWebKey; encryptedPrivateKey: string; kid?: string; createdAt: number }> = new Map();"
+          if old_storage_type not in text:
+            raise SystemExit('secure storage type marker not found')
+          text = text.replace(old_storage_type, new_storage_type, 1)
+
+          old_get = """    return {
+      ...stored,
+      privateKey: JSON.parse(privateKey),
+    };"""
+          new_get = """    return {
+      publicKey: stored.publicKey,
+      privateKey: JSON.parse(privateKey) as JsonWebKey,
+      kid: stored.kid,
+      createdAt: stored.createdAt,
+    };"""
+          if old_get not in text:
+            raise SystemExit('secure get marker not found')
+          text = text.replace(old_get, new_get, 1)
+
+          old_set = """    this.storage.set(kid, {
+      publicKey: keyPair.publicKey,
+      encryptedPrivateKey,
+    });"""
+          new_set = """    this.storage.set(kid, {
+      publicKey: keyPair.publicKey,
+      encryptedPrivateKey,
+      kid: keyPair.kid,
+      createdAt: keyPair.createdAt,
+    });"""
+          if old_set not in text:
+            raise SystemExit('secure set marker not found')
+          text = text.replace(old_set, new_set, 1)
+
+          store_marker = """    // Store the key
+    if (!keyPair.kid) {"""
+          store_replacement = """    keyPair.publicKey.alg = alg;
+    keyPair.privateKey.alg = alg;
+
+    // Store the key
+    if (!keyPair.kid) {"""
+          if store_marker not in text:
+            raise SystemExit('algorithm metadata marker not found')
+          text = text.replace(store_marker, store_replacement, 1)
+
+          algorithm_marker = """  private getAlgorithmFromKey(jwk: JsonWebKey): string {
+    if (jwk.kty === 'EC') {"""
+          algorithm_replacement = """  private getAlgorithmFromKey(jwk: JsonWebKey): string {
+    const supportedAlgorithms = new Set([
+      'ES256', 'ES384', 'ES512', 'RS256', 'RS384', 'RS512', 'EdDSA',
+    ]);
+    if (jwk.alg && supportedAlgorithms.has(jwk.alg)) {
+      return jwk.alg;
+    }
+    if (jwk.kty === 'EC') {"""
+          if algorithm_marker not in text:
+            raise SystemExit('algorithm selection marker not found')
+          text = text.replace(algorithm_marker, algorithm_replacement, 1)
+
+          old_sign = """      const algorithm = this.getAlgorithmFromKey(privateKey as JsonWebKey);
       const signature = crypto.sign(
         algorithm.replace('ES', '').replace('RS', '').replace('Ed', ''),
         Buffer.from(data, 'utf8'),
         keyObject
       );"""
-          new = """      const algorithm = this.getAlgorithmFromKey(privateKey);
+          new_sign = """      const algorithm = this.getAlgorithmFromKey(privateKey);
       const digest = algorithm === 'EdDSA' ? null : `sha${algorithm.slice(2)}`;
       const signature = crypto.sign(digest, Buffer.from(data, 'utf8'), {
         key: keyObject,
         ...(algorithm.startsWith('ES') && { dsaEncoding: 'ieee-p1363' }),
       });"""
-          if old not in text:
+          if old_sign not in text:
             raise SystemExit('Node signing marker not found')
-          text = text.replace(old, new, 1)
-          text = text.replace("    this.activeKeyId = null;\n", "", 1)
+          text = text.replace(old_sign, new_sign, 1)
+
+          clear_marker = """  public async clear(): Promise<void> {
+    const keyIds = await this.listKeyPairs();
+    for (const kid of keyIds) {
+      await this.deleteKeyPair(kid);
+    }
+    this.activeKeyId = null;
+  }"""
+          clear_replacement = """  public async clear(): Promise<void> {
+    const keyIds = await this.listKeyPairs();
+    for (const kid of keyIds) {
+      await this.deleteKeyPair(kid);
+    }
+  }"""
+          if clear_marker not in text:
+            raise SystemExit('DpopKeyStore clear marker not found')
+          text = text.replace(clear_marker, clear_replacement, 1)
+
           footer = "\n// ============================================================================\n// Exports\n// ============================================================================\n\nexport { InMemoryKeyStore, SecureKeyStore };\nexport type { DpopKeyStorage };\n"
-          text = text.replace(footer, "\n")
+          if footer not in text:
+            raise SystemExit('duplicate export footer marker not found')
+          text = text.replace(footer, "\n", 1)
           path.write_text(text)
+
+          test_path = Path('sdk/ts/test/dpop-keystore-security.test.ts')
+          test_path.write_text("""import { createPublicKey, verify } from 'crypto';
+import {
+  DpopKeyStore,
+  InMemoryKeyStore,
+  SecureKeyStore,
+} from '../src/auth/dpop-keystore';
+
+function decodeJwtPart<T>(part: string): T {
+  return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as T;
+}
+
+describe('DPoP key-store security baseline', () => {
+  it('generates a verifiable ES256 proof without private JWK material', async () => {
+    const store = new DpopKeyStore({
+      storage: new InMemoryKeyStore(),
+      defaultAlgorithm: 'ES256',
+    });
+    const keyPair = await store.generateKeyPair();
+    const proof = await store.generateDpopProof({
+      method: 'GET',
+      url: 'https://pod.example/resource?ignored=true#fragment',
+      jti: 'test-jti',
+      iat: 1234,
+      accessToken: 'access-token',
+    });
+
+    expect(proof.header.alg).toBe('ES256');
+    expect(proof.header.jwk).not.toHaveProperty('d');
+    expect(proof.header.jwk).not.toHaveProperty('p');
+    expect(proof.header.jwk).not.toHaveProperty('q');
+    expect(proof.claims).toMatchObject({
+      htm: 'GET',
+      htu: 'https://pod.example/resource',
+      jti: 'test-jti',
+      iat: 1234,
+    });
+
+    const [encodedHeader, encodedClaims, encodedSignature] = proof.jwt.split('.');
+    expect(decodeJwtPart(encodedHeader)).toEqual(proof.header);
+    expect(decodeJwtPart(encodedClaims)).toEqual(proof.claims);
+    expect(Buffer.from(encodedSignature, 'base64url')).toHaveLength(64);
+
+    const publicKey = createPublicKey({ key: keyPair.publicKey, format: 'jwk' });
+    expect(
+      verify(
+        'sha256',
+        Buffer.from(`${encodedHeader}.${encodedClaims}`, 'utf8'),
+        { key: publicKey, dsaEncoding: 'ieee-p1363' },
+        Buffer.from(encodedSignature, 'base64url')
+      )
+    ).toBe(true);
+  });
+
+  it('preserves metadata through secure storage encryption', async () => {
+    const storage = new SecureKeyStore();
+    const keyStore = new DpopKeyStore({ storage });
+    const generated = await keyStore.generateKeyPair('ES256');
+    const restored = await storage.getKey(generated.kid!);
+
+    expect(restored?.kid).toBe(generated.kid);
+    expect(restored?.createdAt).toBe(generated.createdAt);
+    expect(restored?.publicKey).toEqual(generated.publicKey);
+    expect(restored?.privateKey).toEqual(generated.privateKey);
+  });
+
+  it('retains defaults when optional values are explicitly undefined', async () => {
+    const store = new DpopKeyStore({
+      defaultAlgorithm: undefined,
+      ecKeySize: undefined,
+      rsaKeySize: undefined,
+      autoRotate: undefined,
+      rotationInterval: undefined,
+      maxKeys: undefined,
+    });
+    const generated = await store.generateKeyPair();
+    expect(generated.publicKey.alg).toBe('ES256');
+  });
+});
+""")
+
+          workflow_path = Path('.github/workflows/typescript-sdk-dpop-baseline.yml')
+          workflow_path.write_text("""name: TypeScript SDK DPoP baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/auth/dpop-keystore.ts'
+      - 'sdk/ts/test/dpop-keystore-security.test.ts'
+      - '.github/workflows/typescript-sdk-dpop-baseline.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdk/ts/src/auth/dpop-keystore.ts'
+      - 'sdk/ts/test/dpop-keystore-security.test.ts'
+      - '.github/workflows/typescript-sdk-dpop-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-dpop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify DPoP key-store baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run strict SDK typecheck and isolate DPoP diagnostics
+        run: |
+          set -o pipefail
+          npm run typecheck > typecheck.log 2>&1 || true
+          cat typecheck.log
+          if grep -Fq 'src/auth/dpop-keystore.ts' typecheck.log; then
+            echo 'dpop-keystore.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+      - name: Run focused DPoP security tests
+        run: npx jest --runInBand test/dpop-keystore-security.test.ts
+      - name: Verify structural security invariants
+        run: |
+          ! grep -Fq '...(jwk.d && { d: jwk.d })' src/auth/dpop-keystore.ts
+          ! grep -Fq 'export { InMemoryKeyStore, SecureKeyStore };' src/auth/dpop-keystore.ts
+          ! grep -Fq 'export type { DpopKeyStorage };' src/auth/dpop-keystore.ts
+          grep -Fq "dsaEncoding: 'ieee-p1363'" src/auth/dpop-keystore.ts
+          grep -Fq 'tokenResponse' ../ts/src/auth/auth-manager.ts || true
+""")
+
           Path('.github/workflows/apply-dpop-baseline-repair.yml').unlink()
           PY
+
       - name: Commit DPoP repair
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sdk/ts/src/auth/dpop-keystore.ts .github/workflows/apply-dpop-baseline-repair.yml
+          git add sdk/ts/src/auth/dpop-keystore.ts sdk/ts/test/dpop-keystore-security.test.ts .github/workflows/typescript-sdk-dpop-baseline.yml .github/workflows/apply-dpop-baseline-repair.yml
           git commit -m "Repair DPoP key-store compiler and signing baseline"
           git push origin HEAD:agent/phase-pr5-sdk-dpop-baseline
+
+# Trigger hardened repair registration.
