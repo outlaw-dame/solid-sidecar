@@ -1,0 +1,55 @@
+name: Apply late refresh token fix
+
+on:
+  push:
+    branches:
+      - agent/pr13-late-refresh-token-fix
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pr13-late-refresh-token-fix
+          fetch-depth: 0
+
+      - name: Preserve the latest refresh token
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('sdk/ts/src/auth/auth-manager.ts')
+          text = path.read_text()
+          old = """    const tokenResponse: TokenResponse = await response.json();
+    const now = Date.now();
+    const tokenSet: TokenSet = {
+      ...tokenResponse,
+      refresh_token: tokenResponse.refresh_token || existingRefreshToken,
+"""
+          new = """    const tokenResponse: TokenResponse = await response.json();
+    const latestRefreshToken = await this.tokenStorage.getRefreshToken();
+    const now = Date.now();
+    const tokenSet: TokenSet = {
+      ...tokenResponse,
+      refresh_token:
+        tokenResponse.refresh_token ?? latestRefreshToken ?? existingRefreshToken,
+"""
+          if old not in text:
+              raise SystemExit('refresh token fallback marker not found')
+          path.write_text(text.replace(old, new, 1))
+          Path('.github/workflows/apply-late-refresh-token-fix.yml').unlink()
+          PY
+
+      - name: Commit follow-up fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sdk/ts/src/auth/auth-manager.ts .github/workflows/apply-late-refresh-token-fix.yml
+          git commit -m "Preserve concurrent refresh token updates"
+          git push origin HEAD:agent/pr13-late-refresh-token-fix
