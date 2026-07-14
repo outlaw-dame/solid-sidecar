@@ -1,0 +1,74 @@
+name: Apply DPoP binary encoding fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-pr5-sdk-dpop-baseline
+          fetch-depth: 0
+      - name: Preserve binary signature and digest bytes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('sdk/ts/src/auth/dpop-keystore.ts')
+          text = path.read_text()
+          text = text.replace(
+            "  sha256Base64UrlSync,\n} from '../utils';",
+            "} from '../utils';",
+            1,
+          )
+          marker = """export const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<
+  ResolvedDpopKeyStoreConfig,
+  'storage'
+> = {"""
+          helpers = """function base64UrlEncodeBytes(value: Uint8Array): string {
+  return Buffer.from(value).toString('base64url');
+}
+
+function sha256Base64UrlBytes(value: string): string {
+  const crypto = require('crypto');
+  return crypto
+    .createHash('sha256')
+    .update(value, 'utf8')
+    .digest('base64url');
+}
+
+export const DEFAULT_DPOP_KEYSTORE_CONFIG: Omit<
+  ResolvedDpopKeyStoreConfig,
+  'storage'
+> = {"""
+          if marker not in text:
+            raise SystemExit('default config marker not found')
+          text = text.replace(marker, helpers, 1)
+          text = text.replace(
+            "        ath: sha256Base64UrlSync(options.accessToken),",
+            "        ath: sha256Base64UrlBytes(options.accessToken),",
+            1,
+          )
+          text = text.replace(
+            "    const encodedSignature = base64UrlEncode(signature);",
+            "    const encodedSignature = base64UrlEncodeBytes(signature);",
+            1,
+          )
+          path.write_text(text)
+          Path('.github/workflows/apply-dpop-binary-encoding-fix.yml').unlink()
+          PY
+      - name: Commit binary encoding fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sdk/ts/src/auth/dpop-keystore.ts .github/workflows/apply-dpop-binary-encoding-fix.yml
+          git commit -m "Preserve DPoP signature and digest bytes"
+          git push origin HEAD:agent/phase-pr5-sdk-dpop-baseline
