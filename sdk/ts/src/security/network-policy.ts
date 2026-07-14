@@ -55,10 +55,34 @@ function isForbiddenIpv4(octets: readonly number[]): boolean {
   );
 }
 
+function parseEmbeddedIpv4(host: string): number[] | null {
+  const dottedMatch = host.match(/^::(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dottedMatch) {
+    return parseIpv4(dottedMatch[1]);
+  }
+
+  // URL implementations commonly canonicalize mapped dotted forms such as
+  // ::ffff:127.0.0.1 into ::ffff:7f00:1. Decode the final 32 bits so the
+  // private IPv4 policy cannot be bypassed through that representation.
+  const hexadecimalMatch = host.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!hexadecimalMatch) {
+    return null;
+  }
+
+  const high = Number.parseInt(hexadecimalMatch[1], 16);
+  const low = Number.parseInt(hexadecimalMatch[2], 16);
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff];
+}
+
 function isForbiddenIpv6(hostname: string): boolean {
   const host = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
   if (!host.includes(':')) {
     return false;
+  }
+
+  const embeddedIpv4 = parseEmbeddedIpv4(host);
+  if (embeddedIpv4 && isForbiddenIpv4(embeddedIpv4)) {
+    return true;
   }
 
   return (
@@ -169,9 +193,23 @@ function canonicalScopeUrl(input: string): URL | null {
  * Query strings and fragments never widen access.
  */
 export function isResourceWithinScope(resource: string, scope: string): boolean {
-  const resourceUrl = canonicalScopeUrl(resource);
   const scopeUrl = canonicalScopeUrl(scope);
-  if (!resourceUrl || !scopeUrl || resourceUrl.origin !== scopeUrl.origin) {
+  if (!scopeUrl) {
+    return false;
+  }
+
+  let resourceUrl: URL;
+  try {
+    resourceUrl = new URL(resource, scopeUrl);
+  } catch {
+    return false;
+  }
+
+  if (
+    resourceUrl.username ||
+    resourceUrl.password ||
+    resourceUrl.origin !== scopeUrl.origin
+  ) {
     return false;
   }
 
