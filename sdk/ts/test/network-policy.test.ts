@@ -93,8 +93,8 @@ describe('isPrivateOrLocalHostname', () => {
     expect(isPrivateOrLocalHostname(hostname)).toBe(true);
   });
 
-  it.each(['pod.example', '93.184.216.34', '2001:4860:4860::8888'])('
-    does not classify %s as private or local',
+  it.each(['pod.example', '93.184.216.34', '2001:4860:4860::8888'])(
+    'does not classify %s as private or local',
     hostname => {
       expect(isPrivateOrLocalHostname(hostname)).toBe(false);
     }
