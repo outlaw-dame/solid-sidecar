@@ -57,3 +57,5 @@ jobs:
           ! grep -Fq 'export type { DpopKeyStorage };' src/auth/dpop-keystore.ts
           grep -Fq "dsaEncoding: 'ieee-p1363'" src/auth/dpop-keystore.ts
           grep -Fq "crypto.createHash('sha256').update(encryptionKey" src/auth/dpop-keystore.ts
+
+# Clean-head validation trigger.
