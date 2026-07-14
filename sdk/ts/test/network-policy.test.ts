@@ -17,6 +17,9 @@ describe('validateOutboundUrl', () => {
     ['https://169.254.169.254/latest/meta-data', 'private_host_forbidden'],
     ['https://[::1]/resource', 'private_host_forbidden'],
     ['https://[fd00::1]/resource', 'private_host_forbidden'],
+    ['https://[::ffff:127.0.0.1]/resource', 'private_host_forbidden'],
+    ['https://[::ffff:10.0.0.4]/resource', 'private_host_forbidden'],
+    ['https://[::127.0.0.1]/resource', 'private_host_forbidden'],
   ])('rejects unsafe target %s', (input, reason) => {
     expect(validateOutboundUrl(input)).toEqual({ ok: false, reason });
   });
@@ -80,12 +83,18 @@ describe('isPrivateOrLocalHostname', () => {
     '::1',
     'fe80::1',
     'ff02::1',
+    '::ffff:127.0.0.1',
+    '::ffff:10.0.0.4',
+    '::ffff:7f00:1',
+    '::ffff:a00:4',
+    '::127.0.0.1',
+    '::7f00:1',
   ])('classifies %s as private or local', hostname => {
     expect(isPrivateOrLocalHostname(hostname)).toBe(true);
   });
 
-  it.each(['pod.example', '93.184.216.34', '2001:4860:4860::8888'])(
-    'does not classify %s as private or local',
+  it.each(['pod.example', '93.184.216.34', '2001:4860:4860::8888'])('
+    does not classify %s as private or local',
     hostname => {
       expect(isPrivateOrLocalHostname(hostname)).toBe(false);
     }
@@ -135,5 +144,12 @@ describe('isResourceWithinScope', () => {
   it('supports relative resource paths with segment boundaries', () => {
     expect(isResourceWithinScope('/private/a', '/private/')).toBe(true);
     expect(isResourceWithinScope('/private-other/a', '/private/')).toBe(false);
+    expect(
+      isResourceWithinScope('/private/a', 'https://pod.example/private/')
+    ).toBe(true);
+    expect(isResourceWithinScope('a', 'https://pod.example/private/')).toBe(true);
+    expect(
+      isResourceWithinScope('../private-other/a', 'https://pod.example/private/')
+    ).toBe(false);
   });
 });
