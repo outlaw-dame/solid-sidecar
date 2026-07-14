@@ -353,10 +353,12 @@ export class AuthManager {
     }
 
     const tokenResponse: TokenResponse = await response.json();
+    const latestRefreshToken = await this.tokenStorage.getRefreshToken();
     const now = Date.now();
     const tokenSet: TokenSet = {
       ...tokenResponse,
-      refresh_token: tokenResponse.refresh_token || existingRefreshToken,
+      refresh_token:
+        tokenResponse.refresh_token ?? latestRefreshToken ?? existingRefreshToken,
       expires_at: now + tokenResponse.expires_in * 1000,
       issued_at: tokenResponse.issued_at
         ? tokenResponse.issued_at * 1000
