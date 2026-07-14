@@ -20,10 +20,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./security/network-policy": {
-      "types": "./dist/security/network-policy.d.ts",
-      "default": "./dist/security/network-policy.js"
     }
   },
   "files": [
