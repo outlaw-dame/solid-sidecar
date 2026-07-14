@@ -1,0 +1,53 @@
+name: Apply auth review fix
+
+on:
+  push:
+    branches:
+      - agent/phase-pr4-sdk-auth-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-pr4-sdk-auth-baseline
+          fetch-depth: 0
+      - name: Apply defensive config defaults
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('sdk/ts/src/auth/auth-manager.ts')
+          text = path.read_text()
+          old = """    this.config = {
+      ...DEFAULT_AUTH_MANAGER_CONFIG,
+      ...config,
+      logger: config.logger ?? DEFAULT_AUTH_MANAGER_CONFIG.logger,
+    };"""
+          new = """    this.config = {
+      ...DEFAULT_AUTH_MANAGER_CONFIG,
+      ...config,
+      scopes: config.scopes ?? DEFAULT_AUTH_MANAGER_CONFIG.scopes,
+      useDpop: config.useDpop ?? DEFAULT_AUTH_MANAGER_CONFIG.useDpop,
+      dpopKeyStoreConfig:
+        config.dpopKeyStoreConfig ?? DEFAULT_AUTH_MANAGER_CONFIG.dpopKeyStoreConfig,
+      logger: config.logger ?? DEFAULT_AUTH_MANAGER_CONFIG.logger,
+    };"""
+          if old not in text:
+              raise SystemExit('auth config merge marker not found')
+          path.write_text(text.replace(old, new, 1))
+          Path('.github/workflows/sdk-auth-review-fix.yml').unlink()
+          PY
+      - name: Commit review fix and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sdk/ts/src/auth/auth-manager.ts .github/workflows/sdk-auth-review-fix.yml
+          git commit -m "Preserve auth defaults when optional config is undefined"
+          git push origin HEAD:agent/phase-pr4-sdk-auth-baseline
