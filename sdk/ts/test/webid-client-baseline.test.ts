@@ -110,19 +110,15 @@ describe('WebIdClient baseline', () => {
   });
 
   it('deduplicates concurrent discovery requests for the same WebID', async () => {
-    let resolveResponse: ((response: Response) => void) | undefined;
-    const pending = new Promise<Response>(resolve => {
-      resolveResponse = resolve;
-    });
-    const fetchMock = jest.fn<typeof fetch>().mockReturnValue(pending);
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
     const client = createClient(fetchMock);
 
-    const first = client.discoverWebId(WEB_ID);
-    const second = client.discoverWebId(WEB_ID);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [firstProfile, secondProfile] = await Promise.all([
+      client.discoverWebId(WEB_ID),
+      client.discoverWebId(WEB_ID),
+    ]);
 
-    resolveResponse?.(profileResponse());
-    const [firstProfile, secondProfile] = await Promise.all([first, second]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(firstProfile).toEqual(secondProfile);
     expect(firstProfile).not.toBe(secondProfile);
   });
