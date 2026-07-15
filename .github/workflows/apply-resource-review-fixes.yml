@@ -1,0 +1,133 @@
+name: Apply resource review fixes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-resource-review-fixes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Apply review fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('sdk/ts/src/clients/resource-client.ts')
+          text = source.read_text()
+          old = """    const nestedHttpConfig = config.httpClientConfig ?? {};
+          const httpLogger =
+            nestedHttpConfig.logger ??
+            config.logger ??
+            DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
+          const httpClientConfig: HttpClientConfig = {
+            ...topLevelHttpConfig,
+            ...nestedHttpConfig,
+            logger: httpLogger,
+          };
+          """
+          new = """    const nestedHttpConfig: HttpClientConfig = {};
+          for (const key of HTTP_CONFIG_KEYS) {
+            const value = config.httpClientConfig?.[key];
+            if (value !== undefined) {
+              (nestedHttpConfig as Record<string, unknown>)[key] = value;
+            }
+          }
+          const httpLogger =
+            nestedHttpConfig.logger ??
+            config.logger ??
+            DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
+          const httpClientConfig: HttpClientConfig = {
+            ...topLevelHttpConfig,
+            ...nestedHttpConfig,
+            logger: httpLogger,
+          };
+          """
+          if old not in text:
+              raise SystemExit('nested config block not found')
+          text = text.replace(old, new, 1)
+
+          old = """    const authHeaders = await this.getAuthHeaders(method, url);
+            return {
+              ...callerHeaders,
+              ...enforcedHeaders,
+              ...authHeaders,
+            };
+          """
+          new = """    const authHeaders = await this.getAuthHeaders(method, url);
+            const protectedNames = new Set(
+              [...Object.keys(enforcedHeaders), ...Object.keys(authHeaders)].map(name =>
+                name.toLowerCase()
+              )
+            );
+            const sanitizedCallerHeaders = Object.fromEntries(
+              Object.entries(callerHeaders).filter(
+                ([name]) => !protectedNames.has(name.toLowerCase())
+              )
+            );
+            return {
+              ...sanitizedCallerHeaders,
+              ...enforcedHeaders,
+              ...authHeaders,
+            };
+          """
+          if old not in text:
+              raise SystemExit('header merge block not found')
+          text = text.replace(old, new, 1)
+          source.write_text(text)
+
+          test = Path('sdk/ts/test/resource-client-baseline.test.ts')
+          tests = test.read_text()
+          tests = tests.replace(
+              """        Authorization: 'Bearer attacker',
+                DPoP: 'attacker-proof',
+                'If-None-Match': 'attacker',
+          """,
+              """        authorization: 'Bearer attacker',
+                dpop: 'attacker-proof',
+                'if-none-match': 'attacker',
+          """,
+              1,
+          )
+          marker = """  it('preserves create wildcard and prevents caller auth spoofing', async () => {
+          """
+          extra = """  it('ignores undefined nested HTTP overrides', () => {
+            const fetchMock = jest.fn<typeof fetch>();
+            const client = new ResourceClient({
+              baseUrl: 'https://pod.example/storage/',
+              fetch: fetchMock,
+              useDpop: false,
+              httpClientConfig: {
+                baseUrl: undefined,
+                fetch: undefined,
+              } as unknown as import('../src/http-client').HttpClientConfig,
+            });
+
+            expect(client.getHttpClient().getConfig().baseUrl).toBe(
+              'https://pod.example/storage/'
+            );
+            expect(client.getHttpClient().getConfig().fetch).toBe(fetchMock);
+          });
+
+          """
+          if marker not in tests:
+              raise SystemExit('test insertion marker not found')
+          tests = tests.replace(marker, extra + marker, 1)
+          test.write_text(tests)
+          PY
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sdk/ts/src/clients/resource-client.ts sdk/ts/test/resource-client-baseline.test.ts
+          git commit -m 'Address resource client review findings'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
