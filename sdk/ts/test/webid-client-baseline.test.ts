@@ -3,6 +3,7 @@ import type { WebIdClientConfig } from '../src/clients/webid-client';
 
 const WEB_ID = 'https://pod.example/profile/card#me';
 const PROFILE = `
+# A document-level comment must not become a statement.
 <https://pod.example/profile/card#me>
   a <http://xmlns.com/foaf/0.1/Person> ;
   <http://xmlns.com/foaf/0.1/name> "Alice" ;
@@ -34,7 +35,7 @@ function createClient(
 }
 
 describe('WebIdClient baseline', () => {
-  it('fetches the profile document without the WebID fragment', async () => {
+  it('fetches the profile document and parses the first Turtle predicate', async () => {
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
     const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
 
@@ -42,6 +43,7 @@ describe('WebIdClient baseline', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://pod.example/profile/card');
     expect(profile.id).toBe(WEB_ID);
     expect(profile.profileUri).toBe('https://pod.example/profile/card');
+    expect(profile.type).toBe('http://xmlns.com/foaf/0.1/Person');
     expect(profile.name).toBe('Alice');
     expect(profile.storage).toEqual(['https://pod.example/storage/']);
   });
@@ -64,6 +66,16 @@ describe('WebIdClient baseline', () => {
     await expect(
       client.discoverWebId('https://user:secret@pod.example/profile/card#me')
     ).rejects.toThrow('must not contain credentials');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects IPv4-mapped IPv6 private targets before network access', async () => {
+    const fetchMock = jest.fn<typeof fetch>();
+    const client = createClient(fetchMock, { allowedHosts: [] });
+
+    await expect(
+      client.discoverWebId('http://[::ffff:127.0.0.1]/profile/card#me')
+    ).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -158,6 +170,35 @@ describe('WebIdClient baseline', () => {
     const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
     expect(profile.name).toBe('Alice JSON-LD');
     expect(profile.storage).toEqual(['https://pod.example/storage/']);
+  });
+
+  it('contains malformed JSON-LD identifiers without raw URL exceptions', async () => {
+    const jsonLd = JSON.stringify({
+      '@graph': [{ '@id': 'http://[', name: 'Malformed' }],
+    });
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue(profileResponse(jsonLd, 'application/ld+json'));
+
+    await expect(createClient(fetchMock).discoverWebId(WEB_ID)).rejects.toThrow(
+      'does not contain the requested WebID subject'
+    );
+  });
+
+  it('ignores a malformed non-authoritative JSON-LD type IRI', async () => {
+    const jsonLd = JSON.stringify({
+      '@id': WEB_ID,
+      '@type': 'http://[',
+      'http://xmlns.com/foaf/0.1/name': 'Alice',
+    });
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue(profileResponse(jsonLd, 'application/ld+json'));
+
+    const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
+    expect(profile.id).toBe(WEB_ID);
+    expect(profile.type).toBeUndefined();
+    expect(profile.name).toBe('Alice');
   });
 
   it('rejects unsupported per-request redirect overrides', async () => {
