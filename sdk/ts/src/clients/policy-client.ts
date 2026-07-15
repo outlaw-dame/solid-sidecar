@@ -347,10 +347,18 @@ export class PolicyClient {
 
   private parentContainer(resourceUri: ResourceUri): ContainerUri {
     const url = new URL(resourceUri);
-    if (url.pathname.endsWith('/')) return url.toString();
-    url.pathname = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1);
+    const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
     url.search = '';
     url.hash = '';
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const currentPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+    if (currentPath === basePath) return url.toString();
+    const withoutTrailingSlash = currentPath.slice(0, -1);
+    url.pathname = withoutTrailingSlash.slice(
+      0,
+      withoutTrailingSlash.lastIndexOf('/') + 1
+    );
+    if (!url.pathname.startsWith(basePath)) return base.toString();
     return url.toString();
   }
 
@@ -503,11 +511,11 @@ export class PolicyClient {
     for (const block of blocks) {
       if (!block.includes('acl:Authorization') && !block.includes(`${ACL}Authorization`)) continue;
       const subject = block.match(/(?:<([^>]+)>|(_:[A-Za-z][\w-]*))\s+/);
-      const accessTo = [...block.matchAll(/acl:accessTo\s+<([^>]+)>/g)].map(m => m[1]!);
-      const agent = [...block.matchAll(/acl:agent\s+<([^>]+)>/g)].map(m => m[1]!);
-      const agentClass = [...block.matchAll(/acl:agentClass\s+<([^>]+)>/g)].map(m => m[1]!);
-      const agentGroup = [...block.matchAll(/acl:agentGroup\s+<([^>]+)>/g)].map(m => m[1]!);
-      const mode = [...block.matchAll(/acl:mode\s+<[^>]+#(Read|Write|Control|Append)>/g)].map(
+      const accessTo = [...block.matchAll(/(?:acl:accessTo|<http:\/\/www\.w3\.org\/ns\/auth\/acl#accessTo>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agent = [...block.matchAll(/(?:acl:agent|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agent>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agentClass = [...block.matchAll(/(?:acl:agentClass|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentClass>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agentGroup = [...block.matchAll(/(?:acl:agentGroup|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentGroup>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const mode = [...block.matchAll(/(?:acl:mode|<http:\/\/www\.w3\.org\/ns\/auth\/acl#mode>)\s+<[^>]+#(Read|Write|Control|Append)>/g)].map(
         m => m[1] as WacMode
       );
       if (accessTo.length === 0 || mode.length === 0) continue;
@@ -529,15 +537,15 @@ export class PolicyClient {
   }
 
   private parseAcpPolicy(turtle: string, policyUri: ResourceUri): AcpPolicy {
-    const appliesTo = turtle.match(/acp:appliesTo\s+<([^>]+)>/)?.[1] ?? '';
+    const appliesTo = turtle.match(/(?:acp:appliesTo|<http:\/\/www\.w3\.org\/ns\/solid\/acp#appliesTo>)\s+<([^>]+)>/)?.[1] ?? '';
     const parseRules = (predicate: 'allow' | 'deny') =>
-      [...turtle.matchAll(new RegExp(`acp:${predicate}\\s+\\[([^\\]]+)\\]`, 'g'))].map(
+      [...turtle.matchAll(new RegExp(`(?:acp:${predicate}|<http://www\.w3\.org/ns/solid/acp#${predicate}>)\\s+\\[([^\\]]+)\\]`, 'g'))].map(
         match => {
           const body = match[1] ?? '';
-          const actor = [...body.matchAll(/acp:actor\s+<([^>]+)>/g)].map(m => m[1]!);
-          const actorClass = [...body.matchAll(/acp:actorClass\s+<([^>]+)>/g)].map(m => m[1]!);
-          const actorGroup = [...body.matchAll(/acp:actorGroup\s+<([^>]+)>/g)].map(m => m[1]!);
-          const operation = [...body.matchAll(/acp:operation\s+<[^>]+#(Read|Write|Control|Append|Create|Delete)>/g)].map(
+          const actor = [...body.matchAll(/(?:acp:actor|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actor>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const actorClass = [...body.matchAll(/(?:acp:actorClass|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorClass>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const actorGroup = [...body.matchAll(/(?:acp:actorGroup|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorGroup>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const operation = [...body.matchAll(/(?:acp:operation|<http:\/\/www\.w3\.org\/ns\/solid\/acp#operation>)\s+<[^>]+#(Read|Write|Control|Append|Create|Delete)>/g)].map(
             m => m[1] as AcpOperation
           );
           return {
