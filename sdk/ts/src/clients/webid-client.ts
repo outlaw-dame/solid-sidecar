@@ -55,15 +55,6 @@ interface ResolvedWebIdClientConfig {
   logger: SolidSidecarLogger;
 }
 
-export const DEFAULT_WEBID_CLIENT_CONFIG = {
-  discoveryTimeout: 10_000,
-  profileCacheSize: 100,
-  profileCacheTtl: 5 * 60 * 1_000,
-  enableSsrfProtection: true,
-  allowedHosts: [],
-  logger: nullLogger,
-} satisfies ResolvedWebIdClientConfig;
-
 interface ProfileCacheEntry {
   profile: WebIdProfile;
   timestamp: number;
@@ -78,6 +69,15 @@ const FOAF_DEPICTION = 'http://xmlns.com/foaf/0.1/depiction';
 const FOAF_IMAGE_ALT = 'http://xmlns.com/foaf/0.1/image';
 const PIM_STORAGE = 'http://www.w3.org/ns/pim/space#storage';
 const PIM_PREFERENCES = 'http://www.w3.org/ns/pim/prefs#preferencesFile';
+
+export const DEFAULT_WEBID_CLIENT_CONFIG = {
+  discoveryTimeout: 10_000,
+  profileCacheSize: 100,
+  profileCacheTtl: 5 * 60 * 1_000,
+  enableSsrfProtection: true,
+  allowedHosts: [],
+  logger: nullLogger,
+} satisfies ResolvedWebIdClientConfig;
 
 export class WebIdClient {
   private readonly config: ResolvedWebIdClientConfig;
@@ -121,16 +121,21 @@ export class WebIdClient {
   ): Promise<WebIdProfile> {
     this.validateDiscoveryOptions(options);
     const canonicalWebId = this.canonicalizeWebId(webId);
-    const cached = this.getCachedProfile(canonicalWebId);
-    if (cached) return cached;
+    const usesSharedCache = this.canUseSharedCache(options);
 
-    const existing = this.inFlightDiscoveries.get(canonicalWebId);
+    if (usesSharedCache) {
+      const cached = this.getCachedProfile(canonicalWebId);
+      if (cached) return cached;
+    }
+
+    const requestKey = this.discoveryRequestKey(canonicalWebId, options);
+    const existing = this.inFlightDiscoveries.get(requestKey);
     if (existing) return this.cloneProfile(await existing);
 
-    const discovery = this.loadWebId(canonicalWebId, options).finally(() => {
-      this.inFlightDiscoveries.delete(canonicalWebId);
+    const discovery = this.loadWebId(canonicalWebId, options, usesSharedCache).finally(() => {
+      this.inFlightDiscoveries.delete(requestKey);
     });
-    this.inFlightDiscoveries.set(canonicalWebId, discovery);
+    this.inFlightDiscoveries.set(requestKey, discovery);
     return this.cloneProfile(await discovery);
   }
 
@@ -208,7 +213,8 @@ export class WebIdClient {
 
   private async loadWebId(
     canonicalWebId: string,
-    options: WebIdDiscoveryOptions
+    options: WebIdDiscoveryOptions,
+    cacheResult: boolean
   ): Promise<WebIdProfile> {
     const profileDocumentUri = this.profileDocumentUri(canonicalWebId);
     this.assertSafeUrl(profileDocumentUri);
@@ -217,7 +223,7 @@ export class WebIdClient {
       profileDocumentUri,
       options
     );
-    this.cacheProfile(canonicalWebId, profile);
+    if (cacheResult) this.cacheProfile(canonicalWebId, profile);
     this.logger.info('WebID profile discovered', {
       profileUri: profile.profileUri,
       hasStorage: (profile.storage?.length ?? 0) > 0,
@@ -235,6 +241,17 @@ export class WebIdClient {
         'followRedirects'
       );
     }
+  }
+
+  private canUseSharedCache(options: WebIdDiscoveryOptions): boolean {
+    return this.config.profileCacheTtl > 0 && Object.keys(options.headers ?? {}).length === 0;
+  }
+
+  private discoveryRequestKey(webId: string, options: WebIdDiscoveryOptions): string {
+    const headers = Object.entries(options.headers ?? {})
+      .map(([name, value]) => [name.toLowerCase(), value.trim()] as const)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return JSON.stringify({ webId, timeout: options.timeout ?? null, headers });
   }
 
   private canonicalizeWebId(webId: string): string {
@@ -347,23 +364,36 @@ export class WebIdClient {
       options.headers ?? {},
       'text/turtle, application/ld+json;q=0.9'
     );
-    const profile = this.parseWebIdProfile(response.content, webId, profileDocumentUri);
+    const contentType = response.metadata.contentType?.split(';', 1)[0]?.trim().toLowerCase();
+    const profile = this.parseWebIdProfile(
+      response.content,
+      webId,
+      profileDocumentUri,
+      contentType
+    );
     profile.lastModified = response.metadata.lastModified;
     profile.etag = response.metadata.etag;
     profile.raw = response.content;
-    profile.turtle = response.content;
+    if (contentType !== 'application/ld+json') profile.turtle = response.content;
     return profile;
   }
 
   private parseWebIdProfile(
     document: string,
     webId: string,
-    profileDocumentUri: string
+    profileDocumentUri: string,
+    contentType?: string
   ): WebIdProfile {
-    const trimmed = document.trimStart();
-    const profile = trimmed.startsWith('{') || trimmed.startsWith('[')
-      ? this.parseJsonLdProfile(document, webId, profileDocumentUri)
-      : this.parseTurtleProfile(document, webId, profileDocumentUri);
+    let profile: WebIdProfile;
+    if (contentType === 'application/ld+json') {
+      profile = this.parseJsonLdProfile(document, webId, profileDocumentUri);
+    } else if (contentType === 'text/turtle' || contentType === 'application/n-triples') {
+      profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
+    } else if (document.trimStart().startsWith('{')) {
+      profile = this.parseJsonLdProfile(document, webId, profileDocumentUri);
+    } else {
+      profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
+    }
 
     if (profile.id !== webId) {
       throw new ValidationError('Profile does not describe the requested WebID subject', 'webId');
@@ -377,8 +407,13 @@ export class WebIdClient {
     profileDocumentUri: string
   ): WebIdProfile {
     const prefixes = new Map<string, string>();
-    for (const match of turtle.matchAll(/(?:@prefix|PREFIX)\s+([A-Za-z][\w-]*):\s*<([^>]+)>/giu)) {
-      if (match[1] && match[2]) prefixes.set(match[1], match[2]);
+    for (const match of turtle.matchAll(/(?:@prefix|PREFIX)\s+([A-Za-z][\w-]*)?:\s*<([^>]+)>/giu)) {
+      if (!match[2]) continue;
+      try {
+        prefixes.set(match[1] ?? '', new URL(match[2], profileDocumentUri).toString());
+      } catch {
+        throw new ValidationError('Profile contains an invalid Turtle prefix IRI', 'profile');
+      }
     }
 
     const statements = this.collectTurtleStatements(turtle);
@@ -424,7 +459,7 @@ export class WebIdClient {
     prefixes: Map<string, string>,
     base: string
   ): void {
-    const predicateObject = /(?:^|;)\s*(a|<[^>]+>|[A-Za-z][\w-]*:[\w.-]+)\s+([^;]+?)(?=\s*;|\s*\.\s*$)/gu;
+    const predicateObject = /(?:^|;)\s*(a|<[^>]+>|(?:[A-Za-z][\w-]*)?:[\w.-]+)\s+([^;]+?)(?=\s*;|\s*\.\s*$)/gu;
     for (const match of statement.matchAll(predicateObject)) {
       const predicateToken = match[1];
       const objectToken = match[2]?.trim();
@@ -473,54 +508,140 @@ export class WebIdClient {
       throw new ValidationError('Profile contains invalid JSON-LD', 'profile');
     }
 
-    const nodes = Array.isArray(parsed)
+    const root = this.asRecord(parsed);
+    const graph = Array.isArray(parsed)
       ? parsed
-      : this.asRecord(parsed)?.['@graph'] ?? [parsed];
-    const node = (Array.isArray(nodes) ? nodes : [nodes])
+      : root?.['@graph'] ?? [parsed];
+    const nodes = (Array.isArray(graph) ? graph : [graph])
       .map(value => this.asRecord(value))
-      .find(value => {
-        const id = value?.['@id'];
-        if (typeof id !== 'string') return false;
-        try {
-          return new URL(id, profileDocumentUri).toString() === webId;
-        } catch {
-          return false;
-        }
-      });
+      .filter((value): value is Record<string, unknown> => value !== undefined);
+
+    const node = nodes.find(value => this.jsonLdNodeMatches(value, webId, profileDocumentUri));
     if (!node) {
       throw new ValidationError('Profile does not contain the requested WebID subject', 'webId');
     }
 
+    const context = this.buildJsonLdContext(
+      [root?.['@context'], node['@context']],
+      profileDocumentUri
+    );
     const profile: WebIdProfile = { id: webId, profileUri: profileDocumentUri };
+
     const type = this.firstString(node['@type']);
     if (type) {
       try {
-        profile.type = new URL(type, profileDocumentUri).toString();
+        profile.type = this.expandJsonLdTerm(type, context, profileDocumentUri);
       } catch {
         // Invalid non-authoritative type IRIs are ignored.
       }
     }
-    profile.name = this.firstLiteral(node[FOAF_NAME] ?? node['foaf:name'] ?? node.name);
-    profile.nickname = this.firstLiteral(node[FOAF_NICK] ?? node['foaf:nick']);
 
-    const email = this.firstIri(node[FOAF_MBOX] ?? node['foaf:mbox']);
+    profile.name = this.firstLiteral(this.jsonLdValue(node, FOAF_NAME, context) ?? node.name);
+    profile.nickname = this.firstLiteral(this.jsonLdValue(node, FOAF_NICK, context));
+
+    const email = this.firstIri(this.jsonLdValue(node, FOAF_MBOX, context));
     if (email?.startsWith('mailto:')) profile.email = email.slice(7);
 
     const image = this.firstIri(
-      node[FOAF_IMAGE] ?? node[FOAF_DEPICTION] ?? node[FOAF_IMAGE_ALT] ?? node['foaf:img']
+      this.jsonLdValue(node, FOAF_IMAGE, context) ??
+      this.jsonLdValue(node, FOAF_DEPICTION, context) ??
+      this.jsonLdValue(node, FOAF_IMAGE_ALT, context)
     );
     if (image) profile.image = this.requireSafeProfileUrl(image, profileDocumentUri);
 
-    const storageValues = this.allIris(node[PIM_STORAGE] ?? node['pim:storage']);
+    const storageValues = this.allIris(this.jsonLdValue(node, PIM_STORAGE, context));
     if (storageValues.length > 0) {
-      profile.storage = [...new Set(storageValues.map(value => this.requireSafeProfileUrl(value, profileDocumentUri)))];
+      profile.storage = [...new Set(
+        storageValues.map(value => this.requireSafeProfileUrl(value, profileDocumentUri))
+      )];
     }
 
-    const preferences = this.firstIri(node[PIM_PREFERENCES] ?? node['pim:preferencesFile']);
+    const preferences = this.firstIri(this.jsonLdValue(node, PIM_PREFERENCES, context));
     if (preferences) {
       profile.preferencesFile = this.requireSafeProfileUrl(preferences, profileDocumentUri);
     }
     return profile;
+  }
+
+  private jsonLdNodeMatches(
+    node: Record<string, unknown>,
+    webId: string,
+    base: string
+  ): boolean {
+    const id = node['@id'];
+    if (typeof id !== 'string') return false;
+    try {
+      return new URL(id, base).toString() === webId;
+    } catch {
+      return false;
+    }
+  }
+
+  private buildJsonLdContext(values: unknown[], base: string): Map<string, string> {
+    const context = new Map<string, string>();
+    for (const value of values) this.addJsonLdContextValue(context, value, base);
+    return context;
+  }
+
+  private addJsonLdContextValue(
+    context: Map<string, string>,
+    value: unknown,
+    base: string
+  ): void {
+    if (Array.isArray(value)) {
+      for (const item of value) this.addJsonLdContextValue(context, item, base);
+      return;
+    }
+    const record = this.asRecord(value);
+    if (!record) return;
+
+    for (const [term, definition] of Object.entries(record)) {
+      if (term.startsWith('@')) continue;
+      const id = typeof definition === 'string'
+        ? definition
+        : this.asRecord(definition)?.['@id'];
+      if (typeof id !== 'string') continue;
+      try {
+        context.set(term, this.expandJsonLdTerm(id, context, base));
+      } catch {
+        // Ignore malformed non-authoritative context entries.
+      }
+    }
+  }
+
+  private jsonLdValue(
+    node: Record<string, unknown>,
+    iri: string,
+    context: Map<string, string>
+  ): unknown {
+    if (node[iri] !== undefined) return node[iri];
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('@')) continue;
+      try {
+        if (this.expandJsonLdTerm(key, context, '') === iri) return value;
+      } catch {
+        // Ignore malformed property aliases.
+      }
+    }
+    return undefined;
+  }
+
+  private expandJsonLdTerm(
+    term: string,
+    context: Map<string, string>,
+    base: string
+  ): string {
+    const direct = context.get(term);
+    if (direct) return direct;
+
+    const compact = term.match(/^([^:]+):(.*)$/u);
+    if (compact?.[1] !== undefined && compact[2] !== undefined) {
+      const prefix = context.get(compact[1]);
+      if (prefix) return `${prefix}${compact[2]}`;
+      if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(term)) return term;
+    }
+
+    return new URL(term, base || undefined).toString();
   }
 
   private asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -531,7 +652,9 @@ export class WebIdClient {
 
   private firstString(value: unknown): string | undefined {
     if (typeof value === 'string') return value;
-    if (Array.isArray(value)) return value.find(item => typeof item === 'string') as string | undefined;
+    if (Array.isArray(value)) {
+      return value.find(item => typeof item === 'string') as string | undefined;
+    }
     return undefined;
   }
 
@@ -575,10 +698,14 @@ export class WebIdClient {
         return undefined;
       }
     }
-    const prefixed = normalized.match(/^([A-Za-z][\w-]*):([\w.-]+)$/u);
-    if (prefixed?.[1] && prefixed[2] && prefixes.has(prefixed[1])) {
-      return `${prefixes.get(prefixed[1])}${prefixed[2]}`;
+
+    const prefixed = normalized.match(/^([A-Za-z][\w-]*)?:([\w.-]+)$/u);
+    if (prefixed?.[2] !== undefined) {
+      const prefix = prefixes.get(prefixed[1] ?? '');
+      if (prefix) return `${prefix}${prefixed[2]}`;
     }
+
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(normalized)) return normalized;
     return undefined;
   }
 
@@ -596,15 +723,11 @@ export class WebIdClient {
   private getCachedProfile(webId: string): WebIdProfile | null {
     const entry = this.profileCache.get(webId);
     if (!entry) return null;
-    if (this.config.profileCacheTtl === 0 || Date.now() - entry.timestamp >= this.config.profileCacheTtl) {
+    if (Date.now() - entry.timestamp >= this.config.profileCacheTtl) {
       this.profileCache.delete(webId);
       return null;
     }
     return this.cloneProfile(entry.profile);
-  }
-
-  private pruneExpiredEntries(): void {
-    for (const key of this.profileCache.keys()) this.getCachedProfile(key);
   }
 
   private cacheProfile(webId: string, profile: WebIdProfile): void {
@@ -619,6 +742,19 @@ export class WebIdClient {
       profile: this.cloneProfile(profile),
       timestamp: Date.now(),
     });
+  }
+
+  private pruneExpiredEntries(): void {
+    if (this.config.profileCacheTtl === 0) {
+      this.profileCache.clear();
+      return;
+    }
+    const now = Date.now();
+    for (const [key, entry] of this.profileCache) {
+      if (now - entry.timestamp >= this.config.profileCacheTtl) {
+        this.profileCache.delete(key);
+      }
+    }
   }
 
   private cloneProfile(profile: WebIdProfile): WebIdProfile {
