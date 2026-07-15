@@ -76,7 +76,6 @@ export class ResourceClient {
   private readonly config: ResolvedResourceClientConfig;
   private readonly httpClient: SolidSidecarHttpClient;
   private readonly authManager: AuthManager | null;
-  private readonly logger: SolidSidecarLogger;
   private readonly baseUrl: URL;
 
   constructor(config: ResourceClientConfig = {}) {
@@ -105,12 +104,11 @@ export class ResourceClient {
       defaultContentType:
         config.defaultContentType ??
         DEFAULT_RESOURCE_CLIENT_CONFIG.defaultContentType,
-      useDpop: config.useDpop ?? DEFAULT_RESOURCE_CLIENT_CONFIG.useDpop,
+      useDpop: config.useDpop ?? config.authManager !== undefined,
       logger: config.logger ?? nestedHttpConfig.logger ?? nullLogger,
     };
     this.httpClient = new SolidSidecarHttpClient(httpClientConfig);
     this.authManager = this.config.authManager;
-    this.logger = this.config.logger;
 
     const configuredBaseUrl = this.httpClient.getConfig().baseUrl;
     try {
@@ -391,7 +389,7 @@ export class ResourceClient {
         const trimmed = value.trim();
         if (trimmed === '*') return '*';
         if (/^(W\/)?".*"$/.test(trimmed)) return trimmed;
-        return `"${trimmed.replaceAll('"', '')}"`;
+        return `"${trimmed.replace(/"/g, '')}"`;
       })
       .join(', ');
   }
