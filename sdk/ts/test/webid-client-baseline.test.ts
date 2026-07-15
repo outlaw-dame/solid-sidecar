@@ -70,29 +70,20 @@ describe('WebIdClient baseline', () => {
   });
 
   it('bounds the profile cache and re-fetches an evicted entry', async () => {
-    const profiles = new Map([
-      [
-        'https://pod.example/profile/card#one',
-        `<https://pod.example/profile/card#one>
+    const profileOne = `<https://pod.example/profile/card#one>
   a <http://xmlns.com/foaf/0.1/Person> ;
-  <http://xmlns.com/foaf/0.1/name> "One" .`,
-      ],
-      [
-        'https://pod.example/profile/card#two',
-        `<https://pod.example/profile/card#two>
+  <http://xmlns.com/foaf/0.1/name> "One" .`;
+    const profileTwo = `<https://pod.example/profile/card#two>
   a <http://xmlns.com/foaf/0.1/Person> ;
-  <http://xmlns.com/foaf/0.1/name> "Two" .`,
-      ],
-    ]);
-    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
-      const documentUrl = String(input);
-      const requestedWebId = `${documentUrl}${fetchMock.mock.calls.length === 1 ? '#one' : '#two'}`;
-      const body = profiles.get(requestedWebId) ?? profiles.get('https://pod.example/profile/card#one');
-      return profileResponse(body);
-    });
+  <http://xmlns.com/foaf/0.1/name> "Two" .`;
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(profileResponse(profileOne))
+      .mockResolvedValueOnce(profileResponse(profileTwo))
+      .mockResolvedValueOnce(profileResponse(profileOne));
     const client = new WebIdClient({
       baseUrl: 'https://pod.example/profile/',
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
       useDpop: false,
       maxRetries: 0,
       allowedHosts: ['pod.example'],
