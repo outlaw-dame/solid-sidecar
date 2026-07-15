@@ -133,4 +133,64 @@ describe('PolicyClient baseline', () => {
       'outside the configured scope'
     );
   });
+
+  it('inherits a nested container policy from its parent container', async () => {
+    const parentPolicy = `<https://pod.example/storage/.acl#auth> a <http://www.w3.org/ns/auth/acl#Authorization> ;\n  <http://www.w3.org/ns/auth/acl#accessTo> <https://pod.example/storage/> ;\n  <http://www.w3.org/ns/auth/acl#agentClass> <http://xmlns.com/foaf/0.1/Agent> ;\n  <http://www.w3.org/ns/auth/acl#mode> <http://www.w3.org/ns/auth/acl#Read> .\n`;
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'missing' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(response(parentPolicy, { 'content-type': 'text/turtle' }));
+    const client = new PolicyClient({
+      baseUrl: 'https://pod.example/storage/',
+      fetch: fetchMock,
+      useDpop: false,
+    });
+
+    await expect(client.getWacPolicy('/storage/projects/')).resolves.not.toBeNull();
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      'https://pod.example/storage/projects/.acl',
+      'https://pod.example/storage/.acl',
+    ]);
+  });
+
+  it('parses expanded WAC predicate IRIs', async () => {
+    const turtle = `<https://pod.example/storage/doc.acl#auth> a <http://www.w3.org/ns/auth/acl#Authorization> ;\n  <http://www.w3.org/ns/auth/acl#accessTo> <https://pod.example/storage/doc> ;\n  <http://www.w3.org/ns/auth/acl#agent> <https://alice.example/profile#me> ;\n  <http://www.w3.org/ns/auth/acl#mode> <http://www.w3.org/ns/auth/acl#Read> .\n`;
+    const client = new PolicyClient({
+      baseUrl: 'https://pod.example/storage/',
+      fetch: jest.fn<typeof fetch>().mockResolvedValue(
+        response(turtle, { 'content-type': 'text/turtle' })
+      ),
+      useDpop: false,
+    });
+    await expect(
+      client.checkWacAccess(
+        '/storage/doc',
+        'https://alice.example/profile#me',
+        'Read'
+      )
+    ).resolves.toBe(true);
+  });
+
+  it('parses expanded ACP predicate IRIs', async () => {
+    const turtle = `<> a <http://www.w3.org/ns/solid/acp#AccessPolicy> ;\n  <http://www.w3.org/ns/solid/acp#appliesTo> <https://pod.example/storage/doc> ;\n  <http://www.w3.org/ns/solid/acp#allow> [\n    <http://www.w3.org/ns/solid/acp#actor> <https://alice.example/profile#me> ;\n    <http://www.w3.org/ns/solid/acp#operation> <http://www.w3.org/ns/solid/acp#Read>\n  ] .\n`;
+    const client = new PolicyClient({
+      baseUrl: 'https://pod.example/storage/',
+      fetch: jest.fn<typeof fetch>().mockResolvedValue(
+        response(turtle, { 'content-type': 'text/turtle' })
+      ),
+      useDpop: false,
+    });
+    await expect(
+      client.checkAcpAccess(
+        '/storage/doc',
+        'https://alice.example/profile#me',
+        'Read'
+      )
+    ).resolves.toBe(true);
+  });
 });
