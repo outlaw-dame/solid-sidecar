@@ -69,11 +69,30 @@ describe('WebIdClient baseline', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('bounds the profile cache and evicts the oldest entry', async () => {
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
+  it('bounds the profile cache and re-fetches an evicted entry', async () => {
+    const profiles = new Map([
+      [
+        'https://pod.example/profile/card#one',
+        `<https://pod.example/profile/card#one>
+  a <http://xmlns.com/foaf/0.1/Person> ;
+  <http://xmlns.com/foaf/0.1/name> "One" .`,
+      ],
+      [
+        'https://pod.example/profile/card#two',
+        `<https://pod.example/profile/card#two>
+  a <http://xmlns.com/foaf/0.1/Person> ;
+  <http://xmlns.com/foaf/0.1/name> "Two" .`,
+      ],
+    ]);
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const documentUrl = String(input);
+      const requestedWebId = `${documentUrl}${fetchMock.mock.calls.length === 1 ? '#one' : '#two'}`;
+      const body = profiles.get(requestedWebId) ?? profiles.get('https://pod.example/profile/card#one');
+      return profileResponse(body);
+    });
     const client = new WebIdClient({
       baseUrl: 'https://pod.example/profile/',
-      fetch: fetchMock,
+      fetch: fetchMock as typeof fetch,
       useDpop: false,
       maxRetries: 0,
       allowedHosts: ['pod.example'],
@@ -86,5 +105,9 @@ describe('WebIdClient baseline', () => {
     expect(client.getCacheSize()).toBe(1);
     expect(client.isCached('https://pod.example/profile/card#one')).toBe(false);
     expect(client.isCached('https://pod.example/profile/card#two')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await client.discoverWebId('https://pod.example/profile/card#one');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
