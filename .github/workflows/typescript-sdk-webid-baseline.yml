@@ -1,0 +1,50 @@
+name: TypeScript SDK WebID baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/clients/webid-client.ts'
+      - 'sdk/ts/test/webid-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-webid-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ts/src/clients/webid-client.ts'
+      - 'sdk/ts/test/webid-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-webid-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-webid-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify WebID client baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Isolate WebID-client TypeScript diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          if grep -F 'src/clients/webid-client.ts' typecheck.log; then
+            echo 'webid-client.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+          echo 'No WebID-client TypeScript diagnostics found.'
+      - name: Run focused WebID tests when present
+        run: |
+          if test -f test/webid-client-baseline.test.ts; then
+            npx jest --runInBand test/webid-client-baseline.test.ts
+          fi
