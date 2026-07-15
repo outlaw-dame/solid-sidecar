@@ -81,6 +81,30 @@ describe('WebIdClient late review hardening', () => {
     expect(profile.storage).toEqual(['https://pod.example/storage/']);
   });
 
+  it('preserves root context aliases when a node context overrides their prefix', async () => {
+    const jsonLd = JSON.stringify({
+      '@context': {
+        pim: 'http://www.w3.org/ns/pim/space#',
+        storage: 'pim:storage',
+      },
+      '@graph': [
+        {
+          '@id': WEB_ID,
+          '@context': {
+            pim: 'https://example.invalid/overridden#',
+          },
+          storage: { '@id': 'https://pod.example/storage/' },
+        },
+      ],
+    });
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue(response(jsonLd, 'application/ld+json'));
+
+    const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
+    expect(profile.storage).toEqual(['https://pod.example/storage/']);
+  });
+
   it('preserves compact FOAF and PIM keys without a local JSON-LD context', async () => {
     const jsonLd = JSON.stringify({
       '@id': WEB_ID,
@@ -107,5 +131,18 @@ profile: <http://xmlns.com/foaf/0.1/name> "Alice #1; Bob" ;
     const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
     expect(profile.name).toBe('Alice #1; Bob');
     expect(profile.storage).toEqual(['https://pod.example/storage/#primary']);
+  });
+
+  it('does not terminate Turtle statements at dots inside prefixed-name locals', async () => {
+    const dottedWebId = 'https://pod.example/profile/card#me.v1';
+    const turtle = `
+@prefix profile: <#> .
+profile:me.v1 <http://xmlns.com/foaf/0.1/name> "Dotted Alice" .
+`;
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(response(turtle, 'text/turtle'));
+
+    const profile = await createClient(fetchMock).discoverWebId(dottedWebId);
+    expect(profile.id).toBe(dottedWebId);
+    expect(profile.name).toBe('Dotted Alice');
   });
 });
