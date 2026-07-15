@@ -475,7 +475,8 @@ export class WebIdClient {
       .filter(line => line && !/^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line))
       .join(' ');
 
-    for (const char of source) {
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index] ?? '';
       current += char;
       if (escaped) {
         escaped = false;
@@ -488,7 +489,12 @@ export class WebIdClient {
       if (!inIri && char === '"') inString = !inString;
       else if (!inString && char === '<') inIri = true;
       else if (!inString && char === '>') inIri = false;
-      else if (!inString && !inIri && char === '.') {
+      else if (
+        !inString &&
+        !inIri &&
+        char === '.' &&
+        (index === source.length - 1 || /\s/u.test(source[index + 1] ?? ''))
+      ) {
         if (current.trim()) statements.push(current.trim());
         current = '';
       }
@@ -690,37 +696,45 @@ export class WebIdClient {
   }
 
   private buildJsonLdContext(values: unknown[], base: string): Map<string, string> {
-    const rawContext = new Map<string, string>();
-    for (const value of values) this.collectJsonLdContextDefinitions(rawContext, value);
-
     const context = new Map<string, string>();
-    for (const [term, raw] of rawContext) {
-      try {
-        context.set(term, this.expandJsonLdTerm(raw, rawContext, base));
-      } catch {
-        // Ignore malformed or circular non-authoritative context entries.
-      }
-    }
+    for (const value of values) this.applyJsonLdContextValue(context, value, base);
     return context;
   }
 
-  private collectJsonLdContextDefinitions(
-    rawContext: Map<string, string>,
-    value: unknown
+  private applyJsonLdContextValue(
+    context: Map<string, string>,
+    value: unknown,
+    base: string
   ): void {
     if (Array.isArray(value)) {
-      for (const item of value) this.collectJsonLdContextDefinitions(rawContext, item);
+      for (const item of value) this.applyJsonLdContextValue(context, item, base);
       return;
     }
+
     const record = this.asRecord(value);
     if (!record) return;
+
+    const rawScope = new Map(context);
+    const rawDefinitions = new Map<string, string>();
     for (const [term, definition] of Object.entries(record)) {
       if (term.startsWith('@')) continue;
       const id = typeof definition === 'string'
         ? definition
         : this.asRecord(definition)?.['@id'];
-      if (typeof id === 'string' && !id.startsWith('@')) rawContext.set(term, id);
+      if (typeof id !== 'string' || id.startsWith('@')) continue;
+      rawDefinitions.set(term, id);
+      rawScope.set(term, id);
     }
+
+    const resolved = new Map<string, string>();
+    for (const [term, raw] of rawDefinitions) {
+      try {
+        resolved.set(term, this.expandJsonLdTerm(raw, rawScope, base));
+      } catch {
+        // Ignore malformed or circular non-authoritative context entries.
+      }
+    }
+    for (const [term, iri] of resolved) context.set(term, iri);
   }
 
   private jsonLdValue(
