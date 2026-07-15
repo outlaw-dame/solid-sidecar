@@ -21,21 +21,24 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           source = Path('sdk/ts/src/clients/resource-client.ts')
           text = source.read_text()
-          old = """    const nestedHttpConfig = config.httpClientConfig ?? {};
-          const httpLogger =
-            nestedHttpConfig.logger ??
-            config.logger ??
-            DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
-          const httpClientConfig: HttpClientConfig = {
-            ...topLevelHttpConfig,
-            ...nestedHttpConfig,
-            logger: httpLogger,
-          };
-          """
-          new = """    const nestedHttpConfig: HttpClientConfig = {};
+
+          pattern = re.compile(
+              r"    const nestedHttpConfig = config\.httpClientConfig \?\? \{\};\n"
+              r"    const httpLogger =\n"
+              r"      nestedHttpConfig\.logger \?\?\n"
+              r"      config\.logger \?\?\n"
+              r"      DEFAULT_RESOURCE_CLIENT_CONFIG\.logger;\n"
+              r"    const httpClientConfig: HttpClientConfig = \{\n"
+              r"      \.\.\.topLevelHttpConfig,\n"
+              r"      \.\.\.nestedHttpConfig,\n"
+              r"      logger: httpLogger,\n"
+              r"    \};"
+          )
+          replacement = """    const nestedHttpConfig: HttpClientConfig = {};
           for (const key of HTTP_CONFIG_KEYS) {
             const value = config.httpClientConfig?.[key];
             if (value !== undefined) {
@@ -50,57 +53,50 @@ jobs:
             ...topLevelHttpConfig,
             ...nestedHttpConfig,
             logger: httpLogger,
-          };
-          """
-          if old not in text:
-              raise SystemExit('nested config block not found')
-          text = text.replace(old, new, 1)
+          };"""
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'nested config replacement count={count}')
 
-          old = """    const authHeaders = await this.getAuthHeaders(method, url);
-            return {
-              ...callerHeaders,
-              ...enforcedHeaders,
-              ...authHeaders,
-            };
-          """
-          new = """    const authHeaders = await this.getAuthHeaders(method, url);
-            const protectedNames = new Set(
-              [...Object.keys(enforcedHeaders), ...Object.keys(authHeaders)].map(name =>
-                name.toLowerCase()
-              )
-            );
-            const sanitizedCallerHeaders = Object.fromEntries(
-              Object.entries(callerHeaders).filter(
-                ([name]) => !protectedNames.has(name.toLowerCase())
-              )
-            );
-            return {
-              ...sanitizedCallerHeaders,
-              ...enforcedHeaders,
-              ...authHeaders,
-            };
-          """
-          if old not in text:
-              raise SystemExit('header merge block not found')
-          text = text.replace(old, new, 1)
+          pattern = re.compile(
+              r"    const authHeaders = await this\.getAuthHeaders\(method, url\);\n"
+              r"    return \{\n"
+              r"      \.\.\.callerHeaders,\n"
+              r"      \.\.\.enforcedHeaders,\n"
+              r"      \.\.\.authHeaders,\n"
+              r"    \};"
+          )
+          replacement = """    const authHeaders = await this.getAuthHeaders(method, url);
+          const protectedNames = new Set(
+            [...Object.keys(enforcedHeaders), ...Object.keys(authHeaders)].map(name =>
+              name.toLowerCase()
+            )
+          );
+          const sanitizedCallerHeaders = Object.fromEntries(
+            Object.entries(callerHeaders).filter(
+              ([name]) => !protectedNames.has(name.toLowerCase())
+            )
+          );
+          return {
+            ...sanitizedCallerHeaders,
+            ...enforcedHeaders,
+            ...authHeaders,
+          };"""
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'header merge replacement count={count}')
           source.write_text(text)
 
           test = Path('sdk/ts/test/resource-client-baseline.test.ts')
           tests = test.read_text()
           tests = tests.replace(
-              """        Authorization: 'Bearer attacker',
-                DPoP: 'attacker-proof',
-                'If-None-Match': 'attacker',
-          """,
-              """        authorization: 'Bearer attacker',
-                dpop: 'attacker-proof',
-                'if-none-match': 'attacker',
-          """,
+              "Authorization: 'Bearer attacker',\n        DPoP: 'attacker-proof',\n        'If-None-Match': 'attacker',",
+              "authorization: 'Bearer attacker',\n        dpop: 'attacker-proof',\n        'if-none-match': 'attacker',",
               1,
           )
-          marker = """  it('preserves create wildcard and prevents caller auth spoofing', async () => {
-          """
-          extra = """  it('ignores undefined nested HTTP overrides', () => {
+          marker = "  it('preserves create wildcard and prevents caller auth spoofing', async () => {\n"
+          if "it('ignores undefined nested HTTP overrides'" not in tests:
+              extra = """  it('ignores undefined nested HTTP overrides', () => {
             const fetchMock = jest.fn<typeof fetch>();
             const client = new ResourceClient({
               baseUrl: 'https://pod.example/storage/',
@@ -119,9 +115,9 @@ jobs:
           });
 
           """
-          if marker not in tests:
-              raise SystemExit('test insertion marker not found')
-          tests = tests.replace(marker, extra + marker, 1)
+              if marker not in tests:
+                  raise SystemExit('test insertion marker not found')
+              tests = tests.replace(marker, extra + marker, 1)
           test.write_text(tests)
           PY
       - name: Commit fixes
