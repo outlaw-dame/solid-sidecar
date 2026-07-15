@@ -125,7 +125,7 @@ describe('WebIdClient baseline', () => {
     );
   });
 
-  it('deduplicates concurrent discovery requests for the same WebID', async () => {
+  it('deduplicates option-equivalent concurrent discovery requests', async () => {
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
     const client = createClient(fetchMock);
 
@@ -139,6 +139,22 @@ describe('WebIdClient baseline', () => {
     expect(firstProfile).not.toBe(secondProfile);
   });
 
+  it('does not coalesce or cache requests with different effective headers', async () => {
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
+    const client = createClient(fetchMock);
+
+    await Promise.all([
+      client.discoverWebId(WEB_ID, { headers: { 'x-tenant': 'alpha' } }),
+      client.discoverWebId(WEB_ID, { headers: { 'x-tenant': 'beta' } }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const sentHeaders = fetchMock.mock.calls.map(call => call[1]?.headers as Record<string, string>);
+    expect(sentHeaders.some(headers => headers['x-tenant'] === 'alpha')).toBe(true);
+    expect(sentHeaders.some(headers => headers['x-tenant'] === 'beta')).toBe(true);
+    expect(client.getCacheSize()).toBe(0);
+  });
+
   it('does not cache profiles when the TTL is zero', async () => {
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse());
     const client = createClient(fetchMock, { profileCacheTtl: 0 });
@@ -150,7 +166,36 @@ describe('WebIdClient baseline', () => {
     expect(client.getCacheSize()).toBe(0);
   });
 
-  it('parses JSON-LD profiles and validates derived IRIs', async () => {
+  it('resolves empty and document-relative Turtle prefixes', async () => {
+    const turtle = `
+@prefix : <#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+:me a foaf:Person ;
+  foaf:name "Relative Alice" .
+`;
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(profileResponse(turtle));
+
+    const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
+    expect(profile.id).toBe(WEB_ID);
+    expect(profile.type).toBe('http://xmlns.com/foaf/0.1/Person');
+    expect(profile.name).toBe('Relative Alice');
+  });
+
+  it('uses response content type when Turtle starts with a blank-node statement', async () => {
+    const turtle = `
+[] <http://example.com/ignored> "value" .
+<https://pod.example/profile/card#me>
+  <http://xmlns.com/foaf/0.1/name> "Blank Node Safe" .
+`;
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(
+      profileResponse(turtle, 'text/turtle; charset=utf-8')
+    );
+
+    const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
+    expect(profile.name).toBe('Blank Node Safe');
+  });
+
+  it('parses expanded JSON-LD profiles and validates derived IRIs', async () => {
     const jsonLd = JSON.stringify({
       '@graph': [
         {
@@ -169,6 +214,25 @@ describe('WebIdClient baseline', () => {
 
     const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
     expect(profile.name).toBe('Alice JSON-LD');
+    expect(profile.storage).toEqual(['https://pod.example/storage/']);
+  });
+
+  it('expands JSON-LD context aliases for storage discovery', async () => {
+    const jsonLd = JSON.stringify({
+      '@context': {
+        storage: 'http://www.w3.org/ns/pim/space#storage',
+        name: 'http://xmlns.com/foaf/0.1/name',
+      },
+      '@id': WEB_ID,
+      name: 'Context Alice',
+      storage: { '@id': 'https://pod.example/storage/' },
+    });
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue(profileResponse(jsonLd, 'application/ld+json; charset=utf-8'));
+
+    const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
+    expect(profile.name).toBe('Context Alice');
     expect(profile.storage).toEqual(['https://pod.example/storage/']);
   });
 
