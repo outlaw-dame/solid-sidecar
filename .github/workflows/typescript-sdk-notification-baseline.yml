@@ -48,7 +48,21 @@ jobs:
           fi
           echo 'No notification-client TypeScript diagnostics found.'
       - name: Run focused notification tests
-        run: npx jest --runInBand test/notification-client-baseline.test.ts
+        id: focused-tests
+        run: |
+          set +e
+          npx jest --runInBand test/notification-client-baseline.test.ts > notification-jest.log 2>&1
+          status=$?
+          cat notification-jest.log
+          exit "$status"
+      - name: Upload focused test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-jest-log
+          path: sdk/ts/notification-jest.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify lifecycle and security invariants
         run: |
           ! grep -Fq 'logger: console' src/clients/notification-client.ts
