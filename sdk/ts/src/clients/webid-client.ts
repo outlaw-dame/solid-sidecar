@@ -22,7 +22,9 @@ export interface WebIdProfile {
 export interface WebIdDiscoveryOptions {
   timeout?: number;
   headers?: HttpHeaders;
+  /** @deprecated Redirect handling is enforced by the underlying HTTP client. */
   followRedirects?: boolean;
+  /** @deprecated Redirect handling is enforced by the underlying HTTP client. */
   maxRedirects?: number;
 }
 
@@ -65,14 +67,24 @@ export const DEFAULT_WEBID_CLIENT_CONFIG = {
 interface ProfileCacheEntry {
   profile: WebIdProfile;
   timestamp: number;
-  etag?: string;
 }
+
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const FOAF_NAME = 'http://xmlns.com/foaf/0.1/name';
+const FOAF_NICK = 'http://xmlns.com/foaf/0.1/nick';
+const FOAF_MBOX = 'http://xmlns.com/foaf/0.1/mbox';
+const FOAF_IMAGE = 'http://xmlns.com/foaf/0.1/img';
+const FOAF_DEPICTION = 'http://xmlns.com/foaf/0.1/depiction';
+const FOAF_IMAGE_ALT = 'http://xmlns.com/foaf/0.1/image';
+const PIM_STORAGE = 'http://www.w3.org/ns/pim/space#storage';
+const PIM_PREFERENCES = 'http://www.w3.org/ns/pim/prefs#preferencesFile';
 
 export class WebIdClient {
   private readonly config: ResolvedWebIdClientConfig;
   private readonly resourceClient: ResourceClient;
   private readonly logger: SolidSidecarLogger;
   private readonly profileCache = new Map<string, ProfileCacheEntry>();
+  private readonly inFlightDiscoveries = new Map<string, Promise<WebIdProfile>>();
 
   public constructor(config: WebIdClientConfig = {}) {
     this.config = {
@@ -101,36 +113,25 @@ export class WebIdClient {
 
     this.resourceClient = new ResourceClient({ ...config, logger: this.config.logger });
     this.logger = this.config.logger;
-    this.logger.debug('WebIdClient initialized', {
-      discoveryTimeout: this.config.discoveryTimeout,
-      profileCacheSize: this.config.profileCacheSize,
-      enableSsrfProtection: this.config.enableSsrfProtection,
-    });
   }
 
   public async discoverWebId(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<WebIdProfile> {
+    this.validateDiscoveryOptions(options);
     const canonicalWebId = this.canonicalizeWebId(webId);
     const cached = this.getCachedProfile(canonicalWebId);
     if (cached) return cached;
 
-    const profileDocumentUri = this.profileDocumentUri(canonicalWebId);
-    this.assertSafeUrl(profileDocumentUri);
+    const existing = this.inFlightDiscoveries.get(canonicalWebId);
+    if (existing) return this.cloneProfile(await existing);
 
-    const profile = await this.fetchWebIdProfile(
-      canonicalWebId,
-      profileDocumentUri,
-      options
-    );
-    this.cacheProfile(canonicalWebId, profile);
-
-    this.logger.info('WebID profile discovered', {
-      profileUri: profile.profileUri,
-      hasStorage: (profile.storage?.length ?? 0) > 0,
+    const discovery = this.loadWebId(canonicalWebId, options).finally(() => {
+      this.inFlightDiscoveries.delete(canonicalWebId);
     });
-    return profile;
+    this.inFlightDiscoveries.set(canonicalWebId, discovery);
+    return this.cloneProfile(await discovery);
   }
 
   public async validateWebId(
@@ -150,17 +151,10 @@ export class WebIdClient {
       result.profile = profile;
       result.profileUri = profile.profileUri;
       result.valid = profile.id === canonicalWebId;
-
-      if (!result.valid) {
-        result.errors.push('Profile subject does not match the requested WebID');
-      }
-      if (!profile.storage?.length) {
-        result.warnings.push('No storage locations found in profile');
-      }
+      if (!result.valid) result.errors.push('Profile subject does not match the requested WebID');
+      if (!profile.storage?.length) result.warnings.push('No storage locations found in profile');
     } catch (error) {
-      result.errors.push(
-        error instanceof Error ? error.message : 'WebID validation failed'
-      );
+      result.errors.push(error instanceof Error ? error.message : 'WebID validation failed');
     }
 
     return result;
@@ -170,16 +164,14 @@ export class WebIdClient {
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<string[]> {
-    const profile = await this.discoverWebId(webId, options);
-    return [...(profile.storage ?? [])];
+    return [...((await this.discoverWebId(webId, options)).storage ?? [])];
   }
 
   public async discoverPrimaryStorage(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<string | null> {
-    const storage = await this.discoverStorageLocations(webId, options);
-    return storage[0] ?? null;
+    return (await this.discoverStorageLocations(webId, options))[0] ?? null;
   }
 
   public async discoverPreferencesFile(
@@ -202,6 +194,7 @@ export class WebIdClient {
   }
 
   public getCacheSize(): number {
+    this.pruneExpiredEntries();
     return this.profileCache.size;
   }
 
@@ -210,10 +203,38 @@ export class WebIdClient {
   }
 
   public getConfig(): Readonly<ResolvedWebIdClientConfig> {
-    return {
-      ...this.config,
-      allowedHosts: [...this.config.allowedHosts],
-    };
+    return { ...this.config, allowedHosts: [...this.config.allowedHosts] };
+  }
+
+  private async loadWebId(
+    canonicalWebId: string,
+    options: WebIdDiscoveryOptions
+  ): Promise<WebIdProfile> {
+    const profileDocumentUri = this.profileDocumentUri(canonicalWebId);
+    this.assertSafeUrl(profileDocumentUri);
+    const profile = await this.fetchWebIdProfile(
+      canonicalWebId,
+      profileDocumentUri,
+      options
+    );
+    this.cacheProfile(canonicalWebId, profile);
+    this.logger.info('WebID profile discovered', {
+      profileUri: profile.profileUri,
+      hasStorage: (profile.storage?.length ?? 0) > 0,
+    });
+    return profile;
+  }
+
+  private validateDiscoveryOptions(options: WebIdDiscoveryOptions): void {
+    if (options.timeout !== undefined && (!Number.isFinite(options.timeout) || options.timeout <= 0)) {
+      throw new ValidationError('timeout must be a positive number', 'timeout');
+    }
+    if (options.followRedirects !== undefined || options.maxRedirects !== undefined) {
+      throw new ValidationError(
+        'Per-request redirect overrides are unsupported; redirect policy is enforced by the HTTP client',
+        'followRedirects'
+      );
+    }
   }
 
   private canonicalizeWebId(webId: string): string {
@@ -227,16 +248,13 @@ export class WebIdClient {
     } catch {
       throw new ValidationError('WebID must be a valid absolute URL', 'webId');
     }
-
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new ValidationError('WebID must use HTTP or HTTPS', 'webId');
     }
     if (parsed.username || parsed.password) {
       throw new ValidationError('WebID must not contain credentials', 'webId');
     }
-
     parsed.hostname = parsed.hostname.toLowerCase();
-    parsed.hash = parsed.hash;
     return parsed.toString();
   }
 
@@ -246,13 +264,55 @@ export class WebIdClient {
     return document.toString();
   }
 
-  private assertSafeUrl(url: string): void {
-    if (
-      this.config.enableSsrfProtection &&
-      !validateUrl(url, this.config.allowedHosts)
-    ) {
+  private assertSafeUrl(value: string): void {
+    if (!this.config.enableSsrfProtection) return;
+    if (!validateUrl(value, this.config.allowedHosts)) {
       throw new ValidationError('WebID URI failed URL safety validation', 'webId');
     }
+
+    const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/gu, '');
+    if (this.isForbiddenHostname(hostname)) {
+      throw new ValidationError('WebID URI targets a private or special-use host', 'webId');
+    }
+  }
+
+  private isForbiddenHostname(hostname: string): boolean {
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname === 'metadata.google.internal'
+    ) {
+      return true;
+    }
+
+    const octets = hostname.split('.').map(Number);
+    if (octets.length === 4 && octets.every(value => Number.isInteger(value) && value >= 0 && value <= 255)) {
+      const [a = 0, b = 0] = octets;
+      return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 0) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        a >= 224
+      );
+    }
+
+    const normalizedIpv6 = hostname.toLowerCase();
+    return (
+      normalizedIpv6 === '::' ||
+      normalizedIpv6 === '::1' ||
+      normalizedIpv6.startsWith('fc') ||
+      normalizedIpv6.startsWith('fd') ||
+      /^fe[89ab]/u.test(normalizedIpv6) ||
+      normalizedIpv6.startsWith('ff')
+    );
   }
 
   private async fetchWebIdProfile(
@@ -274,95 +334,265 @@ export class WebIdClient {
   }
 
   private parseWebIdProfile(
+    document: string,
+    webId: string,
+    profileDocumentUri: string
+  ): WebIdProfile {
+    const trimmed = document.trimStart();
+    const profile = trimmed.startsWith('{') || trimmed.startsWith('[')
+      ? this.parseJsonLdProfile(document, webId, profileDocumentUri)
+      : this.parseTurtleProfile(document, webId, profileDocumentUri);
+
+    if (profile.id !== webId) {
+      throw new ValidationError('Profile does not describe the requested WebID subject', 'webId');
+    }
+    return profile;
+  }
+
+  private parseTurtleProfile(
     turtle: string,
     webId: string,
     profileDocumentUri: string
   ): WebIdProfile {
-    const profile: WebIdProfile = { id: webId, profileUri: profileDocumentUri };
-
-    for (const rawLine of turtle.split(/\r?\n/u)) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#') || line.startsWith('@')) continue;
-
-      const subjectMatch = line.match(/^<([^>]+)>/u);
-      if (!subjectMatch) continue;
-
-      let subject: string;
-      try {
-        subject = new URL(subjectMatch[1] ?? '', profileDocumentUri).toString();
-      } catch {
-        continue;
-      }
-      if (subject !== webId) continue;
-
-      const typeMatch = line.match(/\ba\s+<([^>]+)>/iu);
-      if (typeMatch?.[1]) profile.type = typeMatch[1];
-
-      const nameMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/name>\s+"([^"]+)"/u);
-      if (nameMatch?.[1]) profile.name = nameMatch[1];
-
-      const nicknameMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/nick>\s+"([^"]+)"/u);
-      if (nicknameMatch?.[1]) profile.nickname = nicknameMatch[1];
-
-      const emailMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/mbox>\s+<mailto:([^>]+)>/u);
-      if (emailMatch?.[1]) profile.email = emailMatch[1];
-
-      const imageMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/(?:img|depiction|image)>\s+<([^>]+)>/u);
-      if (imageMatch?.[1]) profile.image = this.safeProfileUrl(imageMatch[1], profileDocumentUri);
-
-      const storageMatch = line.match(/<http:\/\/www\.w3\.org\/ns\/pim\/space#storage>\s+<([^>]+)>/u);
-      if (storageMatch?.[1]) {
-        const storage = this.safeProfileUrl(storageMatch[1], profileDocumentUri);
-        if (storage) profile.storage = [...(profile.storage ?? []), storage];
-      }
-
-      const preferencesMatch = line.match(/<http:\/\/www\.w3\.org\/ns\/pim\/prefs#preferencesFile>\s+<([^>]+)>/u);
-      if (preferencesMatch?.[1]) {
-        profile.preferencesFile = this.safeProfileUrl(
-          preferencesMatch[1],
-          profileDocumentUri
-        );
-      }
+    const prefixes = new Map<string, string>();
+    for (const match of turtle.matchAll(/(?:@prefix|PREFIX)\s+([A-Za-z][\w-]*):\s*<([^>]+)>/giu)) {
+      if (match[1] && match[2]) prefixes.set(match[1], match[2]);
     }
 
+    const statements = this.collectTurtleStatements(turtle);
+    const profile: WebIdProfile = { id: '', profileUri: profileDocumentUri };
+    let foundSubject = false;
+
+    for (const statement of statements) {
+      const subjectToken = statement.match(/^([^\s]+)\s+/u)?.[1];
+      if (!subjectToken) continue;
+      const subject = this.resolveRdfTerm(subjectToken, prefixes, profileDocumentUri);
+      if (subject !== webId) continue;
+      foundSubject = true;
+      profile.id = webId;
+      this.applyTurtlePredicates(profile, statement, prefixes, profileDocumentUri);
+    }
+
+    if (!foundSubject) {
+      throw new ValidationError('Profile does not contain the requested WebID subject', 'webId');
+    }
     return profile;
   }
 
-  private safeProfileUrl(value: string, base: string): string | undefined {
-    try {
-      const resolved = new URL(value, base).toString();
-      this.assertSafeUrl(resolved);
-      return resolved;
-    } catch {
-      return undefined;
+  private collectTurtleStatements(turtle: string): string[] {
+    const statements: string[] = [];
+    let current = '';
+    for (const rawLine of turtle.split(/\r?\n/u)) {
+      const line = rawLine.replace(/\s+#.*$/u, '').trim();
+      if (!line || /^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line)) continue;
+      current = current ? `${current} ${line}` : line;
+      if (/\.\s*$/u.test(line)) {
+        statements.push(current);
+        current = '';
+      }
     }
+    if (current) statements.push(current);
+    return statements;
+  }
+
+  private applyTurtlePredicates(
+    profile: WebIdProfile,
+    statement: string,
+    prefixes: Map<string, string>,
+    base: string
+  ): void {
+    const predicateObject = /(?:^|;)\s*(a|<[^>]+>|[A-Za-z][\w-]*:[\w.-]+)\s+([^;]+?)(?=\s*;|\s*\.\s*$)/gu;
+    for (const match of statement.matchAll(predicateObject)) {
+      const predicateToken = match[1];
+      const objectToken = match[2]?.trim();
+      if (!predicateToken || !objectToken) continue;
+      const predicate = predicateToken === 'a'
+        ? RDF_TYPE
+        : this.resolveRdfTerm(predicateToken, prefixes, base);
+      if (!predicate) continue;
+      this.applyProfileValue(profile, predicate, objectToken, prefixes, base);
+    }
+  }
+
+  private applyProfileValue(
+    profile: WebIdProfile,
+    predicate: string,
+    objectToken: string,
+    prefixes: Map<string, string>,
+    base: string
+  ): void {
+    const literal = objectToken.match(/^"((?:\\.|[^"\\])*)"/u)?.[1]?.replace(/\\"/gu, '"');
+    const iri = this.resolveRdfTerm(objectToken.split(/\s*,\s*/u)[0] ?? '', prefixes, base);
+
+    if (predicate === RDF_TYPE && iri) profile.type = iri;
+    else if (predicate === FOAF_NAME && literal !== undefined) profile.name = literal;
+    else if (predicate === FOAF_NICK && literal !== undefined) profile.nickname = literal;
+    else if (predicate === FOAF_MBOX && iri?.startsWith('mailto:')) profile.email = iri.slice(7);
+    else if ([FOAF_IMAGE, FOAF_DEPICTION, FOAF_IMAGE_ALT].includes(predicate) && iri) {
+      profile.image = this.requireSafeProfileUrl(iri, base);
+    } else if (predicate === PIM_STORAGE && iri) {
+      const storage = this.requireSafeProfileUrl(iri, base);
+      profile.storage = [...new Set([...(profile.storage ?? []), storage])];
+    } else if (predicate === PIM_PREFERENCES && iri) {
+      profile.preferencesFile = this.requireSafeProfileUrl(iri, base);
+    }
+  }
+
+  private parseJsonLdProfile(
+    document: string,
+    webId: string,
+    profileDocumentUri: string
+  ): WebIdProfile {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(document) as unknown;
+    } catch {
+      throw new ValidationError('Profile contains invalid JSON-LD', 'profile');
+    }
+
+    const nodes = Array.isArray(parsed)
+      ? parsed
+      : this.asRecord(parsed)?.['@graph'] ?? [parsed];
+    const node = (Array.isArray(nodes) ? nodes : [nodes])
+      .map(value => this.asRecord(value))
+      .find(value => {
+        const id = value?.['@id'];
+        return typeof id === 'string' && new URL(id, profileDocumentUri).toString() === webId;
+      });
+    if (!node) {
+      throw new ValidationError('Profile does not contain the requested WebID subject', 'webId');
+    }
+
+    const profile: WebIdProfile = { id: webId, profileUri: profileDocumentUri };
+    const type = this.firstString(node['@type']);
+    if (type) profile.type = new URL(type, profileDocumentUri).toString();
+    profile.name = this.firstLiteral(node[FOAF_NAME] ?? node['foaf:name'] ?? node.name);
+    profile.nickname = this.firstLiteral(node[FOAF_NICK] ?? node['foaf:nick']);
+
+    const email = this.firstIri(node[FOAF_MBOX] ?? node['foaf:mbox']);
+    if (email?.startsWith('mailto:')) profile.email = email.slice(7);
+
+    const image = this.firstIri(
+      node[FOAF_IMAGE] ?? node[FOAF_DEPICTION] ?? node[FOAF_IMAGE_ALT] ?? node['foaf:img']
+    );
+    if (image) profile.image = this.requireSafeProfileUrl(image, profileDocumentUri);
+
+    const storageValues = this.allIris(node[PIM_STORAGE] ?? node['pim:storage']);
+    if (storageValues.length > 0) {
+      profile.storage = [...new Set(storageValues.map(value => this.requireSafeProfileUrl(value, profileDocumentUri)))];
+    }
+
+    const preferences = this.firstIri(node[PIM_PREFERENCES] ?? node['pim:preferencesFile']);
+    if (preferences) {
+      profile.preferencesFile = this.requireSafeProfileUrl(preferences, profileDocumentUri);
+    }
+    return profile;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : undefined;
+  }
+
+  private firstString(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.find(item => typeof item === 'string') as string | undefined;
+    return undefined;
+  }
+
+  private firstLiteral(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      const record = this.asRecord(item);
+      if (typeof record?.['@value'] === 'string') return record['@value'];
+    }
+    return undefined;
+  }
+
+  private firstIri(value: unknown): string | undefined {
+    return this.allIris(value)[0];
+  }
+
+  private allIris(value: unknown): string[] {
+    const values = Array.isArray(value) ? value : [value];
+    const result: string[] = [];
+    for (const item of values) {
+      if (typeof item === 'string') result.push(item);
+      else {
+        const id = this.asRecord(item)?.['@id'];
+        if (typeof id === 'string') result.push(id);
+      }
+    }
+    return result;
+  }
+
+  private resolveRdfTerm(
+    token: string,
+    prefixes: Map<string, string>,
+    base: string
+  ): string | undefined {
+    const normalized = token.trim().replace(/[;,]$/u, '');
+    if (normalized.startsWith('<') && normalized.endsWith('>')) {
+      try {
+        return new URL(normalized.slice(1, -1), base).toString();
+      } catch {
+        return undefined;
+      }
+    }
+    const prefixed = normalized.match(/^([A-Za-z][\w-]*):([\w.-]+)$/u);
+    if (prefixed?.[1] && prefixed[2] && prefixes.has(prefixed[1])) {
+      return `${prefixes.get(prefixed[1])}${prefixed[2]}`;
+    }
+    return undefined;
+  }
+
+  private requireSafeProfileUrl(value: string, base: string): string {
+    let resolved: string;
+    try {
+      resolved = new URL(value, base).toString();
+    } catch {
+      throw new ValidationError('Profile contains an invalid derived IRI', 'profile');
+    }
+    this.assertSafeUrl(resolved);
+    return resolved;
   }
 
   private getCachedProfile(webId: string): WebIdProfile | null {
     const entry = this.profileCache.get(webId);
     if (!entry) return null;
-    if (Date.now() - entry.timestamp >= this.config.profileCacheTtl) {
+    if (this.config.profileCacheTtl === 0 || Date.now() - entry.timestamp >= this.config.profileCacheTtl) {
       this.profileCache.delete(webId);
       return null;
     }
-    return entry.profile;
+    return this.cloneProfile(entry.profile);
+  }
+
+  private pruneExpiredEntries(): void {
+    for (const key of this.profileCache.keys()) this.getCachedProfile(key);
   }
 
   private cacheProfile(webId: string, profile: WebIdProfile): void {
-    if (this.config.profileCacheSize === 0) return;
-
+    if (this.config.profileCacheSize === 0 || this.config.profileCacheTtl === 0) return;
     this.profileCache.delete(webId);
     while (this.profileCache.size >= this.config.profileCacheSize) {
       const oldestKey = this.profileCache.keys().next().value as string | undefined;
       if (oldestKey === undefined) break;
       this.profileCache.delete(oldestKey);
     }
-
     this.profileCache.set(webId, {
-      profile,
+      profile: this.cloneProfile(profile),
       timestamp: Date.now(),
-      etag: profile.etag,
     });
+  }
+
+  private cloneProfile(profile: WebIdProfile): WebIdProfile {
+    return {
+      ...profile,
+      ...(Array.isArray(profile.type) && { type: [...profile.type] }),
+      ...(profile.storage && { storage: [...profile.storage] }),
+    };
   }
 }
 
