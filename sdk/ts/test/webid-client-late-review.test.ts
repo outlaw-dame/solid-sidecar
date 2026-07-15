@@ -96,16 +96,16 @@ describe('WebIdClient late review hardening', () => {
     expect(profile.storage).toEqual(['https://pod.example/storage/']);
   });
 
-  it('keeps semicolons inside Turtle literals and supports empty local names', async () => {
+  it('keeps semicolons and hash characters inside Turtle literals and supports empty local names', async () => {
     const turtle = `
 @prefix profile: <${WEB_ID}> .
-profile: <http://xmlns.com/foaf/0.1/name> "Alice; Bob" ;
-  <http://www.w3.org/ns/pim/space#storage> <https://pod.example/storage/> .
+profile: <http://xmlns.com/foaf/0.1/name> "Alice #1; Bob" ;
+  <http://www.w3.org/ns/pim/space#storage> <https://pod.example/storage/#primary> . # trailing comment
 `;
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(response(turtle, 'text/turtle'));
 
     const profile = await createClient(fetchMock).discoverWebId(WEB_ID);
-    expect(profile.name).toBe('Alice; Bob');
-    expect(profile.storage).toEqual(['https://pod.example/storage/']);
+    expect(profile.name).toBe('Alice #1; Bob');
+    expect(profile.storage).toEqual(['https://pod.example/storage/#primary']);
   });
 });
