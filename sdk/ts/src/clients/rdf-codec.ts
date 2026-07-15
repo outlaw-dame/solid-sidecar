@@ -1,99 +1,49 @@
-/**
- * Solid Sidecar TypeScript SDK - RDF Codec
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the RDF Codec for parsing and serializing RDF data.
- * Implements a portable client-facing codec for Solid clients.
- *
- * Security Level: HIGH - Handles data serialization/deserialization
- */
-
-import type { RdfFormat, RdfDataset, RdfQuad, SolidSidecarLogger } from '../types';
+import type { RdfDataset, RdfFormat, RdfQuad, SolidSidecarLogger } from '../types';
 import { ValidationError } from '../types';
+import { nullLogger } from '../utils';
 
-// ============================================================================
-// RDF Codec Configuration
-// ============================================================================
-
-/**
- * Configuration for RDF Codec
- */
 export interface RdfCodecConfig {
-  /** Default input format when not specified */
   defaultInputFormat?: RdfFormat;
-  
-  /** Default output format when not specified */
   defaultOutputFormat?: RdfFormat;
-  
-  /** Whether to validate RDF during parsing */
   validate?: boolean;
-  
-  /** Whether to preserve whitespace in literals */
   preserveWhitespace?: boolean;
-  
-  /** Maximum number of quads to parse (prevents DoS) */
   maxQuads?: number;
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default RDF Codec configuration
- */
-export const DEFAULT_RDF_CODEC_CONFIG: Required<RdfCodecConfig> = {
+interface ResolvedRdfCodecConfig {
+  defaultInputFormat: RdfFormat;
+  defaultOutputFormat: RdfFormat;
+  validate: boolean;
+  preserveWhitespace: boolean;
+  maxQuads: number;
+  logger: SolidSidecarLogger;
+}
+
+export const DEFAULT_RDF_CODEC_CONFIG = {
   defaultInputFormat: 'text/turtle',
   defaultOutputFormat: 'text/turtle',
   validate: true,
   preserveWhitespace: false,
-  maxQuads: 100000, // 100k quads max to prevent memory exhaustion
-  logger: console,
-};
+  maxQuads: 100_000,
+  logger: nullLogger,
+} satisfies ResolvedRdfCodecConfig;
 
-// ============================================================================
-// RDF Namespaces
-// ============================================================================
-
-/** Common RDF namespaces */
 export const NAMESPACES = {
-  // RDF
   RDF: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
   RDFS: 'http://www.w3.org/2000/01/rdf-schema#',
-  
-  // FOAF
   FOAF: 'http://xmlns.com/foaf/0.1/',
-  
-  // Solid
   SOLID: 'http://www.w3.org/ns/solid/terms#',
-  
-  // ACL (WAC)
   ACL: 'http://www.w3.org/ns/auth/acl#',
-  
-  // ACP
   ACP: 'http://www.w3.org/ns/solid/acp#',
-  
-  // SAI
   SAI: 'http://www.w3.org/ns/solid/sai#',
-  
-  // DCTERMS
   DCTERMS: 'http://purl.org/dc/terms/',
-  
-  // XSD
   XSD: 'http://www.w3.org/2001/XMLSchema#',
-  
-  // PIM
   PIM: 'http://www.w3.org/ns/pim/space#',
   PREFS: 'http://www.w3.org/ns/pim/prefs#',
-  
-  // LDP
   LDP: 'http://www.w3.org/ns/ldp#',
 } as const;
 
-/** Namespace prefix mappings */
 export const PREFIXES: Record<string, string> = {
   rdf: NAMESPACES.RDF,
   rdfs: NAMESPACES.RDFS,
@@ -109,993 +59,470 @@ export const PREFIXES: Record<string, string> = {
   ldp: NAMESPACES.LDP,
 };
 
-// ============================================================================
-// Literal Types
-// ============================================================================
-
-/** RDF literal value */
 export interface RdfLiteral {
   value: string;
   type?: string;
   language?: string;
 }
 
-/** RDF term (subject, predicate, object, or graph) */
 export type RdfTerm = string | RdfLiteral;
 
-// ============================================================================
-// RDF Codec Class
-// ============================================================================
+const RDF_TYPE = `${NAMESPACES.RDF}type`;
+const ABSOLUTE_IRI = /^[A-Za-z][A-Za-z0-9+.-]*:/u;
+const BLANK_NODE = /^_:[A-Za-z][A-Za-z0-9._-]*$/u;
+const PREFIXED_NAME = /^([A-Za-z][\w-]*|):([\w.-]*)$/u;
 
-/**
- * RDF Codec for Solid Sidecar
- * 
- * Features:
- * - Parse RDF from multiple formats (Turtle, JSON-LD, N-Triples)
- * - Serialize RDF to multiple formats
- * - Canonicalize RDF for comparison
- * - Validate RDF structure
- * - Namespace prefix handling
- * - Security limits (max quads, etc.)
- * - Error handling with detailed messages
- */
 export class RdfCodec {
-  private readonly config: Required<RdfCodecConfig>;
-  private readonly logger: SolidSidecarLogger;
-  private readonly customPrefixes: Map<string, string> = new Map();
-  
-  constructor(config: RdfCodecConfig = {}) {
+  private readonly config: ResolvedRdfCodecConfig;
+  private readonly customPrefixes = new Map<string, string>();
+  private blankNodeCounter = 0;
+
+  public constructor(config: RdfCodecConfig = {}) {
     this.config = {
-      ...DEFAULT_RDF_CODEC_CONFIG,
-      ...config,
+      defaultInputFormat: config.defaultInputFormat ?? DEFAULT_RDF_CODEC_CONFIG.defaultInputFormat,
+      defaultOutputFormat: config.defaultOutputFormat ?? DEFAULT_RDF_CODEC_CONFIG.defaultOutputFormat,
+      validate: config.validate ?? DEFAULT_RDF_CODEC_CONFIG.validate,
+      preserveWhitespace: config.preserveWhitespace ?? DEFAULT_RDF_CODEC_CONFIG.preserveWhitespace,
+      maxQuads: config.maxQuads ?? DEFAULT_RDF_CODEC_CONFIG.maxQuads,
+      logger: config.logger ?? DEFAULT_RDF_CODEC_CONFIG.logger,
     };
-    this.logger = this.config.logger;
-    
-    this.logger.debug('RdfCodec initialized', {
-      defaultInputFormat: this.config.defaultInputFormat,
-      defaultOutputFormat: this.config.defaultOutputFormat,
-      maxQuads: this.config.maxQuads,
-    });
+
+    if (!Number.isInteger(this.config.maxQuads) || this.config.maxQuads < 1) {
+      throw new ValidationError('maxQuads must be a positive integer', 'maxQuads');
+    }
   }
 
-  // ==========================================================================
-  // Parsing Methods
-  // ==========================================================================
-
-  /**
-   * Parses RDF from a string
-   * 
-   * @param input - The RDF string to parse
-   * @param format - The format of the input (defaults to config)
-   * @returns The parsed RDF dataset
-   */
   public parse(input: string, format?: RdfFormat): RdfDataset {
-    const actualFormat = format || this.config.defaultInputFormat;
-    
-    this.logger.debug('Parsing RDF', {
-      format: actualFormat,
-      inputLength: input.length,
-    });
-    
+    if (typeof input !== 'string') throw new ValidationError('RDF input must be a string', 'input');
+    const actualFormat = format ?? this.config.defaultInputFormat;
     let quads: RdfQuad[];
-    
+
     switch (actualFormat) {
       case 'text/turtle':
+        quads = this.parseTurtle(input, false);
+        break;
       case 'application/n-triples':
-        quads = this.parseTurtleOrNTriples(input, actualFormat);
+        quads = this.parseTurtle(input, true);
         break;
       case 'application/ld+json':
-        quads = this.parseJsonLd(input);
+        quads = this.parseExpandedJsonLd(input);
         break;
       case 'application/rdf+xml':
-        quads = this.parseRdfXml(input);
-        break;
+        throw new ValidationError('RDF/XML is not supported by the portable TypeScript codec', 'format');
       default:
-        throw new ValidationError(
-          `Unsupported RDF format: ${actualFormat}`,
-          'format'
-        );
+        throw new ValidationError(`Unsupported RDF format: ${String(actualFormat)}`, 'format');
     }
-    
-    // Validate quad count
-    if (quads.length > this.config.maxQuads) {
-      throw new ValidationError(
-        `Exceeded maximum quad count: ${quads.length} > ${this.config.maxQuads}`,
-        'input'
-      );
-    }
-    
-    // Validate quads
-    if (this.config.validate) {
-      this.validateQuads(quads);
-    }
-    
-    return {
-      quads,
-      formats: [actualFormat],
-    };
+
+    if (this.config.validate) this.validateQuads(quads);
+    return { quads, formats: [actualFormat] };
   }
 
-  /**
-   * Parses RDF and canonicalizes it
-   * 
-   * @param input - The RDF string to parse
-   * @param format - The format of the input
-   * @returns Canonicalized RDF string
-   */
   public parseCanonical(input: string, format?: RdfFormat): string {
     const dataset = this.parse(input, format);
     return this.serialize(dataset, 'application/n-triples');
   }
 
-  // ==========================================================================
-  // Serialization Methods
-  // ==========================================================================
-
-  /**
-   * Serializes an RDF dataset to a string
-   * 
-   * @param dataset - The RDF dataset to serialize
-   * @param format - The output format (defaults to config)
-   * @returns The serialized RDF string
-   */
   public serialize(dataset: RdfDataset, format?: RdfFormat): string {
-    const actualFormat = format || this.config.defaultOutputFormat;
-    
-    this.logger.debug('Serializing RDF', {
-      format: actualFormat,
-      quadCount: dataset.quads.length,
-    });
-    
-    let output: string;
-    
+    this.validateDataset(dataset);
+    const actualFormat = format ?? this.config.defaultOutputFormat;
+    const sorted = [...dataset.quads].sort((a, b) => this.quadLine(a).localeCompare(this.quadLine(b)));
+
     switch (actualFormat) {
-      case 'text/turtle':
-        output = this.serializeTurtle(dataset);
-        break;
       case 'application/n-triples':
-        output = this.serializeNTriples(dataset);
-        break;
+        if (sorted.some(quad => quad.graph !== undefined)) {
+          throw new ValidationError('N-Triples cannot serialize named graphs', 'dataset');
+        }
+        return sorted.map(quad => this.quadLine(quad)).join('\n') + (sorted.length ? '\n' : '');
+      case 'text/turtle':
+        return sorted.map(quad => this.quadLine(quad)).join('\n') + (sorted.length ? '\n' : '');
       case 'application/ld+json':
-        output = this.serializeJsonLd(dataset);
-        break;
+        return this.serializeExpandedJsonLd(sorted);
       case 'application/rdf+xml':
-        output = this.serializeRdfXml(dataset);
-        break;
+        throw new ValidationError('RDF/XML is not supported by the portable TypeScript codec', 'format');
       default:
-        throw new ValidationError(
-          `Unsupported RDF format: ${actualFormat}`,
-          'format'
-        );
+        throw new ValidationError(`Unsupported RDF format: ${String(actualFormat)}`, 'format');
     }
-    
-    return output;
   }
 
-  // ==========================================================================
-  // Utility Methods
-  // ==========================================================================
-
-  /**
-   * Adds a custom namespace prefix
-   * 
-   * @param prefix - The prefix (e.g., 'ex')
-   * @param uri - The namespace URI
-   */
   public addPrefix(prefix: string, uri: string): void {
-    this.customPrefixes.set(prefix, uri);
-    this.logger.debug('Added custom prefix', { prefix, uri });
+    if (!/^(?:[A-Za-z][\w-]*)?$/u.test(prefix)) {
+      throw new ValidationError('Invalid RDF prefix', 'prefix');
+    }
+    this.customPrefixes.set(prefix, this.requireAbsoluteIri(uri, 'uri'));
   }
 
-  /**
-   * Removes a custom namespace prefix
-   * 
-   * @param prefix - The prefix to remove
-   */
   public removePrefix(prefix: string): void {
     this.customPrefixes.delete(prefix);
-    this.logger.debug('Removed custom prefix', { prefix });
   }
 
-  /**
-   * Expands a prefixed name to a full URI
-   * 
-   * @param prefixedName - The prefixed name (e.g., 'foaf:name')
-   * @returns The expanded URI
-   */
-  public expandPrefixedName(prefixedName: string): string {
-    // Check if it's already a full URI
-    if (/^https?:\/\//i.test(prefixedName)) {
-      return prefixedName;
-    }
-    
-    // Split prefix and local name
-    const colonIndex = prefixedName.indexOf(':');
-    if (colonIndex === -1) {
-      return prefixedName; // No prefix, return as-is
-    }
-    
-    const prefix = prefixedName.substring(0, colonIndex);
-    const localName = prefixedName.substring(colonIndex + 1);
-    
-    // Check custom prefixes first
-    const customUri = this.customPrefixes.get(prefix);
-    if (customUri) {
-      return customUri + localName;
-    }
-    
-    // Check built-in prefixes
-    const builtinUri = PREFIXES[prefix];
-    if (builtinUri) {
-      return builtinUri + localName;
-    }
-    
-    // Unknown prefix, return as-is
-    return prefixedName;
+  public expandPrefixedName(value: string): string {
+    if (ABSOLUTE_IRI.test(value)) return value;
+    const match = value.match(PREFIXED_NAME);
+    if (!match) return value;
+    const namespace = this.customPrefixes.get(match[1] ?? '') ?? PREFIXES[match[1] ?? ''];
+    return namespace ? `${namespace}${match[2] ?? ''}` : value;
   }
 
-  /**
-   * Creates a blank node ID
-   * 
-   * @returns A unique blank node ID
-   */
   public createBlankNodeId(): string {
-    // Generate a unique identifier for blank nodes
-    // In a real implementation, this would need to track used IDs
-    return `_:b${Date.now()}${Math.random().toString(36).substring(2)}`;
+    this.blankNodeCounter += 1;
+    return `_:b${this.blankNodeCounter}`;
   }
 
-  /**
-   * Creates a literal with type
-   * 
-   * @param value - The literal value
-   * @param type - The datatype URI
-   * @returns The literal
-   */
   public createTypedLiteral(value: string, type: string): RdfLiteral {
-    return { value, type };
+    return { value, type: this.requireAbsoluteIri(type, 'type') };
   }
 
-  /**
-   * Creates a literal with language tag
-   * 
-   * @param value - The literal value
-   * @param language - The language tag
-   * @returns The literal
-   */
   public createLanguageLiteral(value: string, language: string): RdfLiteral {
-    return { value, language };
+    if (!/^[A-Za-z]+(?:-[A-Za-z0-9]+)*$/u.test(language)) {
+      throw new ValidationError('Invalid language tag', 'language');
+    }
+    return { value, language: language.toLowerCase() };
   }
 
-  /**
-   * Checks if a term is a blank node
-   * 
-   * @param term - The term to check
-   * @returns true if it's a blank node
-   */
   public isBlankNode(term: string): boolean {
-    return term.startsWith('_:') || term.startsWith('?') || term.startsWith('$');
+    return BLANK_NODE.test(term);
   }
 
-  /**
-   * Checks if a term is a literal
-   * 
-   * @param term - The term to check
-   * @returns true if it's a literal
-   */
   public isLiteral(term: RdfTerm): term is RdfLiteral {
-    return typeof term !== 'string' && term !== null && term !== undefined;
+    return typeof term === 'object' && term !== null;
   }
 
-  /**
-   * Checks if a term is a URI
-   * 
-   * @param term - The term to check
-   * @returns true if it's a URI
-   */
   public isUri(term: RdfTerm): boolean {
-    return typeof term === 'string' && !this.isBlankNode(term);
+    return typeof term === 'string' && ABSOLUTE_IRI.test(term);
   }
 
-  // ==========================================================================
-  // Getters
-  // ==========================================================================
-
-  /**
-   * Gets the configuration
-   */
-  public getConfig(): Required<RdfCodecConfig> {
+  public getConfig(): Readonly<ResolvedRdfCodecConfig> {
     return { ...this.config };
   }
 
-  /**
-   * Gets all registered prefixes
-   */
   public getPrefixes(): Record<string, string> {
-    const prefixes: Record<string, string> = { ...PREFIXES };
-    for (const [prefix, uri] of this.customPrefixes) {
-      prefixes[prefix] = uri;
-    }
-    return prefixes;
+    return { ...PREFIXES, ...Object.fromEntries(this.customPrefixes) };
   }
 
-  // ==========================================================================
-  // Private Parsing Methods
-  // ==========================================================================
+  private parseTurtle(input: string, nTriplesOnly: boolean): RdfQuad[] {
+    const prefixes = new Map<string, string>([
+      ...Object.entries(PREFIXES),
+      ...this.customPrefixes.entries(),
+    ]);
+    let base: string | undefined;
+    let body = '';
 
-  /**
-   * Parses Turtle or N-Triples format
-   */
-  private parseTurtleOrNTriples(input: string, format: RdfFormat): RdfQuad[] {
-    const quads: RdfQuad[] = [];
-    const lines = input.split('\n');
-    
-    let currentGraph: string | undefined;
-    let currentSubject: string | undefined;
-    let currentPredicate: string | undefined;
-    
-    // Regex patterns
-    const blankNodePattern = /^_(:[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+)$/;
-    const uriPattern = /^<([^>]+)>$/;
-    const literalPattern = /^"([^"]*)"(?:@([a-zA-Z-]+)|\^\^<([^>]+)>)?$/;
-    const prefixPattern = /^@prefix\s+([a-zA-Z0-9_-]+)\s*:\s*<([^>]+)>\s*\./;
-    const basePattern = /^@base\s+<([^>]+)>\s*\./;
-    const graphStartPattern = /^\{/;
-    const graphEndPattern = /^\}/;
-    
-    const localPrefixes: Map<string, string> = new Map();
-    let baseUri = '';
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      // Skip comments and empty lines
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      
-      // Handle prefixes
-      const prefixMatch = trimmed.match(prefixPattern);
-      if (prefixMatch) {
-        localPrefixes.set(prefixMatch[1], prefixMatch[2]);
+    for (const line of input.split(/\r?\n/u)) {
+      const clean = this.stripComment(line).trim();
+      if (!clean) continue;
+      const prefix = clean.match(/^(?:@prefix|PREFIX)\s+([A-Za-z][\w-]*|):\s*<([^>]*)>\s*\.?$/iu);
+      if (prefix) {
+        if (nTriplesOnly) throw new ValidationError('N-Triples does not allow prefix directives', 'input');
+        prefixes.set(prefix[1] === ':' ? '' : prefix[1] ?? '', this.resolveIri(prefix[2] ?? '', base));
         continue;
       }
-      
-      // Handle base
-      const baseMatch = trimmed.match(basePattern);
+      const baseMatch = clean.match(/^(?:@base|BASE)\s+<([^>]*)>\s*\.?$/iu);
       if (baseMatch) {
-        baseUri = baseMatch[1];
+        if (nTriplesOnly) throw new ValidationError('N-Triples does not allow base directives', 'input');
+        base = this.requireAbsoluteIri(baseMatch[1] ?? '', 'input');
         continue;
       }
-      
-      // Handle graph start
-      if (graphStartPattern.test(trimmed)) {
-        // For simplicity, we're not handling named graphs in this basic implementation
-        continue;
-      }
-      
-      // Handle graph end
-      if (graphEndPattern.test(trimmed)) {
-        currentGraph = undefined;
-        continue;
-      }
-      
-      // Handle statements
-      const statementMatch = trimmed.match(/^([^\s]+)\s+([^\s]+)\s+(.+)\s*\.$/);
-      if (statementMatch) {
-        const subject = this.parseTerm(statementMatch[1], localPrefixes, baseUri);
-        const predicate = this.parseTerm(statementMatch[2], localPrefixes, baseUri);
-        const object = this.parseTerm(statementMatch[3], localPrefixes, baseUri);
-        
-        if (subject && predicate) {
-          quads.push({
-            subject: subject.value,
-            predicate: predicate.value,
-            object: typeof object === 'string' ? object : object.value,
-            graph: currentGraph,
-          });
-        }
-        continue;
-      }
-      
-      // Handle subject-predicate objects with semicolons
-      const semiMatch = trimmed.match(/^([^\s]+)\s+([^\s]+)\s+([^;]+);$/);
-      if (semiMatch) {
-        currentSubject = this.parseTerm(semiMatch[1], localPrefixes, baseUri).value;
-        currentPredicate = this.parseTerm(semiMatch[2], localPrefixes, baseUri).value;
-        const object = this.parseTerm(semiMatch[3], localPrefixes, baseUri);
-        
-        if (currentSubject && currentPredicate) {
-          quads.push({
-            subject: currentSubject,
-            predicate: currentPredicate,
-            object: typeof object === 'string' ? object : object.value,
-            graph: currentGraph,
-          });
-        }
-        continue;
-      }
-      
-      // Handle predicate-object pairs with semicolons
-      if (currentSubject && trimmed.endsWith(';')) {
-        const parts = trimmed.split(/\s+/);
-        if (parts.length >= 2) {
-          currentPredicate = this.parseTerm(parts[0], localPrefixes, baseUri).value;
-          const object = this.parseTerm(parts.slice(1, -1).join(' '), localPrefixes, baseUri);
-          
-          if (currentPredicate) {
-            quads.push({
-              subject: currentSubject,
-              predicate: currentPredicate,
-              object: typeof object === 'string' ? object : object.value,
-              graph: currentGraph,
-            });
-          }
-        }
-        continue;
-      }
-      
-      // Handle object lists with commas
-      if (currentSubject && currentPredicate) {
-        const parts = trimmed.split(',').map(p => p.trim()).filter(p => p && !p.endsWith('.'));
-        for (const part of parts) {
-          const object = this.parseTerm(part, localPrefixes, baseUri);
-          quads.push({
-            subject: currentSubject,
-            predicate: currentPredicate,
-            object: typeof object === 'string' ? object : object.value,
-            graph: currentGraph,
-          });
+      body += `${clean}\n`;
+    }
+
+    const quads: RdfQuad[] = [];
+    for (const statement of this.splitTopLevel(body, '.')) {
+      const trimmed = statement.trim();
+      if (!trimmed) continue;
+      const firstSpace = this.findWhitespace(trimmed, 0);
+      if (firstSpace < 0) throw new ValidationError('RDF statement is missing a predicate and object', 'input');
+      const subjectToken = trimmed.slice(0, firstSpace);
+      const rest = trimmed.slice(firstSpace).trim();
+      const subject = this.parseResourceTerm(subjectToken, prefixes, base, nTriplesOnly, 'subject');
+
+      for (const predicateObject of this.splitTopLevel(rest, ';')) {
+        const pair = predicateObject.trim();
+        if (!pair) continue;
+        const predicateSpace = this.findWhitespace(pair, 0);
+        if (predicateSpace < 0) throw new ValidationError('RDF predicate is missing an object', 'input');
+        const predicateToken = pair.slice(0, predicateSpace);
+        const objectList = pair.slice(predicateSpace).trim();
+        const predicate = predicateToken === 'a'
+          ? RDF_TYPE
+          : this.parseResourceTerm(predicateToken, prefixes, base, nTriplesOnly, 'predicate');
+
+        for (const objectToken of this.splitTopLevel(objectList, ',')) {
+          const object = this.parseObjectTerm(objectToken.trim(), prefixes, base, nTriplesOnly);
+          this.pushQuad(quads, { subject, predicate, object });
         }
       }
     }
-    
     return quads;
   }
 
-  /**
-   * Parses JSON-LD format
-   */
-  private parseJsonLd(input: string): RdfQuad[] {
-    const quads: RdfQuad[] = [];
-    
+  private parseExpandedJsonLd(input: string): RdfQuad[] {
+    let parsed: unknown;
     try {
-      const data = JSON.parse(input);
-      
-      // Simple JSON-LD to quads conversion
-      // In production, use a proper JSON-LD processor
-      if (Array.isArray(data)) {
-        // It's a list of statements
-        for (const stmt of data) {
-          if (stmt['@id'] && stmt['@type'] && stmt['@value']) {
-            // Literal
-            quads.push({
-              subject: '',
-              predicate: '',
-              object: JSON.stringify(stmt),
-            });
-          }
-        }
-      } else if (data['@graph']) {
-        // JSON-LD with @graph
-        const graph = data['@graph'];
-        if (Array.isArray(graph)) {
-          for (const item of graph) {
-            // Convert each item to quads
-            this.jsonLdItemToQuads(item, quads);
-          }
-        }
-      } else {
-        // Single object
-        this.jsonLdItemToQuads(data, quads);
-      }
-    } catch (error) {
-      throw new ValidationError(
-        `Failed to parse JSON-LD: ${error instanceof Error ? error.message : String(error)}`,
-        'input'
-      );
+      parsed = JSON.parse(input) as unknown;
+    } catch {
+      throw new ValidationError('Invalid JSON-LD JSON document', 'input');
     }
-    
+    const nodes = Array.isArray(parsed) ? parsed : [parsed];
+    const quads: RdfQuad[] = [];
+    for (const value of nodes) {
+      if (!this.isRecord(value)) throw new ValidationError('JSON-LD nodes must be objects', 'input');
+      const subject = value['@id'];
+      if (typeof subject !== 'string' || (!ABSOLUTE_IRI.test(subject) && !BLANK_NODE.test(subject))) {
+        throw new ValidationError('JSON-LD nodes require an absolute or blank-node @id', 'input');
+      }
+      for (const [predicate, rawValues] of Object.entries(value)) {
+        if (predicate === '@id' || predicate === '@context') continue;
+        if (predicate === '@type') {
+          for (const type of this.asArray(rawValues)) {
+            if (typeof type !== 'string') throw new ValidationError('JSON-LD @type values must be strings', 'input');
+            this.pushQuad(quads, { subject, predicate: RDF_TYPE, object: this.requireAbsoluteIri(type, 'input') });
+          }
+          continue;
+        }
+        const expandedPredicate = this.requireAbsoluteIri(this.expandPrefixedName(predicate), 'input');
+        for (const raw of this.asArray(rawValues)) {
+          this.pushQuad(quads, { subject, predicate: expandedPredicate, object: this.jsonLdObject(raw) });
+        }
+      }
+    }
     return quads;
   }
 
-  /**
-   * Converts a JSON-LD item to quads
-   */
-  private jsonLdItemToQuads(item: unknown, quads: RdfQuad[]): void {
-    if (typeof item !== 'object' || item === null) return;
-    
-    const obj = item as Record<string, unknown>;
-    const subject = obj['@id'] as string || this.createBlankNodeId();
-    
-    // Handle types
-    const types = obj['@type'];
-    if (types) {
-      const typeArray = Array.isArray(types) ? types : [types];
-      for (const type of typeArray) {
-        if (typeof type === 'string') {
-          quads.push({
-            subject,
-            predicate: NAMESPACES.RDF + 'type',
-            object: type,
-          });
-        }
-      }
+  private jsonLdObject(value: unknown): string {
+    if (this.isRecord(value) && typeof value['@id'] === 'string') {
+      const id = value['@id'];
+      if (!ABSOLUTE_IRI.test(id) && !BLANK_NODE.test(id)) throw new ValidationError('Invalid JSON-LD @id value', 'input');
+      return id;
     }
-    
-    // Handle other properties
-    for (const [key, value] of Object.entries(obj)) {
-      if (key.startsWith('@')) continue; // Skip JSON-LD keywords
-      
-      const predicate = this.expandPrefixedName(key);
-      
-      if (value === null || value === undefined) continue;
-      
-      if (Array.isArray(value)) {
-        for (const v of value) {
-          this.jsonLdValueToQuad(subject, predicate, v, quads);
-        }
-      } else {
-        this.jsonLdValueToQuad(subject, predicate, value, quads);
-      }
+    if (this.isRecord(value) && value['@value'] !== undefined) {
+      const raw = value['@value'];
+      if (!['string', 'number', 'boolean'].includes(typeof raw)) throw new ValidationError('Invalid JSON-LD literal value', 'input');
+      const language = value['@language'];
+      const type = value['@type'];
+      if (language !== undefined && typeof language !== 'string') throw new ValidationError('Invalid JSON-LD language', 'input');
+      if (type !== undefined && typeof type !== 'string') throw new ValidationError('Invalid JSON-LD datatype', 'input');
+      return this.literalToken(String(raw), language, type);
     }
+    if (typeof value === 'string') return this.literalToken(value);
+    if (typeof value === 'number') return this.literalToken(String(value), undefined, `${NAMESPACES.XSD}decimal`);
+    if (typeof value === 'boolean') return this.literalToken(String(value), undefined, `${NAMESPACES.XSD}boolean`);
+    throw new ValidationError('Unsupported JSON-LD value shape', 'input');
   }
 
-  /**
-   * Converts a JSON-LD value to a quad
-   */
-  private jsonLdValueToQuad(
-    subject: string,
-    predicate: string,
-    value: unknown,
-    quads: RdfQuad[]
-  ): void {
-    if (typeof value === 'string') {
-      // Check if it's a reference to another resource
-      if (value.startsWith('http://') || value.startsWith('https://') || this.isBlankNode(value)) {
-        quads.push({ subject, predicate, object: value });
-      } else {
-        // It's a literal
-        quads.push({ subject, predicate, object: `"${value}"` });
-      }
-    } else if (typeof value === 'object' && value !== null) {
-      const obj = value as Record<string, unknown>;
-      
-      if ('@id' in obj) {
-        // It's a reference
-        quads.push({ subject, predicate, object: obj['@id'] as string });
-      } else if ('@value' in obj) {
-        // It's a literal
-        const literalValue = obj['@value'] as string;
-        const literalType = obj['@type'] as string || undefined;
-        const literalLanguage = obj['@language'] as string || undefined;
-        
-        const literal: RdfLiteral = { value: literalValue };
-        if (literalType) literal.type = literalType;
-        if (literalLanguage) literal.language = literalLanguage;
-        
-        quads.push({ 
-          subject, 
-          predicate, 
-          object: JSON.stringify(literal)
-        });
-      }
-    } else if (typeof value === 'boolean' || typeof value === 'number') {
-      // JSON native types
-      quads.push({ 
-        subject, 
-        predicate, 
-        object: `"${value}"`,
-        graph: `http://www.w3.org/2001/XMLSchema#${typeof value === 'number' ? 'decimal' : 'boolean'}`
-      });
+  private serializeExpandedJsonLd(quads: RdfQuad[]): string {
+    if (quads.some(quad => quad.graph !== undefined)) {
+      throw new ValidationError('JSON-LD graph serialization is not supported by this codec', 'dataset');
     }
-  }
-
-  /**
-   * Parses RDF/XML format (simplified)
-   */
-  private parseRdfXml(input: string): RdfQuad[] {
-    const quads: RdfQuad[] = [];
-    
-    // This is a simplified parser. In production, use a proper XML parser
-    // and XSLT or a dedicated RDF/XML library.
-    
-    throw new ValidationError(
-      'RDF/XML parsing not implemented. Use Turtle or JSON-LD.',
-      'format'
-    );
-  }
-
-  /**
-   * Parses a term (subject, predicate, or object)
-   */
-  private parseTerm(
-    term: string,
-    prefixes: Map<string, string>,
-    baseUri: string
-  ): { value: string } | RdfLiteral {
-    // Remove trailing punctuation
-    term = term.replace(/[.,;\/]$/, '').trim();
-    
-    // Check for blank node
-    if (blankNodePattern.test(term)) {
-      return { value: term };
-    }
-    
-    // Check for URI in angle brackets
-    const uriMatch = term.match(uriPattern);
-    if (uriMatch) {
-      return { value: uriMatch[1] };
-    }
-    
-    // Check for literal
-    const literalMatch = term.match(literalPattern);
-    if (literalMatch) {
-      const value = literalMatch[1];
-      const language = literalMatch[2];
-      const type = literalMatch[3];
-      
-      const result: RdfLiteral = { value };
-      if (language) result.language = language;
-      if (type) result.type = type;
-      
-      return result;
-    }
-    
-    // Check for prefixed name
-    const colonIndex = term.indexOf(':');
-    if (colonIndex > 0) {
-      const prefix = term.substring(0, colonIndex);
-      const localName = term.substring(colonIndex + 1);
-      
-      const uri = prefixes.get(prefix) || PREFIXES[prefix];
-      if (uri) {
-        return { value: uri + localName };
-      }
-    }
-    
-    // If it's a relative URI, resolve against base
-    if (term.startsWith('/') || term.startsWith('./') || term.startsWith('../')) {
-      try {
-        const url = new URL(term, baseUri || 'http://example.org');
-        return { value: url.toString() };
-      } catch {
-        return { value: term };
-      }
-    }
-    
-    // Default: return as-is
-    return { value: term };
-  }
-
-  // ==========================================================================
-  // Private Serialization Methods
-  // ==========================================================================
-
-  /**
-   * Serializes to Turtle format
-   */
-  private serializeTurtle(dataset: RdfDataset): string {
-    const lines: string[] = [];
-    
-    // Add prefixes
-    lines.push('@prefix rdf: <' + NAMESPACES.RDF + '> .');
-    lines.push('@prefix rdfs: <' + NAMESPACES.RDFS + '> .');
-    lines.push('@prefix xsd: <' + NAMESPACES.XSD + '> .');
-    lines.push('');
-    
-    // Group by subject
-    const bySubject = new Map<string, RdfQuad[]>();
-    for (const quad of dataset.quads) {
-      const key = quad.graph ? `${quad.subject} [${quad.graph}]` : quad.subject;
-      if (!bySubject.has(key)) {
-        bySubject.set(key, []);
-      }
-      bySubject.get(key)?.push(quad);
-    }
-    
-    // Serialize each subject group
-    for (const [subject, quads] of bySubject) {
-      const isGraph = subject.includes('[');
-      const subjectUri = isGraph ? subject.split('[')[0].trim() : subject;
-      
-      if (isGraph) {
-        const graphName = subject.match(/\[([^\]]+)\]/)?.[1];
-        lines.push(`${subjectUri} {`);
-        if (graphName) {
-          lines.push(`  GRAPH <${graphName}> {`);
-        }
-        this.serializeQuadGroup(quads, lines, '  ');
-        if (graphName) {
-          lines.push(`  }`);
-        }
-        lines.push(`}`);
-      } else {
-        this.serializeQuadGroup(quads, lines, '');
-      }
-      lines.push('');
-    }
-    
-    return lines.join('\n');
-  }
-
-  /**
-   * Serializes a group of quads sharing the same subject
-   */
-  private serializeQuadGroup(quads: RdfQuad[], lines: string[], indent: string): void {
-    if (quads.length === 0) return;
-    
-    const subject = quads[0].subject;
-    
-    // Write subject
-    lines.push(`${indent}<${subject}>`);
-    
-    // Group by predicate
-    const byPredicate = new Map<string, RdfQuad[]>();
+    const nodes = new Map<string, Record<string, unknown>>();
     for (const quad of quads) {
-      if (!byPredicate.has(quad.predicate)) {
-        byPredicate.set(quad.predicate, []);
-      }
-      byPredicate.get(quad.predicate)?.push(quad);
+      const node = nodes.get(quad.subject) ?? { '@id': quad.subject };
+      const key = quad.predicate === RDF_TYPE ? '@type' : quad.predicate;
+      const value = quad.predicate === RDF_TYPE ? quad.object : this.objectToJsonLd(quad.object);
+      const existing = node[key];
+      node[key] = existing === undefined ? [value] : [...this.asArray(existing), value];
+      nodes.set(quad.subject, node);
     }
-    
-    // Serialize predicates
-    let firstPredicate = true;
-    for (const [predicate, predQuads] of byPredicate) {
-      const line = predQuads.length > 1 || firstPredicate ? ' a' : ' ;';
-      const shortForm = this.shortenUri(predicate);
-      
-      if (firstPredicate) {
-        lines.push(`${indent}  ${shortForm}`);
-        firstPredicate = false;
-      } else {
-        lines.push(`${indent}  ; ${shortForm}`);
-      }
-      
-      // Serialize objects
-      this.serializeObjects(predQuads, lines, indent, predicate);
-    }
-    
-    lines.push(`${indent}  .`);
+    return `${JSON.stringify([...nodes.values()], null, 2)}\n`;
   }
 
-  /**
-   * Serializes object values
-   */
-  private serializeObjects(quads: RdfQuad[], lines: string[], indent: string, predicate: string): void {
-    const objects = quads.map(q => q.object);
-    
-    for (let i = 0; i < objects.length; i++) {
-      const obj = objects[i];
-      
-      if (obj.startsWith('_:') || obj.startsWith('?') || obj.startsWith('$')) {
-        // Blank node
-        lines.push(` ${obj}`);
-      } else if (obj.startsWith('http://') || obj.startsWith('https://')) {
-        // URI
-        const shortForm = this.shortenUri(obj);
-        lines.push(` <${obj}>`);
-      } else if (obj.startsWith('"')) {
-        // Literal
-        lines.push(` ${obj}`);
-      } else {
-        // Plain literal
-        lines.push(` "${obj}"`);
-      }
-      
-      // Add comma if not last
-      if (i < objects.length - 1) {
-        lines.push(',');
-      }
-    }
+  private objectToJsonLd(object: string): unknown {
+    if (ABSOLUTE_IRI.test(object) || BLANK_NODE.test(object)) return { '@id': object };
+    const literal = object.match(/^"((?:\\.|[^"\\])*)"(?:@([A-Za-z]+(?:-[A-Za-z0-9]+)*)|\^\^<([^>]+)>)?$/u);
+    if (!literal) throw new ValidationError('Dataset contains an invalid object term', 'dataset');
+    const result: Record<string, unknown> = { '@value': JSON.parse(`"${literal[1] ?? ''}"`) };
+    if (literal[2]) result['@language'] = literal[2];
+    if (literal[3]) result['@type'] = literal[3];
+    return result;
   }
 
-  /**
-   * Shortens a URI using prefixes
-   */
-  private shortenUri(uri: string): string {
-    // Check custom prefixes first
-    for (const [prefix, prefixUri] of this.customPrefixes) {
-      if (uri.startsWith(prefixUri)) {
-        const localName = uri.substring(prefixUri.length);
-        return `${prefix}:${localName}`;
+  private parseResourceTerm(
+    token: string,
+    prefixes: Map<string, string>,
+    base: string | undefined,
+    nTriplesOnly: boolean,
+    field: string
+  ): string {
+    if (BLANK_NODE.test(token)) return token;
+    if (token.startsWith('<') && token.endsWith('>')) return this.resolveIri(token.slice(1, -1), base);
+    if (!nTriplesOnly) {
+      const prefixed = token.match(PREFIXED_NAME);
+      if (prefixed) {
+        const namespace = prefixes.get(prefixed[1] ?? '');
+        if (!namespace) throw new ValidationError(`Unknown RDF prefix: ${prefixed[1] ?? ''}`, 'input');
+        return `${namespace}${prefixed[2] ?? ''}`;
       }
     }
-    
-    // Check built-in prefixes
-    for (const [prefix, prefixUri] of Object.entries(PREFIXES)) {
-      if (uri.startsWith(prefixUri)) {
-        const localName = uri.substring(prefixUri.length);
-        return `${prefix}:${localName}`;
-      }
-    }
-    
-    // No prefix found, return full URI
-    return `<${uri}>`;
+    throw new ValidationError(`Invalid RDF ${field} term`, 'input');
   }
 
-  /**
-   * Serializes to N-Triples format
-   */
-  private serializeNTriples(dataset: RdfDataset): string {
-    const lines: string[] = [];
-    
-    for (const quad of dataset.quads) {
-      const subject = quad.subject;
-      const predicate = quad.predicate;
-      const object = quad.object;
-      const graph = quad.graph;
-      
-      // Escape special characters in literals
-      const escapedObject = object.startsWith('"') 
-        ? this.escapeLiteral(object) 
-        : object;
-      
-      if (graph) {
-        // Named graph
-        lines.push(`<${subject}> <${predicate}> ${escapedObject} <${graph}> .`);
-      } else {
-        // Default graph
-        lines.push(`<${subject}> <${predicate}> ${escapedObject} .`);
-      }
-    }
-    
-    return lines.join('\n');
+  private parseObjectTerm(
+    token: string,
+    prefixes: Map<string, string>,
+    base: string | undefined,
+    nTriplesOnly: boolean
+  ): string {
+    if (!token) throw new ValidationError('RDF object must not be empty', 'input');
+    if (token.startsWith('"')) return this.parseLiteral(token, prefixes, base, nTriplesOnly);
+    return this.parseResourceTerm(token, prefixes, base, nTriplesOnly, 'object');
   }
 
-  /**
-   * Escapes a literal for N-Triples
-   */
-  private escapeLiteral(literal: string): string {
-    // Remove existing quotes
-    let value = literal;
-    if (value.startsWith('"') && value.endsWith('"')) {
-      value = value.substring(1, value.length - 1);
+  private parseLiteral(
+    token: string,
+    prefixes: Map<string, string>,
+    base: string | undefined,
+    nTriplesOnly: boolean
+  ): string {
+    let escaped = false;
+    let end = -1;
+    for (let index = 1; index < token.length; index += 1) {
+      const char = token[index];
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') { end = index; break; }
     }
-    
-    // Escape special characters
-    value = value
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
-    
-    return `"${value}"`;
+    if (end < 0) throw new ValidationError('Unterminated RDF literal', 'input');
+    const lexical = token.slice(1, end);
+    const suffix = token.slice(end + 1).trim();
+    if (!suffix) return `"${lexical}"`;
+    if (/^@[A-Za-z]+(?:-[A-Za-z0-9]+)*$/u.test(suffix)) return `"${lexical}"${suffix.toLowerCase()}`;
+    if (suffix.startsWith('^^')) {
+      const datatype = this.parseResourceTerm(suffix.slice(2), prefixes, base, nTriplesOnly, 'datatype');
+      return `"${lexical}"^^<${datatype}>`;
+    }
+    throw new ValidationError('Invalid RDF literal suffix', 'input');
   }
 
-  /**
-   * Serializes to JSON-LD format
-   */
-  private serializeJsonLd(dataset: RdfDataset): string {
-    const items: Record<string, unknown>[] = [];
-    
-    // Group by subject
-    const bySubject = new Map<string, RdfQuad[]>();
-    for (const quad of dataset.quads) {
-      if (!bySubject.has(quad.subject)) {
-        bySubject.set(quad.subject, []);
-      }
-      bySubject.get(quad.subject)?.push(quad);
+  private stripComment(line: string): string {
+    let inString = false;
+    let inIri = false;
+    let escaped = false;
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      if (escaped) { escaped = false; continue; }
+      if (inString && char === '\\') { escaped = true; continue; }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (!inString && !inIri && char === '#') return line.slice(0, index);
     }
-    
-    // Convert each subject group to JSON-LD
-    for (const [subject, quads] of bySubject) {
-      const item: Record<string, unknown> = { '@id': subject };
-      
-      // Group by predicate
-      const byPredicate = new Map<string, string[]>();
-      for (const quad of quads) {
-        if (quad.graph) continue; // Skip named graphs for now
-        
-        if (!byPredicate.has(quad.predicate)) {
-          byPredicate.set(quad.predicate, []);
-        }
-        byPredicate.get(quad.predicate)?.push(quad.object);
-      }
-      
-      // Convert predicates to properties
-      for (const [predicate, objects] of byPredicate) {
-        const property = this.shortenUriForJsonLd(predicate);
-        
-        if (objects.length === 1) {
-          item[property] = this.convertObjectToJsonLd(objects[0]);
-        } else {
-          item[property] = objects.map(obj => this.convertObjectToJsonLd(obj));
-        }
-      }
-      
-      items.push(item);
-    }
-    
-    return JSON.stringify(items, null, 2);
+    return line;
   }
 
-  /**
-   * Shortens a URI for JSON-LD property names
-   */
-  private shortenUriForJsonLd(uri: string): string {
-    // For JSON-LD, we need to use compact IRIs
-    // This is a simplified version
-    
-    for (const [prefix, prefixUri] of Object.entries(PREFIXES)) {
-      if (uri.startsWith(prefixUri)) {
-        const localName = uri.substring(prefixUri.length);
-        return `${prefix}:${localName}`;
+  private splitTopLevel(value: string, delimiter: string): string[] {
+    const result: string[] = [];
+    let start = 0;
+    let inString = false;
+    let inIri = false;
+    let escaped = false;
+    for (let index = 0; index < value.length; index += 1) {
+      const char = value[index];
+      if (escaped) { escaped = false; continue; }
+      if (inString && char === '\\') { escaped = true; continue; }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (!inString && !inIri && char === delimiter && this.isDelimiterToken(value, index, delimiter)) {
+        result.push(value.slice(start, index));
+        start = index + 1;
       }
     }
-    
-    // If no prefix found, use the full URI
-    return uri;
+    if (inString || inIri) throw new ValidationError('Unterminated RDF string or IRI', 'input');
+    result.push(value.slice(start));
+    return result;
   }
 
-  /**
-   * Converts an object to JSON-LD representation
-   */
-  private convertObjectToJsonLd(object: string): unknown {
-    if (object.startsWith('_:') || object.startsWith('?') || object.startsWith('$')) {
-      // Blank node
-      return { '@id': object };
-    } else if (object.startsWith('http://') || object.startsWith('https://')) {
-      // URI reference
-      return { '@id': object };
-    } else if (object.startsWith('"')) {
-      // Literal
-      const value = object.substring(1, object.length - 1);
-      return { '@value': value };
-    } else {
-      // Plain literal
-      return { '@value': object };
+  private isDelimiterToken(value: string, index: number, delimiter: string): boolean {
+    if (delimiter !== '.') return true;
+    const before = index === 0 ? '' : value[index - 1] ?? '';
+    const after = value[index + 1] ?? '';
+    return /\s/u.test(before) && (after === '' || /\s/u.test(after));
+  }
+
+  private findWhitespace(value: string, start: number): number {
+    let inString = false;
+    let inIri = false;
+    let escaped = false;
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+      if (escaped) { escaped = false; continue; }
+      if (inString && char === '\\') { escaped = true; continue; }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (!inString && !inIri && /\s/u.test(char ?? '')) return index;
+    }
+    return -1;
+  }
+
+  private resolveIri(value: string, base?: string): string {
+    try {
+      if (ABSOLUTE_IRI.test(value)) return new URL(value).toString();
+      if (!base) throw new Error('relative IRI without base');
+      return new URL(value, base).toString();
+    } catch {
+      throw new ValidationError('Invalid or unresolved RDF IRI', 'input');
     }
   }
 
-  /**
-   * Serializes to RDF/XML format (simplified)
-   */
-  private serializeRdfXml(dataset: RdfDataset): string {
-    // This is a simplified serializer. In production, use a proper RDF/XML library.
-    throw new ValidationError(
-      'RDF/XML serialization not implemented. Use Turtle or JSON-LD.',
-      'format'
-    );
+  private requireAbsoluteIri(value: string, field: string): string {
+    if (!ABSOLUTE_IRI.test(value)) throw new ValidationError('IRI must be absolute', field);
+    try { return new URL(value).toString(); }
+    catch { throw new ValidationError('IRI must be a valid absolute URL', field); }
   }
 
-  // ==========================================================================
-  // Validation
-  // ==========================================================================
+  private literalToken(value: string, language?: unknown, type?: unknown): string {
+    const escaped = JSON.stringify(value);
+    if (typeof language === 'string') {
+      if (!/^[A-Za-z]+(?:-[A-Za-z0-9]+)*$/u.test(language)) throw new ValidationError('Invalid language tag', 'input');
+      return `${escaped}@${language.toLowerCase()}`;
+    }
+    if (typeof type === 'string') return `${escaped}^^<${this.requireAbsoluteIri(type, 'input')}>`;
+    return escaped;
+  }
 
-  /**
-   * Validates a set of quads
-   */
+  private pushQuad(quads: RdfQuad[], quad: RdfQuad): void {
+    if (quads.length >= this.config.maxQuads) {
+      throw new ValidationError(`Exceeded maximum quad count: ${this.config.maxQuads}`, 'input');
+    }
+    quads.push(quad);
+  }
+
+  private validateDataset(dataset: RdfDataset): void {
+    if (!dataset || !Array.isArray(dataset.quads)) throw new ValidationError('Invalid RDF dataset', 'dataset');
+    if (dataset.quads.length > this.config.maxQuads) throw new ValidationError('Dataset exceeds maximum quad count', 'dataset');
+    if (this.config.validate) this.validateQuads(dataset.quads);
+  }
+
   private validateQuads(quads: RdfQuad[]): void {
     for (const quad of quads) {
-      this.validateQuad(quad);
+      if (!quad.subject || !quad.predicate || !quad.object) throw new ValidationError('RDF quad terms must not be empty', 'dataset');
+      if (!ABSOLUTE_IRI.test(quad.predicate)) throw new ValidationError('RDF predicates must be absolute IRIs', 'dataset');
+      if (!ABSOLUTE_IRI.test(quad.subject) && !BLANK_NODE.test(quad.subject)) throw new ValidationError('Invalid RDF subject', 'dataset');
+      if (!ABSOLUTE_IRI.test(quad.object) && !BLANK_NODE.test(quad.object) && !quad.object.startsWith('"')) {
+        throw new ValidationError('Invalid RDF object', 'dataset');
+      }
     }
   }
 
-  /**
-   * Validates a single quad
-   */
-  private validateQuad(quad: RdfQuad): void {
-    // Subject must be URI or blank node
-    if (!quad.subject || (typeof quad.subject !== 'string')) {
-      throw new ValidationError('Quad subject must be a string (URI or blank node)', 'subject');
-    }
-    
-    // Predicate must be URI
-    if (!quad.predicate || !quad.predicate.startsWith('http://') && !quad.predicate.startsWith('https://')) {
-      throw new ValidationError('Quad predicate must be a URI', 'predicate');
-    }
-    
-    // Object must be present
-    if (!quad.object && quad.object !== '') {
-      throw new ValidationError('Quad object must be present', 'object');
-    }
+  private quadLine(quad: RdfQuad): string {
+    const subject = this.formatResource(quad.subject);
+    const predicate = this.formatResource(quad.predicate);
+    const object = quad.object.startsWith('"') ? quad.object : this.formatResource(quad.object);
+    if (quad.graph) return `${subject} ${predicate} ${object} ${this.formatResource(quad.graph)} .`;
+    return `${subject} ${predicate} ${object} .`;
+  }
+
+  private formatResource(value: string): string {
+    return BLANK_NODE.test(value) ? value : `<${value}>`;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [value];
   }
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
 export default RdfCodec;
-export type { RdfLiteral, RdfTerm };
-export { NAMESPACES, PREFIXES };

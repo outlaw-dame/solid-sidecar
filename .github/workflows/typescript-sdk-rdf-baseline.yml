@@ -1,0 +1,60 @@
+name: TypeScript SDK RDF baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/clients/rdf-codec.ts'
+      - 'sdk/ts/test/rdf-codec-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-rdf-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ts/src/clients/rdf-codec.ts'
+      - 'sdk/ts/test/rdf-codec-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-rdf-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-rdf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify RDF codec baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Isolate RDF-codec TypeScript diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          if grep -F 'src/clients/rdf-codec.ts' typecheck.log; then
+            echo 'rdf-codec.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+          echo 'No RDF-codec TypeScript diagnostics found.'
+      - name: Run focused RDF tests when present
+        run: |
+          if test -f test/rdf-codec-baseline.test.ts; then
+            npx jest --runInBand test/rdf-codec-baseline.test.ts 2>&1 | tee rdf-jest.log
+          fi
+      - name: Upload RDF diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rdf-test-diagnostics
+          path: |
+            sdk/ts/rdf-jest.log
+            sdk/ts/typecheck.log
+          if-no-files-found: ignore
+          retention-days: 7
