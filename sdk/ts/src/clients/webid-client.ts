@@ -287,24 +287,22 @@ export class WebIdClient {
       return true;
     }
 
-    const octets = hostname.split('.').map(Number);
-    if (octets.length === 4 && octets.every(value => Number.isInteger(value) && value >= 0 && value <= 255)) {
-      const [a = 0, b = 0] = octets;
-      return (
-        a === 0 ||
-        a === 10 ||
-        a === 127 ||
-        (a === 100 && b >= 64 && b <= 127) ||
-        (a === 169 && b === 254) ||
-        (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 0) ||
-        (a === 192 && b === 168) ||
-        (a === 198 && (b === 18 || b === 19)) ||
-        a >= 224
-      );
-    }
+    if (this.isForbiddenIpv4(hostname)) return true;
 
     const normalizedIpv6 = hostname.toLowerCase();
+    const mappedDotted = normalizedIpv6.match(
+      /^(?:::ffff:(?:0:){0,1}|::)?(\d+\.\d+\.\d+\.\d+)$/u
+    );
+    if (mappedDotted?.[1] && this.isForbiddenIpv4(mappedDotted[1])) return true;
+
+    const mappedHex = normalizedIpv6.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u);
+    if (mappedHex?.[1] && mappedHex[2]) {
+      const high = Number.parseInt(mappedHex[1], 16);
+      const low = Number.parseInt(mappedHex[2], 16);
+      const mappedIpv4 = [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+      if (this.isForbiddenIpv4(mappedIpv4)) return true;
+    }
+
     return (
       normalizedIpv6 === '::' ||
       normalizedIpv6 === '::1' ||
@@ -312,6 +310,30 @@ export class WebIdClient {
       normalizedIpv6.startsWith('fd') ||
       /^fe[89ab]/u.test(normalizedIpv6) ||
       normalizedIpv6.startsWith('ff')
+    );
+  }
+
+  private isForbiddenIpv4(ip: string): boolean {
+    const octets = ip.split('.').map(Number);
+    if (
+      octets.length !== 4 ||
+      !octets.every(value => Number.isInteger(value) && value >= 0 && value <= 255)
+    ) {
+      return false;
+    }
+
+    const [a = 0, b = 0] = octets;
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
     );
   }
 
@@ -370,7 +392,8 @@ export class WebIdClient {
       if (subject !== webId) continue;
       foundSubject = true;
       profile.id = webId;
-      this.applyTurtlePredicates(profile, statement, prefixes, profileDocumentUri);
+      const predicatesPart = statement.slice(subjectToken.length).trim();
+      this.applyTurtlePredicates(profile, predicatesPart, prefixes, profileDocumentUri);
     }
 
     if (!foundSubject) {
@@ -383,7 +406,7 @@ export class WebIdClient {
     const statements: string[] = [];
     let current = '';
     for (const rawLine of turtle.split(/\r?\n/u)) {
-      const line = rawLine.replace(/\s+#.*$/u, '').trim();
+      const line = rawLine.replace(/(?:^|\s+)#.*$/u, '').trim();
       if (!line || /^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line)) continue;
       current = current ? `${current} ${line}` : line;
       if (/\.\s*$/u.test(line)) {
@@ -457,7 +480,12 @@ export class WebIdClient {
       .map(value => this.asRecord(value))
       .find(value => {
         const id = value?.['@id'];
-        return typeof id === 'string' && new URL(id, profileDocumentUri).toString() === webId;
+        if (typeof id !== 'string') return false;
+        try {
+          return new URL(id, profileDocumentUri).toString() === webId;
+        } catch {
+          return false;
+        }
       });
     if (!node) {
       throw new ValidationError('Profile does not contain the requested WebID subject', 'webId');
@@ -465,7 +493,13 @@ export class WebIdClient {
 
     const profile: WebIdProfile = { id: webId, profileUri: profileDocumentUri };
     const type = this.firstString(node['@type']);
-    if (type) profile.type = new URL(type, profileDocumentUri).toString();
+    if (type) {
+      try {
+        profile.type = new URL(type, profileDocumentUri).toString();
+      } catch {
+        // Invalid non-authoritative type IRIs are ignored.
+      }
+    }
     profile.name = this.firstLiteral(node[FOAF_NAME] ?? node['foaf:name'] ?? node.name);
     profile.nickname = this.firstLiteral(node[FOAF_NICK] ?? node['foaf:nick']);
 
