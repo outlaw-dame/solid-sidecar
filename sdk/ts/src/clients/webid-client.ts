@@ -1,153 +1,66 @@
-/**
- * Solid Sidecar TypeScript SDK - WebID Client
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the WebIDClient for discovering and working with WebID profiles.
- *
- * Security Level: CRITICAL - Handles identity discovery and validation
- */
-
-import type {
-  ResourceUri,
-  HttpHeaders,
-  SolidSidecarLogger,
-} from '../types';
-import { ResourceClient, type ResourceClientConfig } from './resource-client';
+import type { HttpHeaders, SolidSidecarLogger } from '../types';
 import { ValidationError } from '../types';
-import {
-  resolveUrl,
-  validateUrl,
-  parseLinkHeaders,
-  getResourceName,
-} from '../utils';
+import { ResourceClient, type ResourceClientConfig } from './resource-client';
+import { nullLogger, validateUrl } from '../utils';
 
-// ============================================================================
-// WebID Types
-// ============================================================================
-
-/** WebID profile document */
 export interface WebIdProfile {
-  /** Subject URI (the WebID) */
   id: string;
-  
-  /** Types of the profile */
   type?: string | string[];
-  
-  /** Person's name */
   name?: string;
-  
-  /** Person's nickname */
   nickname?: string;
-  
-  /** Person's email */
   email?: string;
-  
-  /** Person's image URL */
   image?: string;
-  
-  /** Storage locations */
   storage?: string[];
-  
-  /** Public preferences file */
   preferencesFile?: string;
-  
-  /** Profile document as RDF/Turtle */
   turtle?: string;
-  
-  /** Raw profile document */
   raw?: string;
-  
-  /** Profile URI */
   profileUri: string;
-  
-  /** Last modified timestamp */
   lastModified?: string;
-  
-  /** ETag */
   etag?: string;
 }
 
-/** WebID discovery options */
 export interface WebIdDiscoveryOptions {
-  /** Timeout for discovery in milliseconds */
   timeout?: number;
-  
-  /** Custom headers */
   headers?: HttpHeaders;
-  
-  /** Whether to follow redirects (default: true) */
   followRedirects?: boolean;
-  
-  /** Maximum redirect depth (default: 5) */
   maxRedirects?: number;
 }
 
-/** WebID validation result */
 export interface WebIdValidationResult {
-  /** Whether the WebID is valid */
   valid: boolean;
-  
-  /** The WebID being validated */
   webId: string;
-  
-  /** Profile URI if valid */
   profileUri?: string;
-  
-  /** Validation errors */
   errors: string[];
-  
-  /** Warnings */
   warnings: string[];
-  
-  /** The profile if successfully loaded */
   profile?: WebIdProfile;
 }
 
-// ============================================================================
-// WebID Client Configuration
-// ============================================================================
-
-/**
- * Configuration for WebIdClient
- */
 export interface WebIdClientConfig extends ResourceClientConfig {
-  /** Timeout for WebID discovery in milliseconds (default: 10000) */
   discoveryTimeout?: number;
-  
-  /** Maximum number of profile lookups to cache (default: 100) */
   profileCacheSize?: number;
-  
-  /** Profile cache TTL in milliseconds (default: 5 minutes) */
   profileCacheTtl?: number;
-  
-  /** Whether to enable SSRF protection (default: true) */
   enableSsrfProtection?: boolean;
-  
-  /** Allowed hosts for profile discovery */
   allowedHosts?: string[];
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default WebIdClient configuration
- */
-export const DEFAULT_WEBID_CLIENT_CONFIG: Partial<WebIdClientConfig> = {
-  discoveryTimeout: 10000,
+interface ResolvedWebIdClientConfig {
+  discoveryTimeout: number;
+  profileCacheSize: number;
+  profileCacheTtl: number;
+  enableSsrfProtection: boolean;
+  allowedHosts: string[];
+  logger: SolidSidecarLogger;
+}
+
+export const DEFAULT_WEBID_CLIENT_CONFIG = {
+  discoveryTimeout: 10_000,
   profileCacheSize: 100,
-  profileCacheTtl: 5 * 60 * 1000, // 5 minutes
+  profileCacheTtl: 5 * 60 * 1_000,
   enableSsrfProtection: true,
   allowedHosts: [],
-};
-
-// ============================================================================
-// Profile Cache Entry
-// ============================================================================
+  logger: nullLogger,
+} satisfies ResolvedWebIdClientConfig;
 
 interface ProfileCacheEntry {
   profile: WebIdProfile;
@@ -155,40 +68,39 @@ interface ProfileCacheEntry {
   etag?: string;
 }
 
-// ============================================================================
-// WebID Client
-// ============================================================================
-
-/**
- * WebID Client for Solid Sidecar
- * 
- * Features:
- * - WebID profile discovery and fetching
- * - WebID validation
- * - Profile caching with TTL
- * - Storage location discovery
- * - SSRF protection
- * - IDOR prevention
- * - ETag-based cache invalidation
- */
 export class WebIdClient {
-  private readonly config: Required<WebIdClientConfig>;
+  private readonly config: ResolvedWebIdClientConfig;
   private readonly resourceClient: ResourceClient;
   private readonly logger: SolidSidecarLogger;
-  private readonly profileCache: Map<string, ProfileCacheEntry> = new Map();
-  
-  constructor(config: WebIdClientConfig = {}) {
-    // Merge with defaults
+  private readonly profileCache = new Map<string, ProfileCacheEntry>();
+
+  public constructor(config: WebIdClientConfig = {}) {
     this.config = {
-      ...DEFAULT_WEBID_CLIENT_CONFIG,
-      ...config,
-      logger: config.logger || console,
+      discoveryTimeout:
+        config.discoveryTimeout ?? DEFAULT_WEBID_CLIENT_CONFIG.discoveryTimeout,
+      profileCacheSize:
+        config.profileCacheSize ?? DEFAULT_WEBID_CLIENT_CONFIG.profileCacheSize,
+      profileCacheTtl:
+        config.profileCacheTtl ?? DEFAULT_WEBID_CLIENT_CONFIG.profileCacheTtl,
+      enableSsrfProtection:
+        config.enableSsrfProtection ??
+        DEFAULT_WEBID_CLIENT_CONFIG.enableSsrfProtection,
+      allowedHosts: [...(config.allowedHosts ?? DEFAULT_WEBID_CLIENT_CONFIG.allowedHosts)],
+      logger: config.logger ?? DEFAULT_WEBID_CLIENT_CONFIG.logger,
     };
 
-    // Initialize resource client
-    this.resourceClient = new ResourceClient(config);
-    this.logger = this.config.logger;
+    if (!Number.isFinite(this.config.discoveryTimeout) || this.config.discoveryTimeout <= 0) {
+      throw new ValidationError('discoveryTimeout must be a positive number', 'discoveryTimeout');
+    }
+    if (!Number.isInteger(this.config.profileCacheSize) || this.config.profileCacheSize < 0) {
+      throw new ValidationError('profileCacheSize must be a non-negative integer', 'profileCacheSize');
+    }
+    if (!Number.isFinite(this.config.profileCacheTtl) || this.config.profileCacheTtl < 0) {
+      throw new ValidationError('profileCacheTtl must be a non-negative number', 'profileCacheTtl');
+    }
 
+    this.resourceClient = new ResourceClient({ ...config, logger: this.config.logger });
+    this.logger = this.config.logger;
     this.logger.debug('WebIdClient initialized', {
       discoveryTimeout: this.config.discoveryTimeout,
       profileCacheSize: this.config.profileCacheSize,
@@ -196,446 +108,262 @@ export class WebIdClient {
     });
   }
 
-  // ==========================================================================
-  // Discovery Methods
-  // ==========================================================================
-
-  /**
-   * Discovers and fetches a WebID profile
-   * 
-   * @param webId - The WebID to discover (can be URI or WebID URI)
-   * @param options - Discovery options
-   * @returns The WebID profile
-   */
   public async discoverWebId(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<WebIdProfile> {
-    this.validateWebId(webId);
-    
-    // Check cache first
-    const cachedProfile = this.getCachedProfile(webId);
-    if (cachedProfile) {
-      this.logger.debug('WebID profile found in cache', { webId });
-      return cachedProfile;
-    }
-    
-    // Normalize WebID to URI
-    const profileUri = this.normalizeWebId(webId);
-    
-    // Validate URL for SSRF prevention
-    if (this.config.enableSsrfProtection) {
-      if (!validateUrl(profileUri, this.config.allowedHosts)) {
-        throw new ValidationError(
-          `Invalid WebID URI: ${profileUri}`,
-          'webId'
-        );
-      }
-    }
-    
-    // Fetch the profile
-    const profile = await this.fetchWebIdProfile(profileUri, options);
-    
-    // Cache the profile
-    this.cacheProfile(webId, profile);
-    
-    this.logger.info('WebID profile discovered', { 
-      webId, 
+    const canonicalWebId = this.canonicalizeWebId(webId);
+    const cached = this.getCachedProfile(canonicalWebId);
+    if (cached) return cached;
+
+    const profileDocumentUri = this.profileDocumentUri(canonicalWebId);
+    this.assertSafeUrl(profileDocumentUri);
+
+    const profile = await this.fetchWebIdProfile(
+      canonicalWebId,
+      profileDocumentUri,
+      options
+    );
+    this.cacheProfile(canonicalWebId, profile);
+
+    this.logger.info('WebID profile discovered', {
       profileUri: profile.profileUri,
-      name: profile.name,
-      hasStorage: !!(profile.storage && profile.storage.length > 0)
+      hasStorage: (profile.storage?.length ?? 0) > 0,
     });
-    
     return profile;
   }
 
-  /**
-   * Validates a WebID and returns validation result
-   * 
-   * @param webId - The WebID to validate
-   * @param options - Validation options
-   * @returns Validation result
-   */
   public async validateWebId(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<WebIdValidationResult> {
     const result: WebIdValidationResult = {
-      valid: true,
+      valid: false,
       webId,
       errors: [],
       warnings: [],
     };
 
     try {
-      // Basic validation
-      if (!webId || typeof webId !== 'string') {
-        result.errors.push('WebID must be a non-empty string');
-        result.valid = false;
-        return result;
-      }
+      const canonicalWebId = this.canonicalizeWebId(webId);
+      const profile = await this.discoverWebId(canonicalWebId, options);
+      result.profile = profile;
+      result.profileUri = profile.profileUri;
+      result.valid = profile.id === canonicalWebId;
 
-      // Must be a valid URI
-      try {
-        new URL(webId);
-      } catch {
-        result.errors.push('WebID must be a valid URI');
-        result.valid = false;
-        return result;
+      if (!result.valid) {
+        result.errors.push('Profile subject does not match the requested WebID');
       }
-
-      // Normalize and validate structure
-      const profileUri = this.normalizeWebId(webId);
-      if (!profileUri) {
-        result.errors.push('WebID must be an HTTP(S) URI with a path');
-        result.valid = false;
-        return result;
+      if (!profile.storage?.length) {
+        result.warnings.push('No storage locations found in profile');
       }
-
-      // Validate SSRF
-      if (this.config.enableSsrfProtection) {
-        if (!validateUrl(profileUri, this.config.allowedHosts)) {
-          result.errors.push('WebID URI failed SSRF validation');
-          result.valid = false;
-          return result;
-        }
-      }
-
-      // Try to fetch the profile
-      try {
-        const profile = await this.fetchWebIdProfile(profileUri, options);
-        result.profile = profile;
-        result.profileUri = profile.profileUri;
-        
-        // Check for required fields
-        if (!profile.id) {
-          result.warnings.push('Profile does not have an explicit @id or subject');
-        }
-        
-        // Check if WebID matches the profile subject
-        if (profile.id && profile.id !== webId && profile.id !== profileUri) {
-          result.warnings.push(`Profile subject (${profile.id}) does not match WebID (${webId})`);
-        }
-        
-        // Check for storage locations
-        if (!profile.storage || profile.storage.length === 0) {
-          result.warnings.push('No storage locations found in profile');
-        }
-        
-      } catch (error) {
-        result.errors.push(`Failed to fetch WebID profile: ${error instanceof Error ? error.message : String(error)}`);
-        result.valid = false;
-      }
-      
     } catch (error) {
-      result.errors.push(`WebID validation failed: ${error instanceof Error ? error.message : String(error)}`);
-      result.valid = false;
+      result.errors.push(
+        error instanceof Error ? error.message : 'WebID validation failed'
+      );
     }
-    
+
     return result;
   }
 
-  /**
-   * Discovers storage locations for a WebID
-   * 
-   * @param webId - The WebID
-   * @param options - Discovery options
-   * @returns Array of storage URIs
-   */
   public async discoverStorageLocations(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<string[]> {
     const profile = await this.discoverWebId(webId, options);
-    return profile.storage || [];
+    return [...(profile.storage ?? [])];
   }
 
-  /**
-   * Discovers the primary storage location for a WebID
-   * 
-   * @param webId - The WebID
-   * @param options - Discovery options
-   * @returns Primary storage URI or null
-   */
   public async discoverPrimaryStorage(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<string | null> {
     const storage = await this.discoverStorageLocations(webId, options);
-    return storage.length > 0 ? storage[0] : null;
+    return storage[0] ?? null;
   }
 
-  /**
-   * Discovers the preferences file for a WebID
-   * 
-   * @param webId - The WebID
-   * @param options - Discovery options
-   * @returns Preferences file URI or null
-   */
   public async discoverPreferencesFile(
     webId: string,
     options: WebIdDiscoveryOptions = {}
   ): Promise<string | null> {
-    const profile = await this.discoverWebId(webId, options);
-    return profile.preferencesFile || null;
+    return (await this.discoverWebId(webId, options)).preferencesFile ?? null;
   }
 
-  // ==========================================================================
-  // Cache Management
-  // ==========================================================================
-
-  /**
-   * Clears the profile cache
-   */
   public clearCache(): void {
     this.profileCache.clear();
-    this.logger.debug('WebID profile cache cleared');
   }
 
-  /**
-   * Removes a specific profile from cache
-   * 
-   * @param webId - The WebID to remove
-   */
   public clearCachedProfile(webId: string): void {
-    this.profileCache.delete(webId);
-    this.logger.debug('WebID profile removed from cache', { webId });
+    this.profileCache.delete(this.canonicalizeWebId(webId));
   }
 
-  /**
-   * Checks if a profile is cached
-   * 
-   * @param webId - The WebID to check
-   * @returns true if cached
-   */
   public isCached(webId: string): boolean {
-    return this.profileCache.has(webId);
+    return this.getCachedProfile(this.canonicalizeWebId(webId)) !== null;
   }
 
-  /**
-   * Gets the number of cached profiles
-   */
   public getCacheSize(): number {
     return this.profileCache.size;
   }
 
-  // ==========================================================================
-  // Private Methods
-  // ==========================================================================
+  public getResourceClient(): ResourceClient {
+    return this.resourceClient;
+  }
 
-  /**
-   * Validates a WebID string
-   */
-  private validateWebId(webId: string): void {
-    if (!webId || typeof webId !== 'string') {
+  public getConfig(): Readonly<ResolvedWebIdClientConfig> {
+    return {
+      ...this.config,
+      allowedHosts: [...this.config.allowedHosts],
+    };
+  }
+
+  private canonicalizeWebId(webId: string): string {
+    if (typeof webId !== 'string' || webId.trim() === '') {
       throw new ValidationError('WebID must be a non-empty string', 'webId');
     }
 
-    // Must be a valid URI
+    let parsed: URL;
     try {
-      new URL(webId);
+      parsed = new URL(webId);
     } catch {
-      throw new ValidationError('WebID must be a valid URI', 'webId');
+      throw new ValidationError('WebID must be a valid absolute URL', 'webId');
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new ValidationError('WebID must use HTTP or HTTPS', 'webId');
+    }
+    if (parsed.username || parsed.password) {
+      throw new ValidationError('WebID must not contain credentials', 'webId');
+    }
+
+    parsed.hostname = parsed.hostname.toLowerCase();
+    parsed.hash = parsed.hash;
+    return parsed.toString();
+  }
+
+  private profileDocumentUri(webId: string): string {
+    const document = new URL(webId);
+    document.hash = '';
+    return document.toString();
+  }
+
+  private assertSafeUrl(url: string): void {
+    if (
+      this.config.enableSsrfProtection &&
+      !validateUrl(url, this.config.allowedHosts)
+    ) {
+      throw new ValidationError('WebID URI failed URL safety validation', 'webId');
     }
   }
 
-  /**
-   * Normalizes a WebID to a profile URI
-   */
-  private normalizeWebId(webId: string): string {
-    // If it already looks like a profile URI, use it
-    if (webId.startsWith('http://') || webId.startsWith('https://')) {
-      return webId;
-    }
-    
-    // Try to construct a profile URI
-    // WebID can be in the form: scheme:user@host/path
-    // or just a URI reference
-    
-    try {
-      const url = new URL(webId);
-      // If it has a path, it's probably already a profile URI
-      if (url.pathname && url.pathname !== '/') {
-        return webId;
-      }
-      // Otherwise, try adding /profile/card
-      return `${webId}/profile/card`;
-    } catch {
-      // If it's not a valid URL, try to parse it as a URI reference
-      // This is a fallback for DID-style WebIDs
-      return webId;
-    }
-  }
-
-  /**
-   * Fetches a WebID profile
-   */
   private async fetchWebIdProfile(
-    profileUri: string,
-    options: WebIdDiscoveryOptions = {}
+    webId: string,
+    profileDocumentUri: string,
+    options: WebIdDiscoveryOptions
   ): Promise<WebIdProfile> {
-    const { timeout, headers } = options;
-    
-    // Fetch with custom timeout
     const response = await this.resourceClient.get(
-      profileUri,
-      headers,
-      timeout || this.config.discoveryTimeout
+      profileDocumentUri,
+      options.headers ?? {},
+      'text/turtle, application/ld+json;q=0.9'
     );
-    
-    // Parse the profile
-    const profile = this.parseWebIdProfile(response.content, profileUri);
-    
-    // Add response metadata
-    profile.profileUri = profileUri;
+    const profile = this.parseWebIdProfile(response.content, webId, profileDocumentUri);
     profile.lastModified = response.metadata.lastModified;
     profile.etag = response.metadata.etag;
     profile.raw = response.content;
     profile.turtle = response.content;
-    
     return profile;
   }
 
-  /**
-   * Parses a WebID profile from RDF/Turtle
-   */
-  private parseWebIdProfile(turtle: string, profileUri: string): WebIdProfile {
-    const profile: WebIdProfile = {
-      id: profileUri,
-      profileUri,
-    };
+  private parseWebIdProfile(
+    turtle: string,
+    webId: string,
+    profileDocumentUri: string
+  ): WebIdProfile {
+    const profile: WebIdProfile = { id: webId, profileUri: profileDocumentUri };
 
-    // Simple Turtle parser for WebID profiles
-    // In production, use a proper RDF parser like N3 or rdflib.js
-    
-    const lines = turtle.split('\n');
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('@') || trimmed.startsWith('#')) continue;
+    for (const rawLine of turtle.split(/\r?\n/u)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('@')) continue;
 
-      // Match subject
-      const subjectMatch = trimmed.match(/^<([^>]+)>/);
+      const subjectMatch = line.match(/^<([^>]+)>/u);
       if (!subjectMatch) continue;
-      
-      const subject = subjectMatch[1];
-      
-      // Match type
-      const typeMatch = trimmed.match(/a\s+<([^>]+)>/i);
-      if (typeMatch) {
-        const typeUri = typeMatch[1];
-        if (typeUri.includes('Person') || typeUri.includes('Agent')) {
-          profile.type = typeUri;
-        }
+
+      let subject: string;
+      try {
+        subject = new URL(subjectMatch[1] ?? '', profileDocumentUri).toString();
+      } catch {
+        continue;
       }
-      
-      // Match name (foaf:name)
-      const nameMatch = trimmed.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/name>\s+"([^"]+)"/);
-      if (nameMatch) {
-        profile.name = nameMatch[1];
+      if (subject !== webId) continue;
+
+      const typeMatch = line.match(/\ba\s+<([^>]+)>/iu);
+      if (typeMatch?.[1]) profile.type = typeMatch[1];
+
+      const nameMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/name>\s+"([^"]+)"/u);
+      if (nameMatch?.[1]) profile.name = nameMatch[1];
+
+      const nicknameMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/nick>\s+"([^"]+)"/u);
+      if (nicknameMatch?.[1]) profile.nickname = nicknameMatch[1];
+
+      const emailMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/mbox>\s+<mailto:([^>]+)>/u);
+      if (emailMatch?.[1]) profile.email = emailMatch[1];
+
+      const imageMatch = line.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/(?:img|depiction|image)>\s+<([^>]+)>/u);
+      if (imageMatch?.[1]) profile.image = this.safeProfileUrl(imageMatch[1], profileDocumentUri);
+
+      const storageMatch = line.match(/<http:\/\/www\.w3\.org\/ns\/pim\/space#storage>\s+<([^>]+)>/u);
+      if (storageMatch?.[1]) {
+        const storage = this.safeProfileUrl(storageMatch[1], profileDocumentUri);
+        if (storage) profile.storage = [...(profile.storage ?? []), storage];
       }
-      
-      // Match nickname
-      const nicknameMatch = trimmed.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/nick>\s+"([^"]+)"/);
-      if (nicknameMatch) {
-        profile.nickname = nicknameMatch[1];
-      }
-      
-      // Match email
-      const emailMatch = trimmed.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/mbox>\s+<mailto:([^>]+)>/);
-      if (emailMatch) {
-        profile.email = emailMatch[1];
-      }
-      
-      // Match image
-      const imageMatch = trimmed.match(/<http:\/\/xmlns\.com\/foaf\/0\.1\/(img|depiction|image)>\s+<([^>]+)>/);
-      if (imageMatch) {
-        profile.image = imageMatch[2];
-      }
-      
-      // Match storage (pim:storage)
-      const storageMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/pim\/space#storage>\s+<([^>]+)>/);
-      if (storageMatch) {
-        profile.storage = profile.storage || [];
-        profile.storage.push(storageMatch[1]);
-      }
-      
-      // Match preferences file (prefs:preferencesFile)
-      const prefsMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/pim\/prefs#preferencesFile>\s+<([^>]+)>/);
-      if (prefsMatch) {
-        profile.preferencesFile = prefsMatch[1];
+
+      const preferencesMatch = line.match(/<http:\/\/www\.w3\.org\/ns\/pim\/prefs#preferencesFile>\s+<([^>]+)>/u);
+      if (preferencesMatch?.[1]) {
+        profile.preferencesFile = this.safeProfileUrl(
+          preferencesMatch[1],
+          profileDocumentUri
+        );
       }
     }
-    
+
     return profile;
   }
 
-  /**
-   * Gets a cached profile if available and not expired
-   */
+  private safeProfileUrl(value: string, base: string): string | undefined {
+    try {
+      const resolved = new URL(value, base).toString();
+      this.assertSafeUrl(resolved);
+      return resolved;
+    } catch {
+      return undefined;
+    }
+  }
+
   private getCachedProfile(webId: string): WebIdProfile | null {
     const entry = this.profileCache.get(webId);
-    if (!entry) {
-      return null;
-    }
-    
-    // Check TTL
-    const now = Date.now();
-    if (now - entry.timestamp > this.config.profileCacheTtl) {
-      // Cache entry expired
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp >= this.config.profileCacheTtl) {
       this.profileCache.delete(webId);
       return null;
     }
-    
     return entry.profile;
   }
 
-  /**
-   * Caches a profile
-   */
   private cacheProfile(webId: string, profile: WebIdProfile): void {
-    // Evict entries if cache is full
-    if (this.profileCache.size >= this.config.profileCacheSize) {
-      const now = Date.now();
-      const oldEntries = Array.from(this.profileCache.entries())
-        .sort((a, b) => a[1].timestamp - b[1].timestamp)
-        .slice(0, Math.floor(this.config.profileCacheSize / 4));
-      
-      for (const [key] of oldEntries) {
-        this.profileCache.delete(key);
-      }
+    if (this.config.profileCacheSize === 0) return;
+
+    this.profileCache.delete(webId);
+    while (this.profileCache.size >= this.config.profileCacheSize) {
+      const oldestKey = this.profileCache.keys().next().value as string | undefined;
+      if (oldestKey === undefined) break;
+      this.profileCache.delete(oldestKey);
     }
-    
-    // Add new entry
+
     this.profileCache.set(webId, {
       profile,
       timestamp: Date.now(),
       etag: profile.etag,
     });
   }
-
-  // ==========================================================================
-  // Getters
-  // ==========================================================================
-
-  /**
-   * Gets the resource client
-   */
-  public getResourceClient(): ResourceClient {
-    return this.resourceClient;
-  }
-
-  /**
-   * Gets the configuration
-   */
-  public getConfig(): Required<WebIdClientConfig> {
-    return { ...this.config };
-  }
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
 export default WebIdClient;
-export type { WebIdProfile, WebIdDiscoveryOptions, WebIdValidationResult };
