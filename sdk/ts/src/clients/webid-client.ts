@@ -85,6 +85,7 @@ export class WebIdClient {
   private readonly logger: SolidSidecarLogger;
   private readonly profileCache = new Map<string, ProfileCacheEntry>();
   private readonly inFlightDiscoveries = new Map<string, Promise<WebIdProfile>>();
+  private readonly hasImplicitAuthentication: boolean;
 
   public constructor(config: WebIdClientConfig = {}) {
     this.config = {
@@ -113,6 +114,7 @@ export class WebIdClient {
 
     this.resourceClient = new ResourceClient({ ...config, logger: this.config.logger });
     this.logger = this.config.logger;
+    this.hasImplicitAuthentication = config.authManager !== undefined || config.useDpop === true;
   }
 
   public async discoverWebId(
@@ -244,14 +246,23 @@ export class WebIdClient {
   }
 
   private canUseSharedCache(options: WebIdDiscoveryOptions): boolean {
-    return this.config.profileCacheTtl > 0 && Object.keys(options.headers ?? {}).length === 0;
+    return (
+      this.config.profileCacheTtl > 0 &&
+      !this.hasImplicitAuthentication &&
+      Object.keys(options.headers ?? {}).length === 0
+    );
   }
 
   private discoveryRequestKey(webId: string, options: WebIdDiscoveryOptions): string {
     const headers = Object.entries(options.headers ?? {})
       .map(([name, value]) => [name.toLowerCase(), value.trim()] as const)
       .sort(([left], [right]) => left.localeCompare(right));
-    return JSON.stringify({ webId, timeout: options.timeout ?? null, headers });
+    return JSON.stringify({
+      webId,
+      timeout: options.timeout ?? null,
+      headers,
+      authenticated: this.hasImplicitAuthentication,
+    });
   }
 
   private canonicalizeWebId(webId: string): string {
@@ -365,16 +376,19 @@ export class WebIdClient {
       'text/turtle, application/ld+json;q=0.9'
     );
     const contentType = response.metadata.contentType?.split(';', 1)[0]?.trim().toLowerCase();
+    const document = typeof response.content === 'string'
+      ? response.content
+      : JSON.stringify(response.content);
     const profile = this.parseWebIdProfile(
-      response.content,
+      document,
       webId,
       profileDocumentUri,
       contentType
     );
     profile.lastModified = response.metadata.lastModified;
     profile.etag = response.metadata.etag;
-    profile.raw = response.content;
-    if (contentType !== 'application/ld+json') profile.turtle = response.content;
+    profile.raw = document;
+    if (contentType !== 'application/ld+json') profile.turtle = document;
     return profile;
   }
 
@@ -389,10 +403,21 @@ export class WebIdClient {
       profile = this.parseJsonLdProfile(document, webId, profileDocumentUri);
     } else if (contentType === 'text/turtle' || contentType === 'application/n-triples') {
       profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
-    } else if (document.trimStart().startsWith('{')) {
-      profile = this.parseJsonLdProfile(document, webId, profileDocumentUri);
     } else {
-      profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
+      const trimmed = document.trimStart();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          profile = this.parseJsonLdProfile(document, webId, profileDocumentUri);
+        } catch (error) {
+          if (error instanceof ValidationError && error.field === 'profile') {
+            profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        profile = this.parseTurtleProfile(document, webId, profileDocumentUri);
+      }
     }
 
     if (profile.id !== webId) {
@@ -440,17 +465,68 @@ export class WebIdClient {
   private collectTurtleStatements(turtle: string): string[] {
     const statements: string[] = [];
     let current = '';
-    for (const rawLine of turtle.split(/\r?\n/u)) {
-      const line = rawLine.replace(/(?:^|\s+)#.*$/u, '').trim();
-      if (!line || /^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line)) continue;
-      current = current ? `${current} ${line}` : line;
-      if (/\.\s*$/u.test(line)) {
-        statements.push(current);
+    let inString = false;
+    let escaped = false;
+    let inIri = false;
+
+    const source = turtle
+      .split(/\r?\n/u)
+      .map(rawLine => this.stripTurtleComment(rawLine).trim())
+      .filter(line => line && !/^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line))
+      .join(' ');
+
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index] ?? '';
+      current += char;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (inString && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (
+        !inString &&
+        !inIri &&
+        char === '.' &&
+        (index === source.length - 1 || /\s/u.test(source[index + 1] ?? ''))
+      ) {
+        if (current.trim()) statements.push(current.trim());
         current = '';
       }
     }
-    if (current) statements.push(current);
+    if (current.trim()) statements.push(current.trim());
     return statements;
+  }
+
+  private stripTurtleComment(line: string): string {
+    let clean = '';
+    let inString = false;
+    let escaped = false;
+    let inIri = false;
+
+    for (const char of line) {
+      if (escaped) {
+        clean += char;
+        escaped = false;
+        continue;
+      }
+      if (inString && char === '\\') {
+        clean += char;
+        escaped = true;
+        continue;
+      }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (!inString && !inIri && char === '#') break;
+      clean += char;
+    }
+    return clean;
   }
 
   private applyTurtlePredicates(
@@ -459,10 +535,10 @@ export class WebIdClient {
     prefixes: Map<string, string>,
     base: string
   ): void {
-    const predicateObject = /(?:^|;)\s*(a|<[^>]+>|(?:[A-Za-z][\w-]*)?:[\w.-]+)\s+([^;]+?)(?=\s*;|\s*\.\s*$)/gu;
-    for (const match of statement.matchAll(predicateObject)) {
-      const predicateToken = match[1];
-      const objectToken = match[2]?.trim();
+    for (const pair of this.splitTurtlePredicatePairs(statement)) {
+      const match = pair.match(/^(a|<[^>]+>|(?:[A-Za-z][\w-]*)?:[\w.-]*)\s+(.+)$/u);
+      const predicateToken = match?.[1];
+      const objectToken = match?.[2]?.trim();
       if (!predicateToken || !objectToken) continue;
       const predicate = predicateToken === 'a'
         ? RDF_TYPE
@@ -470,6 +546,38 @@ export class WebIdClient {
       if (!predicate) continue;
       this.applyProfileValue(profile, predicate, objectToken, prefixes, base);
     }
+  }
+
+  private splitTurtlePredicatePairs(statement: string): string[] {
+    const pairs: string[] = [];
+    let current = '';
+    let inString = false;
+    let escaped = false;
+    let inIri = false;
+
+    for (const char of statement.replace(/\.\s*$/u, '')) {
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+      if (inString && char === '\\') {
+        current += char;
+        escaped = true;
+        continue;
+      }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      if (!inString && !inIri && char === ';') {
+        if (current.trim()) pairs.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    if (current.trim()) pairs.push(current.trim());
+    return pairs;
   }
 
   private applyProfileValue(
@@ -536,27 +644,37 @@ export class WebIdClient {
       }
     }
 
-    profile.name = this.firstLiteral(this.jsonLdValue(node, FOAF_NAME, context) ?? node.name);
-    profile.nickname = this.firstLiteral(this.jsonLdValue(node, FOAF_NICK, context));
+    profile.name = this.firstLiteral(
+      this.jsonLdValue(node, FOAF_NAME, context, ['foaf:name', 'name'])
+    );
+    profile.nickname = this.firstLiteral(
+      this.jsonLdValue(node, FOAF_NICK, context, ['foaf:nick'])
+    );
 
-    const email = this.firstIri(this.jsonLdValue(node, FOAF_MBOX, context));
+    const email = this.firstIri(
+      this.jsonLdValue(node, FOAF_MBOX, context, ['foaf:mbox'])
+    );
     if (email?.startsWith('mailto:')) profile.email = email.slice(7);
 
     const image = this.firstIri(
-      this.jsonLdValue(node, FOAF_IMAGE, context) ??
-      this.jsonLdValue(node, FOAF_DEPICTION, context) ??
-      this.jsonLdValue(node, FOAF_IMAGE_ALT, context)
+      this.jsonLdValue(node, FOAF_IMAGE, context, ['foaf:img']) ??
+      this.jsonLdValue(node, FOAF_DEPICTION, context, ['foaf:depiction']) ??
+      this.jsonLdValue(node, FOAF_IMAGE_ALT, context, ['foaf:image'])
     );
     if (image) profile.image = this.requireSafeProfileUrl(image, profileDocumentUri);
 
-    const storageValues = this.allIris(this.jsonLdValue(node, PIM_STORAGE, context));
+    const storageValues = this.allIris(
+      this.jsonLdValue(node, PIM_STORAGE, context, ['pim:storage'])
+    );
     if (storageValues.length > 0) {
       profile.storage = [...new Set(
         storageValues.map(value => this.requireSafeProfileUrl(value, profileDocumentUri))
       )];
     }
 
-    const preferences = this.firstIri(this.jsonLdValue(node, PIM_PREFERENCES, context));
+    const preferences = this.firstIri(
+      this.jsonLdValue(node, PIM_PREFERENCES, context, ['pim:preferencesFile'])
+    );
     if (preferences) {
       profile.preferencesFile = this.requireSafeProfileUrl(preferences, profileDocumentUri);
     }
@@ -579,42 +697,56 @@ export class WebIdClient {
 
   private buildJsonLdContext(values: unknown[], base: string): Map<string, string> {
     const context = new Map<string, string>();
-    for (const value of values) this.addJsonLdContextValue(context, value, base);
+    for (const value of values) this.applyJsonLdContextValue(context, value, base);
     return context;
   }
 
-  private addJsonLdContextValue(
+  private applyJsonLdContextValue(
     context: Map<string, string>,
     value: unknown,
     base: string
   ): void {
     if (Array.isArray(value)) {
-      for (const item of value) this.addJsonLdContextValue(context, item, base);
+      for (const item of value) this.applyJsonLdContextValue(context, item, base);
       return;
     }
+
     const record = this.asRecord(value);
     if (!record) return;
 
+    const rawScope = new Map(context);
+    const rawDefinitions = new Map<string, string>();
     for (const [term, definition] of Object.entries(record)) {
       if (term.startsWith('@')) continue;
       const id = typeof definition === 'string'
         ? definition
         : this.asRecord(definition)?.['@id'];
-      if (typeof id !== 'string') continue;
+      if (typeof id !== 'string' || id.startsWith('@')) continue;
+      rawDefinitions.set(term, id);
+      rawScope.set(term, id);
+    }
+
+    const resolved = new Map<string, string>();
+    for (const [term, raw] of rawDefinitions) {
       try {
-        context.set(term, this.expandJsonLdTerm(id, context, base));
+        resolved.set(term, this.expandJsonLdTerm(raw, rawScope, base));
       } catch {
-        // Ignore malformed non-authoritative context entries.
+        // Ignore malformed or circular non-authoritative context entries.
       }
     }
+    for (const [term, iri] of resolved) context.set(term, iri);
   }
 
   private jsonLdValue(
     node: Record<string, unknown>,
     iri: string,
-    context: Map<string, string>
+    context: Map<string, string>,
+    fallbacks: string[] = []
   ): unknown {
     if (node[iri] !== undefined) return node[iri];
+    for (const fallback of fallbacks) {
+      if (node[fallback] !== undefined) return node[fallback];
+    }
     for (const [key, value] of Object.entries(node)) {
       if (key.startsWith('@')) continue;
       try {
@@ -629,15 +761,22 @@ export class WebIdClient {
   private expandJsonLdTerm(
     term: string,
     context: Map<string, string>,
-    base: string
+    base: string,
+    seen: Set<string> = new Set()
   ): string {
+    if (seen.has(term)) throw new Error('Circular JSON-LD context reference');
+    const nextSeen = new Set(seen).add(term);
+
     const direct = context.get(term);
-    if (direct) return direct;
+    if (direct) return this.expandJsonLdTerm(direct, context, base, nextSeen);
 
     const compact = term.match(/^([^:]+):(.*)$/u);
     if (compact?.[1] !== undefined && compact[2] !== undefined) {
       const prefix = context.get(compact[1]);
-      if (prefix) return `${prefix}${compact[2]}`;
+      if (prefix) {
+        const expandedPrefix = this.expandJsonLdTerm(prefix, context, base, nextSeen);
+        return `${expandedPrefix}${compact[2]}`;
+      }
       if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(term)) return term;
     }
 
@@ -699,10 +838,10 @@ export class WebIdClient {
       }
     }
 
-    const prefixed = normalized.match(/^([A-Za-z][\w-]*)?:([\w.-]+)$/u);
-    if (prefixed?.[2] !== undefined) {
-      const prefix = prefixes.get(prefixed[1] ?? '');
-      if (prefix) return `${prefix}${prefixed[2]}`;
+    const prefixed = normalized.match(/^([A-Za-z][\w-]*|):([\w.-]*)$/u);
+    if (prefixed?.[1] !== undefined && prefixed[2] !== undefined) {
+      const prefix = prefixes.get(prefixed[1]);
+      if (prefix !== undefined) return `${prefix}${prefixed[2]}`;
     }
 
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(normalized)) return normalized;
