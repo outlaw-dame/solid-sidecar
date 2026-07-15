@@ -38,13 +38,26 @@ jobs:
       - name: Isolate policy-client TypeScript diagnostics
         run: |
           npm run typecheck > typecheck.log 2>&1 || true
-          if grep -F 'src/clients/policy-client.ts' typecheck.log; then
+          grep -F 'src/clients/policy-client.ts' typecheck.log > policy-diagnostics.log || true
+          cat policy-diagnostics.log
+          if test -s policy-diagnostics.log; then
             echo 'policy-client.ts still has TypeScript diagnostics' >&2
             exit 1
           fi
           echo 'No policy-client TypeScript diagnostics found.'
-      - name: Run focused policy tests when present
+      - name: Upload policy diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-diagnostics
+          path: sdk/ts/policy-diagnostics.log
+          retention-days: 7
+      - name: Run focused policy tests
+        run: npx jest --runInBand test/policy-client-baseline.test.ts
+      - name: Verify authorization safety invariants
         run: |
-          if test -f test/policy-client-baseline.test.ts; then
-            npx jest --runInBand test/policy-client-baseline.test.ts
-          fi
+          ! grep -Fq 'logger: console' src/clients/policy-client.ts
+          ! grep -Fq 'agentMatch = true' src/clients/policy-client.ts
+          ! grep -Fq "error.message.includes('404')" src/clients/policy-client.ts
+          grep -Fq 'error instanceof ResourceNotFoundError' src/clients/policy-client.ts
+          grep -Fq 'ACP appliesTo must equal the target resource' src/clients/policy-client.ts
