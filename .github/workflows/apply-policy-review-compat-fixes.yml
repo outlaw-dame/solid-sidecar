@@ -1,0 +1,87 @@
+name: Apply policy review compatibility fixes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-policy-review-compat-fixes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Apply inherited-policy and expanded-IRI fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('sdk/ts/src/clients/policy-client.ts')
+          text = path.read_text()
+
+          old = '''  private parentContainer(resourceUri: ResourceUri): ContainerUri {
+              const url = new URL(resourceUri);
+              if (url.pathname.endsWith('/')) return url.toString();
+              url.pathname = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1);
+              url.search = '';
+              url.hash = '';
+              return url.toString();
+            }
+          '''
+          new = '''  private parentContainer(resourceUri: ResourceUri): ContainerUri {
+              const url = new URL(resourceUri);
+              const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
+              url.search = '';
+              url.hash = '';
+              const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+              const currentPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+              if (currentPath === basePath) return url.toString();
+              const withoutTrailingSlash = currentPath.slice(0, -1);
+              url.pathname = withoutTrailingSlash.slice(
+                0,
+                withoutTrailingSlash.lastIndexOf('/') + 1
+              );
+              if (!url.pathname.startsWith(basePath)) return base.toString();
+              return url.toString();
+            }
+          '''
+          if old not in text:
+              raise SystemExit('parentContainer block not found')
+          text = text.replace(old, new, 1)
+
+          replacements = {
+            "/acl:accessTo\\s+<([^>]+)>/g": "/(?:acl:accessTo|<http:\\/\\/www\\.w3\\.org\\/ns\\/auth\\/acl#accessTo>)\\s+<([^>]+)>/g",
+            "/acl:agent\\s+<([^>]+)>/g": "/(?:acl:agent|<http:\\/\\/www\\.w3\\.org\\/ns\\/auth\\/acl#agent>)\\s+<([^>]+)>/g",
+            "/acl:agentClass\\s+<([^>]+)>/g": "/(?:acl:agentClass|<http:\\/\\/www\\.w3\\.org\\/ns\\/auth\\/acl#agentClass>)\\s+<([^>]+)>/g",
+            "/acl:agentGroup\\s+<([^>]+)>/g": "/(?:acl:agentGroup|<http:\\/\\/www\\.w3\\.org\\/ns\\/auth\\/acl#agentGroup>)\\s+<([^>]+)>/g",
+            "/acl:mode\\s+<[^>]+#(Read|Write|Control|Append)>/g": "/(?:acl:mode|<http:\\/\\/www\\.w3\\.org\\/ns\\/auth\\/acl#mode>)\\s+<[^>]+#(Read|Write|Control|Append)>/g",
+            "/acp:appliesTo\\s+<([^>]+)>/": "/(?:acp:appliesTo|<http:\\/\\/www\\.w3\\.org\\/ns\\/solid\\/acp#appliesTo>)\\s+<([^>]+)>/",
+            "/acp:actor\\s+<([^>]+)>/g": "/(?:acp:actor|<http:\\/\\/www\\.w3\\.org\\/ns\\/solid\\/acp#actor>)\\s+<([^>]+)>/g",
+            "/acp:actorClass\\s+<([^>]+)>/g": "/(?:acp:actorClass|<http:\\/\\/www\\.w3\\.org\\/ns\\/solid\\/acp#actorClass>)\\s+<([^>]+)>/g",
+            "/acp:actorGroup\\s+<([^>]+)>/g": "/(?:acp:actorGroup|<http:\\/\\/www\\.w3\\.org\\/ns\\/solid\\/acp#actorGroup>)\\s+<([^>]+)>/g",
+            "/acp:operation\\s+<[^>]+#(Read|Write|Control|Append|Create|Delete)>/g": "/(?:acp:operation|<http:\\/\\/www\\.w3\\.org\\/ns\\/solid\\/acp#operation>)\\s+<[^>]+#(Read|Write|Control|Append|Create|Delete)>/g",
+          }
+          for old_regex, new_regex in replacements.items():
+              if old_regex not in text:
+                  raise SystemExit(f'regex not found: {old_regex}')
+              text = text.replace(old_regex, new_regex)
+
+          old_rule = "new RegExp(`acp:${predicate}\\\\s+\\\\[([^\\\\]]+)\\\\]`, 'g')"
+          new_rule = "new RegExp(`(?:acp:${predicate}|<http://www\\.w3\\.org/ns/solid/acp#${predicate}>)\\\\s+\\\\[([^\\\\]]+)\\\\]`, 'g')"
+          if old_rule not in text:
+              raise SystemExit('ACP rule predicate expression not found')
+          text = text.replace(old_rule, new_rule, 1)
+          path.write_text(text)
+          PY
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sdk/ts/src/clients/policy-client.ts
+          git commit -m 'Address policy client compatibility review findings'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
