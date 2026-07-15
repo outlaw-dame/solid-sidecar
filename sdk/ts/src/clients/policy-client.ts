@@ -513,7 +513,7 @@ export class PolicyClient {
       authorization.push({
         ...(subject?.[1] !== undefined && { '@id': subject[1] }),
         type: 'Authorization',
-        accessTo: accessTo.length === 1 ? accessTo[0]! : accessTo,
+        accessTo: accessTo[0]!,
         ...(agent.length > 0 && { agent: agent.length === 1 ? agent[0]! : agent }),
         ...(agentClass.length > 0 && {
           agentClass: agentClass.length === 1 ? agentClass[0]! : agentClass,
