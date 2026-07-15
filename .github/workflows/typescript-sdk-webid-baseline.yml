@@ -46,5 +46,15 @@ jobs:
       - name: Run focused WebID tests when present
         run: |
           if test -f test/webid-client-baseline.test.ts; then
-            npx jest --runInBand test/webid-client-baseline.test.ts
+            npx jest --runInBand test/webid-client-baseline.test.ts 2>&1 | tee webid-jest.log
           fi
+      - name: Upload WebID test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webid-test-diagnostics
+          path: |
+            sdk/ts/webid-jest.log
+            sdk/ts/typecheck.log
+          if-no-files-found: ignore
+          retention-days: 7
