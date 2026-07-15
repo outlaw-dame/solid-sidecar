@@ -1,733 +1,573 @@
-/**
- * Solid Sidecar TypeScript SDK - Notification Client
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the NotificationClient for Server-Sent Events (SSE)
- * subscriptions to Solid Sidecar notifications.
- *
- * Security Level: CRITICAL
- */
-
 import type {
-  ResourceUri,
   ContainerUri,
   NotificationEvent,
+  NotificationEventType,
   NotificationSubscription,
   NotificationSubscriptionOptions,
-  HttpHeaders,
+  ResourceUri,
   SolidSidecarLogger,
 } from '../types';
-import { ResourceClient, type ResourceClientConfig } from './resource-client';
 import { ValidationError } from '../types';
-import { generateUuid, sleep, calculateBackoffDelay, DEFAULT_RETRY_OPTIONS } from '../utils';
+import { ResourceClient, type ResourceClientConfig } from './resource-client';
+import {
+  calculateBackoffDelay,
+  generateUuid,
+  nullLogger,
+  sleep,
+} from '../utils';
 
-// ============================================================================
-// Notification Client Configuration
-// ============================================================================
-
-/**
- * Configuration for NotificationClient
- */
 export interface NotificationClientConfig extends ResourceClientConfig {
-  /** Base path for notifications endpoint (default: /notifications) */
   notificationsPath?: string;
-  
-  /** Maximum reconnection attempts (default: 5) */
   maxReconnectAttempts?: number;
-  
-  /** Base delay for reconnection backoff in milliseconds (default: 1000) */
   reconnectBaseDelay?: number;
-  
-  /** Maximum delay for reconnection backoff in milliseconds (default: 30000) */
   reconnectMaxDelay?: number;
-  
-  /** Heartbeat interval in milliseconds (default: 30000) */
   heartbeatInterval?: number;
-  
-  /** Whether to enable heartbeat (default: true) */
   enableHeartbeat?: boolean;
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default NotificationClient configuration
- */
-export const DEFAULT_NOTIFICATION_CLIENT_CONFIG: Required<NotificationClientConfig> = {
+type ResolvedNotificationConfig = {
+  notificationsPath: string;
+  maxReconnectAttempts: number;
+  reconnectBaseDelay: number;
+  reconnectMaxDelay: number;
+  heartbeatInterval: number;
+  enableHeartbeat: boolean;
+  logger: SolidSidecarLogger;
+};
+
+export const DEFAULT_NOTIFICATION_CLIENT_CONFIG: ResolvedNotificationConfig = {
   notificationsPath: '/notifications',
   maxReconnectAttempts: 5,
   reconnectBaseDelay: 1000,
   reconnectMaxDelay: 30000,
   heartbeatInterval: 30000,
   enableHeartbeat: true,
-  logger: console,
+  logger: nullLogger,
 };
 
-// ============================================================================
-// Event Source Wrapper
-// ============================================================================
+type EventSourceEventType = 'message' | 'error' | 'open' | 'close';
+type MessageListener = (event: MessageEvent) => void;
+type ErrorListener = (event: Event) => void;
+type VoidListener = () => void;
 
-/**
- * Wrapper around EventSource for better error handling and reconnection
- */
 export class SolidSidecarEventSource {
   private eventSource: EventSource | null = null;
-  private readonly url: string;
-  private readonly options: NotificationSubscriptionOptions;
+  private readonly baseUrl: string;
   private readonly logger: SolidSidecarLogger;
-  private readonly config: Required<NotificationClientConfig>;
-  
-  private readonly listeners: {
-    message: ((event: MessageEvent) => void)[];
-    error: ((error: Event) => void)[];
-    open: (() => void)[];
-    close: (() => void)[];
-  } = {
-    message: [],
-    error: [],
-    open: [],
-    close: [],
-  };
-
+  private readonly config: ResolvedNotificationConfig;
+  private readonly messageListeners: MessageListener[] = [];
+  private readonly errorListeners: ErrorListener[] = [];
+  private readonly openListeners: VoidListener[] = [];
+  private readonly closeListeners: VoidListener[] = [];
   private reconnectAttempts = 0;
-  private isClosed = false;
-  private lastEventId: string | null = null;
+  private explicitlyClosed = false;
+  private closeDispatched = false;
+  private reconnecting = false;
+  private lastEventId: string | null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     url: string,
     options: NotificationSubscriptionOptions,
-    config: Required<NotificationClientConfig>,
+    config: ResolvedNotificationConfig,
     logger: SolidSidecarLogger
   ) {
-    this.url = url;
-    this.options = options;
+    this.baseUrl = url;
     this.config = config;
     this.logger = logger;
-    this.lastEventId = options.cursor || null;
+    this.lastEventId = options.cursor ?? null;
   }
 
-  /**
-   * Connects to the EventSource
-   */
+  private getConnectionUrl(): string {
+    const url = new URL(this.baseUrl);
+    if (this.lastEventId) url.searchParams.set('cursor', this.lastEventId);
+    else url.searchParams.delete('cursor');
+    return url.toString();
+  }
+
   public connect(): void {
-    // Clear existing event source
+    if (this.explicitlyClosed) return;
     this.closeInternal();
-    this.isClosed = false;
-
-    // Build EventSource options
-    const eventSourceInit: EventSourceInit = {
-      withCredentials: true,
-    };
-
-    // Add Last-Event-ID for cursor resume
-    if (this.lastEventId) {
-      eventSourceInit.withCredentials = true;
-      // Note: Last-Event-ID is set via headers, not EventSourceInit
-    }
-
-    // Create EventSource
-    this.eventSource = new EventSource(this.url, eventSourceInit);
-
-    // Set up event handlers
-    this.setupHandlers();
-
-    // Start heartbeat if enabled
-    if (this.config.enableHeartbeat) {
-      this.startHeartbeat();
-    }
-
-    this.logger.debug('SSE connected', { url: this.url });
+    const connectionUrl = this.getConnectionUrl();
+    this.eventSource = new EventSource(connectionUrl, { withCredentials: true });
+    this.setupHandlers(this.eventSource);
+    if (this.config.enableHeartbeat) this.startHeartbeat();
+    this.logger.debug('SSE connection created');
   }
 
-  /**
-   * Sets up event handlers
-   */
-  private setupHandlers(): void {
-    if (!this.eventSource) return;
-
-    this.eventSource.onopen = () => {
+  private setupHandlers(source: EventSource): void {
+    source.onopen = () => {
+      if (source !== this.eventSource || this.explicitlyClosed) return;
       this.reconnectAttempts = 0;
-      this.dispatchEvent('open');
-      this.logger.debug('SSE connection opened');
+      this.reconnecting = false;
+      this.dispatchOpen();
     };
 
-    this.eventSource.onerror = (error: Event) => {
-      // Only log if readyState is CLOSED (not connecting or open)
-      if (this.eventSource?.readyState === EventSource.CLOSED) {
-        this.logger.error('SSE connection error', { error });
-        this.dispatchEvent('error', error);
+    source.onerror = (error: Event) => {
+      if (source !== this.eventSource || this.explicitlyClosed) return;
+      this.dispatchError(error);
+      if (source.readyState === 2) void this.reconnect();
+    };
+
+    source.onmessage = (event: MessageEvent) => {
+      if (source !== this.eventSource || this.explicitlyClosed) return;
+      if (event.lastEventId) this.lastEventId = event.lastEventId;
+      for (const listener of [...this.messageListeners]) {
+        try {
+          listener(event);
+        } catch (error) {
+          this.logger.error('Notification message listener failed', { error });
+        }
       }
-      this.dispatchEvent('error', error);
-    };
-
-    this.eventSource.onmessage = (event: MessageEvent) => {
-      this.lastEventId = event.lastEventId;
-      this.dispatchEvent('message', event);
     };
   }
 
-  /**
-   * Dispatches an event to listeners
-   */
-  private dispatchEvent(
-    type: 'message' | 'error' | 'open' | 'close',
-    data?: MessageEvent | Event
-  ): void {
-    for (const listener of this.listeners[type]) {
+  private dispatchError(event: Event): void {
+    for (const listener of [...this.errorListeners]) {
       try {
-        if (type === 'message' || type === 'error') {
-          listener(data as MessageEvent | Event);
-        } else {
-          listener();
-        }
+        listener(event);
       } catch (error) {
-        this.logger.error('Listener error', { error, type });
+        this.logger.error('Notification error listener failed', { error });
       }
     }
   }
 
-  /**
-   * Adds an event listener
-   */
+  private dispatchOpen(): void {
+    for (const listener of [...this.openListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        this.logger.error('Notification open listener failed', { error });
+      }
+    }
+  }
+
+  private dispatchCloseOnce(): void {
+    if (this.closeDispatched) return;
+    this.closeDispatched = true;
+    for (const listener of [...this.closeListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        this.logger.error('Notification close listener failed', { error });
+      }
+    }
+  }
+
+  public addEventListener(type: 'message', listener: MessageListener): void;
+  public addEventListener(type: 'error', listener: ErrorListener): void;
+  public addEventListener(type: 'open' | 'close', listener: VoidListener): void;
   public addEventListener(
-    type: 'message' | 'error' | 'open' | 'close',
-    listener: ((event: MessageEvent | Event) => void) | (() => void)
+    type: EventSourceEventType,
+    listener: MessageListener | ErrorListener | VoidListener
   ): void {
-    this.listeners[type].push(listener as any);
+    if (type === 'message') this.messageListeners.push(listener as MessageListener);
+    else if (type === 'error') this.errorListeners.push(listener as ErrorListener);
+    else if (type === 'open') this.openListeners.push(listener as VoidListener);
+    else this.closeListeners.push(listener as VoidListener);
   }
 
-  /**
-   * Removes an event listener
-   */
+  public removeEventListener(type: 'message', listener: MessageListener): void;
+  public removeEventListener(type: 'error', listener: ErrorListener): void;
+  public removeEventListener(type: 'open' | 'close', listener: VoidListener): void;
   public removeEventListener(
-    type: 'message' | 'error' | 'open' | 'close',
-    listener: ((event: MessageEvent | Event) => void) | (() => void)
+    type: EventSourceEventType,
+    listener: MessageListener | ErrorListener | VoidListener
   ): void {
-    this.listeners[type] = this.listeners[type].filter(l => l !== listener);
+    const remove = <T>(items: T[], value: T): void => {
+      const index = items.indexOf(value);
+      if (index >= 0) items.splice(index, 1);
+    };
+    if (type === 'message') remove(this.messageListeners, listener as MessageListener);
+    else if (type === 'error') remove(this.errorListeners, listener as ErrorListener);
+    else if (type === 'open') remove(this.openListeners, listener as VoidListener);
+    else remove(this.closeListeners, listener as VoidListener);
   }
 
-  /**
-   * Starts the heartbeat timer
-   */
   private startHeartbeat(): void {
+    this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      if (this.eventSource && this.eventSource.readyState === EventSource.OPEN) {
+      if (this.eventSource?.readyState === 1) {
         this.logger.debug('SSE heartbeat');
       }
     }, this.config.heartbeatInterval);
   }
 
-  /**
-   * Stops the heartbeat timer
-   */
   private stopHeartbeat(): void {
-    if (this.heartbeatTimer) {
+    if (this.heartbeatTimer !== null) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
   }
 
-  /**
-   * Closes the connection
-   */
-  public close(): void {
-    this.isClosed = true;
-    this.closeInternal();
-    this.dispatchEvent('close');
-  }
-
-  /**
-   * Internal close method
-   */
   private closeInternal(): void {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
+    this.eventSource?.close();
+    this.eventSource = null;
     this.stopHeartbeat();
   }
 
-  /**
-   * Reconnects to the EventSource
-   */
-  public async reconnect(): Promise<void> {
-    if (this.isClosed) return;
-
+  public close(): void {
+    if (this.explicitlyClosed) return;
+    this.explicitlyClosed = true;
     this.closeInternal();
+    this.dispatchCloseOnce();
+  }
 
+  public async reconnect(): Promise<void> {
+    if (this.explicitlyClosed || this.reconnecting) return;
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      this.close();
+      return;
+    }
+    this.reconnecting = true;
+    this.closeInternal();
     const delay = calculateBackoffDelay(this.reconnectAttempts, {
       baseDelay: this.config.reconnectBaseDelay,
       maxDelay: this.config.reconnectMaxDelay,
       jitterFactor: 0.1,
     });
-
-    this.logger.debug('SSE reconnecting', {
-      attempt: this.reconnectAttempts + 1,
-      delay,
-    });
-
+    this.reconnectAttempts += 1;
     await sleep(delay);
-    this.reconnectAttempts++;
-    this.connect();
+    this.reconnecting = false;
+    if (!this.explicitlyClosed) this.connect();
   }
 
-  /**
-   * Gets the last event ID
-   */
   public getLastEventId(): string | null {
     return this.lastEventId;
   }
 
-  /**
-   * Resumes from a specific cursor
-   */
-  public resume(cursor: string): void {
+  public async resume(cursor: string): Promise<void> {
+    if (!cursor.trim()) throw new ValidationError('Cursor is required', 'cursor');
     this.lastEventId = cursor;
-    this.reconnect();
+    await this.reconnect();
   }
 
-  /**
-   * Gets whether the connection is closed
-   */
   public get isClosed(): boolean {
-    return this.isClosed || this.eventSource?.readyState === EventSource.CLOSED;
+    return this.explicitlyClosed;
   }
 
-  /**
-   * Gets whether the connection is open
-   */
   public get isOpen(): boolean {
-    return this.eventSource?.readyState === EventSource.OPEN;
+    return !this.explicitlyClosed && this.eventSource?.readyState === 1;
   }
 
-  /**
-   * Gets the ready state
-   */
   public get readyState(): number {
-    return this.eventSource?.readyState || EventSource.CLOSED;
+    return this.eventSource?.readyState ?? 2;
   }
 }
 
-// ============================================================================
-// Notification Client
-// ============================================================================
+const VALID_NOTIFICATION_TYPES = new Set<NotificationEventType>([
+  'ResourceCreated',
+  'ResourceUpdated',
+  'ResourceDeleted',
+  'ContainerCreated',
+  'ContainerUpdated',
+  'ContainerDeleted',
+  'PolicyCreated',
+  'PolicyUpdated',
+  'PolicyDeleted',
+]);
 
-/**
- * NotificationClient for Solid Sidecar
- * 
- * Features:
- * - Server-Sent Events (SSE) subscription
- * - Automatic reconnection with exponential backoff
- * - Cursor-based resume
- * - Event filtering
- * - Heartbeat monitoring
- * - IDOR prevention
- * - SSRF prevention
- */
 export class NotificationClient {
-  private readonly config: Required<NotificationClientConfig>;
+  private readonly config: ResolvedNotificationConfig;
   private readonly resourceClient: ResourceClient;
   private readonly logger: SolidSidecarLogger;
 
   constructor(config: NotificationClientConfig = {}) {
-    // Merge with defaults
     this.config = {
-      ...DEFAULT_NOTIFICATION_CLIENT_CONFIG,
-      ...config,
-      logger: config.logger || console,
+      notificationsPath:
+        config.notificationsPath ?? DEFAULT_NOTIFICATION_CLIENT_CONFIG.notificationsPath,
+      maxReconnectAttempts:
+        config.maxReconnectAttempts ??
+        DEFAULT_NOTIFICATION_CLIENT_CONFIG.maxReconnectAttempts,
+      reconnectBaseDelay:
+        config.reconnectBaseDelay ??
+        DEFAULT_NOTIFICATION_CLIENT_CONFIG.reconnectBaseDelay,
+      reconnectMaxDelay:
+        config.reconnectMaxDelay ??
+        DEFAULT_NOTIFICATION_CLIENT_CONFIG.reconnectMaxDelay,
+      heartbeatInterval:
+        config.heartbeatInterval ??
+        DEFAULT_NOTIFICATION_CLIENT_CONFIG.heartbeatInterval,
+      enableHeartbeat:
+        config.enableHeartbeat ?? DEFAULT_NOTIFICATION_CLIENT_CONFIG.enableHeartbeat,
+      logger: config.logger ?? DEFAULT_NOTIFICATION_CLIENT_CONFIG.logger,
     };
-
-    // Initialize resource client
+    if (this.config.maxReconnectAttempts < 0) {
+      throw new ValidationError(
+        'Maximum reconnect attempts cannot be negative',
+        'maxReconnectAttempts'
+      );
+    }
+    if (this.config.reconnectBaseDelay < 0 || this.config.reconnectMaxDelay < 0) {
+      throw new ValidationError('Reconnect delays cannot be negative', 'reconnectBaseDelay');
+    }
     this.resourceClient = new ResourceClient(config);
     this.logger = this.config.logger;
-
-    this.logger.debug('NotificationClient initialized', {
-      notificationsPath: this.config.notificationsPath,
-      maxReconnectAttempts: this.config.maxReconnectAttempts,
-    });
   }
 
-  // ==========================================================================
-  // Subscription Management
-  // ==========================================================================
-
-  /**
-   * Subscribes to notifications for a resource or container
-   */
   public async subscribe(
     options: NotificationSubscriptionOptions
   ): Promise<NotificationSubscription> {
-    const { resourceUri, cursor, maxEvents, timeout, onEvent, onError, onClose } = options;
+    const resourceUri = this.validateResourceUri(options.resourceUri);
+    if (options.maxEvents !== undefined && options.maxEvents <= 0) {
+      throw new ValidationError('maxEvents must be greater than zero', 'maxEvents');
+    }
+    if (options.timeout !== undefined && options.timeout <= 0) {
+      throw new ValidationError('timeout must be greater than zero', 'timeout');
+    }
 
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Build notifications URL
-    const notificationsUrl = this.buildNotificationsUrl(resourceUri, cursor);
-
-    // Create event source
     const eventSource = new SolidSidecarEventSource(
-      notificationsUrl,
+      this.buildNotificationsUrl(resourceUri),
       options,
       this.config,
       this.logger
     );
-
-    // Add message listener
-    eventSource.addEventListener('message', (event: MessageEvent) => {
-      try {
-        // Parse event
-        const notificationEvent = this.parseEvent(event);
-        
-        if (!notificationEvent) {
-          this.logger.warn('Received malformed event', { data: event.data });
-          return;
-        }
-
-        // Call onEvent callback
-        if (onEvent) {
-          onEvent(notificationEvent);
-        }
-
-        // Check max events
-        if (maxEvents && eventSource.getLastEventId()) {
-          // Count events (simplified)
-          const eventId = eventSource.getLastEventId();
-          // In a real implementation, you'd track the count properly
-        }
-      } catch (error) {
-        this.logger.error('Error processing event', { error, data: event.data });
-      }
-    });
-
-    // Add error listener
-    eventSource.addEventListener('error', (error: Event) => {
-      try {
-        if (onError) {
-          onError(new Error(`SSE error: ${(error as any).message || String(error)}`));
-        }
-      } catch (e) {
-        this.logger.error('Error in error handler', { error: e });
-      }
-    });
-
-    // Add close listener
-    eventSource.addEventListener('close', () => {
-      try {
-        if (onClose) {
-          onClose();
-        }
-      } catch (error) {
-        this.logger.error('Error in close handler', { error });
-      }
-    });
-
-    // Add open listener (for reconnection)
-    eventSource.addEventListener('open', () => {
-      this.logger.debug('SSE connection opened');
-    });
-
-    // Connect
-    eventSource.connect();
-
-    // Set up timeout
+    let deliveredEvents = 0;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    if (timeout) {
-      timeoutId = setTimeout(() => {
+
+    eventSource.addEventListener('message', event => {
+      const parsed = this.parseEvent(event);
+      if (!parsed) return;
+      try {
+        options.onEvent?.(parsed);
+      } catch (error) {
+        this.logger.error('Notification callback failed', { error });
+      }
+      deliveredEvents += 1;
+      if (options.maxEvents !== undefined && deliveredEvents >= options.maxEvents) {
         eventSource.close();
-        if (onClose) onClose();
-      }, timeout);
+      }
+    });
+    eventSource.addEventListener('error', error => {
+      try {
+        options.onError?.(new Error(`SSE connection error: ${error.type}`));
+      } catch (callbackError) {
+        this.logger.error('Notification error callback failed', { callbackError });
+      }
+    });
+    eventSource.addEventListener('close', () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      try {
+        options.onClose?.();
+      } catch (error) {
+        this.logger.error('Notification close callback failed', { error });
+      }
+    });
+
+    eventSource.connect();
+    if (options.timeout !== undefined) {
+      timeoutId = setTimeout(() => eventSource.close(), options.timeout);
     }
 
-    // Create subscription object
-    const subscription: NotificationSubscription = {
+    return {
       id: generateUuid(),
       resourceUri,
-      isActive: true,
-      close: () => {
-        if (timeoutId) clearTimeout(timeoutId);
-        eventSource.close();
+      get isActive(): boolean {
+        return !eventSource.isClosed;
       },
-      resume: (cursor: string) => {
-        eventSource.resume(cursor);
-      },
+      close: async (): Promise<void> => eventSource.close(),
+      resume: async (cursor: string): Promise<void> => eventSource.resume(cursor),
     };
-
-    return subscription;
   }
 
-  // ==========================================================================
-  // URL Building
-  // ==========================================================================
-
-  /**
-   * Builds the notifications URL for a resource
-   */
-  private buildNotificationsUrl(
-    resourceUri: ResourceUri | ContainerUri,
-    cursor?: string
-  ): string {
-    // Resolve base URL
+  private buildNotificationsUrl(resourceUri: string): string {
     const baseUrl = this.resourceClient.getHttpClient().getConfig().baseUrl;
-    const notificationsBaseUrl = new URL(
-      this.config.notificationsPath,
-      baseUrl
-    ).toString();
-
-    // Build query parameters
-    const params = new URLSearchParams({
-      resource: resourceUri,
-    });
-
-    // Add cursor if provided
-    if (cursor) {
-      params.set('cursor', cursor);
-    }
-
-    // Build URL
-    const url = `${notificationsBaseUrl}?${params.toString()}`;
-
-    return url;
+    const url = new URL(this.config.notificationsPath, baseUrl);
+    url.searchParams.set('resource', resourceUri);
+    return url.toString();
   }
 
-  // ==========================================================================
-  // Event Parsing
-  // ==========================================================================
-
-  /**
-   * Parses a MessageEvent into a NotificationEvent
-   */
-  private parseEvent(event: MessageEvent): NotificationEvent | null {
-    try {
-      // Parse the event data
-      let data: any;
-      
-      // Try to parse as JSON first
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        // If not JSON, try to parse as text
-        data = { data: event.data };
-      }
-
-      // Extract fields
-      const id = event.lastEventId || data.id || generateUuid();
-      const type = data.type || event.type || 'unknown';
-      const resource = data.resource || data.url || '';
-      const container = data.container;
-      const timestamp = data.timestamp || new Date().toISOString();
-      const agent = data.agent;
-      const metadata = data.metadata || {};
-      const sequence = data.sequence;
-
-      // Validate required fields
-      if (!resource) {
-        this.logger.warn('Event missing resource field', { data });
-        return null;
-      }
-
-      // Validate event type
-      const validTypes = [
-        'ResourceCreated',
-        'ResourceUpdated',
-        'ResourceDeleted',
-        'ContainerCreated',
-        'ContainerUpdated',
-        'ContainerDeleted',
-        'PolicyCreated',
-        'PolicyUpdated',
-        'PolicyDeleted',
-      ];
-
-      if (!validTypes.includes(type)) {
-        this.logger.warn('Unknown event type', { type, data });
-        return null;
-      }
-
-      return {
-        id,
-        type: type as any,
-        resource,
-        container,
-        timestamp,
-        agent,
-        metadata,
-        sequence,
-      };
-    } catch (error) {
-      this.logger.error('Failed to parse event', { error, data: event.data });
-      return null;
-    }
-  }
-
-  // ==========================================================================
-  // Validation
-  // ==========================================================================
-
-  /**
-   * Validates a resource URI
-   */
-  private validateResourceUri(resourceUri: ResourceUri): void {
-    if (!resourceUri) {
+  private validateResourceUri(resourceUri: ResourceUri | ContainerUri): string {
+    if (!resourceUri?.trim()) {
       throw new ValidationError('Resource URI is required', 'resourceUri');
     }
-    if (resourceUri.includes('..') || resourceUri.includes('//')) {
-      throw new ValidationError(
-        'Invalid resource URI: path traversal detected',
-        'resourceUri'
-      );
+    const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
+    let resource: URL;
+    try {
+      resource = new URL(resourceUri, base);
+    } catch {
+      throw new ValidationError('Resource URI is invalid', 'resourceUri');
     }
+    if (!['http:', 'https:'].includes(resource.protocol)) {
+      throw new ValidationError('Resource URI must use HTTP or HTTPS', 'resourceUri');
+    }
+    if (resource.username || resource.password) {
+      throw new ValidationError('Resource URI must not contain credentials', 'resourceUri');
+    }
+    if (resource.origin !== base.origin) {
+      throw new ValidationError('Resource URI is outside the configured origin', 'resourceUri');
+    }
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const resourcePath = resource.pathname.endsWith('/')
+      ? resource.pathname
+      : `${resource.pathname}/`;
+    if (basePath !== '/' && resourcePath !== basePath && !resourcePath.startsWith(basePath)) {
+      throw new ValidationError('Resource URI is outside the configured path scope', 'resourceUri');
+    }
+    resource.hash = '';
+    return resource.toString();
   }
 
-  // ==========================================================================
-  // SSE Polyfill (for environments without EventSource)
-  // ==========================================================================
+  private parseEvent(event: MessageEvent): NotificationEvent | null {
+    if (typeof event.data !== 'string') return null;
+    let data: unknown;
+    try {
+      data = JSON.parse(event.data) as unknown;
+    } catch {
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const record = data as Record<string, unknown>;
+    const type = record.type;
+    const resource = record.resource ?? record.url;
+    if (typeof type !== 'string' || !VALID_NOTIFICATION_TYPES.has(type as NotificationEventType)) {
+      return null;
+    }
+    if (typeof resource !== 'string' || !resource) return null;
+    const result: NotificationEvent = {
+      id:
+        event.lastEventId ||
+        (typeof record.id === 'string' ? record.id : generateUuid()),
+      type: type as NotificationEventType,
+      resource,
+      timestamp:
+        typeof record.timestamp === 'string'
+          ? record.timestamp
+          : new Date().toISOString(),
+    };
+    if (typeof record.container === 'string') result.container = record.container;
+    if (typeof record.agent === 'string') result.agent = record.agent;
+    if (record.metadata && typeof record.metadata === 'object') {
+      result.metadata = record.metadata as Record<string, unknown>;
+    }
+    if (typeof record.sequence === 'number' && Number.isFinite(record.sequence)) {
+      result.sequence = record.sequence;
+    }
+    return result;
+  }
 
-  /**
-   * Checks if EventSource is available
-   */
   private static hasEventSource(): boolean {
     return typeof EventSource !== 'undefined';
   }
 
-  /**
-   * Polyfills EventSource if not available
-   */
   public static polyfillEventSource(): void {
-    if (NotificationClient.hasEventSource()) {
-      return;
-    }
+    if (NotificationClient.hasEventSource() || typeof window !== 'undefined') return;
 
-    // Browser: EventSource is usually available
-    if (typeof window !== 'undefined') {
-      return;
-    }
-
-    // Node.js: Implement a simple EventSource polyfill using fetch
-    // This is a simplified implementation for development/testing
     class NodeEventSource {
+      public static readonly CONNECTING = 0;
+      public static readonly OPEN = 1;
+      public static readonly CLOSED = 2;
       public readonly CONNECTING = 0;
       public readonly OPEN = 1;
       public readonly CLOSED = 2;
-      
-      public readyState: number = 0;
-      public url: string;
-      
-      public onopen: (() => void) | null = null;
-      public onerror: ((error: Event) => void) | null = null;
+      public readyState = NodeEventSource.CONNECTING;
+      public readonly url: string;
+      public withCredentials = false;
+      public onopen: ((event: Event) => void) | null = null;
+      public onerror: ((event: Event) => void) | null = null;
       public onmessage: ((event: MessageEvent) => void) | null = null;
-      
       private controller: AbortController | null = null;
-      private lastEventId: string = '';
+      private buffer = '';
+      private lastEventId = '';
 
-      constructor(url: string, _options?: EventSourceInit) {
+      constructor(url: string, options?: EventSourceInit) {
         this.url = url;
-        this.readyState = this.CONNECTING;
-        this.connect();
+        this.withCredentials = options?.withCredentials ?? false;
+        void this.connect();
       }
 
       private async connect(): Promise<void> {
+        this.controller = new AbortController();
         try {
-          const fetchImpl = require('cross-fetch');
-          const response = await fetchImpl(this.url, {
+          const response = await fetch(this.url, {
             headers: {
               Accept: 'text/event-stream',
               ...(this.lastEventId ? { 'Last-Event-ID': this.lastEventId } : {}),
             },
+            credentials: this.withCredentials ? 'include' : 'same-origin',
+            signal: this.controller.signal,
           });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+          if (!response.ok || !response.body) {
+            throw new Error(`SSE request failed with HTTP ${response.status}`);
           }
-
-          if (!response.body) {
-            throw new Error('No response body');
-          }
-
-          this.readyState = this.OPEN;
-          if (this.onopen) this.onopen();
-
+          this.readyState = NodeEventSource.OPEN;
+          this.onopen?.(new Event('open'));
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
-
-          while (true) {
+          while (this.readyState !== NodeEventSource.CLOSED) {
             const { done, value } = await reader.read();
             if (done) break;
-
-            const text = decoder.decode(value);
-            this.processText(text);
+            this.processText(decoder.decode(value, { stream: true }));
           }
-
-          this.readyState = this.CLOSED;
-          if (this.onerror) {
-            this.onerror(new Event('connection closed'));
+          this.processText(decoder.decode());
+          if (this.readyState !== NodeEventSource.CLOSED) {
+            this.readyState = NodeEventSource.CLOSED;
+            this.onerror?.(new Event('error'));
           }
         } catch (error) {
-          this.readyState = this.CLOSED;
-          if (this.onerror) {
-            this.onerror(new Event('error', { error }));
+          if (this.readyState !== NodeEventSource.CLOSED) {
+            this.readyState = NodeEventSource.CLOSED;
+            this.onerror?.(new Event(error instanceof Error ? error.message : 'error'));
           }
         }
       }
 
       private processText(text: string): void {
-        // Simple SSE parser
-        const lines = text.split('\n\n');
-        
-        for (const block of lines) {
-          if (!block.trim()) continue;
-
-          const event: any = {};
-          const linesInBlock = block.split('\n');
-          
-          for (const line of linesInBlock) {
-            if (line.startsWith('id:')) {
-              event.id = line.substring(3).trim();
-              this.lastEventId = event.id;
-            } else if (line.startsWith('event:')) {
-              event.event = line.substring(6).trim();
-            } else if (line.startsWith('data:')) {
-              event.data = line.substring(5).trim();
-            } else if (line.startsWith('retry:')) {
-              event.retry = parseInt(line.substring(6).trim(), 10);
-            }
-          }
-
-          if (event.data) {
-            const messageEvent = new MessageEvent('message', {
-              data: event.data,
-              lastEventId: event.id,
-              origin: this.url,
-            });
-            if (this.onmessage) {
-              this.onmessage(messageEvent);
-            }
-          }
+        this.buffer += text.replace(/\r\n/g, '\n');
+        let boundary = this.buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = this.buffer.slice(0, boundary);
+          this.buffer = this.buffer.slice(boundary + 2);
+          this.processBlock(block);
+          boundary = this.buffer.indexOf('\n\n');
         }
+      }
+
+      private processBlock(block: string): void {
+        let eventType = 'message';
+        let eventId = this.lastEventId;
+        const dataLines: string[] = [];
+        for (const line of block.split('\n')) {
+          if (!line || line.startsWith(':')) continue;
+          const separator = line.indexOf(':');
+          const field = separator >= 0 ? line.slice(0, separator) : line;
+          let value = separator >= 0 ? line.slice(separator + 1) : '';
+          if (value.startsWith(' ')) value = value.slice(1);
+          if (field === 'data') dataLines.push(value);
+          else if (field === 'event') eventType = value || 'message';
+          else if (field === 'id' && !value.includes('\0')) eventId = value;
+        }
+        if (dataLines.length === 0) return;
+        this.lastEventId = eventId;
+        this.onmessage?.(
+          new MessageEvent(eventType, {
+            data: dataLines.join('\n'),
+            lastEventId: eventId,
+            origin: new URL(this.url).origin,
+          })
+        );
+      }
+
+      public addEventListener(): void {}
+      public removeEventListener(): void {}
+      public dispatchEvent(): boolean {
+        return true;
       }
 
       public close(): void {
-        this.readyState = this.CLOSED;
-        if (this.controller) {
-          this.controller.abort();
-        }
+        if (this.readyState === NodeEventSource.CLOSED) return;
+        this.readyState = NodeEventSource.CLOSED;
+        this.controller?.abort();
+        this.controller = null;
       }
     }
 
-    // @ts-ignore - Assign to global
-    globalThis.EventSource = NodeEventSource;
+    globalThis.EventSource = NodeEventSource as unknown as typeof EventSource;
   }
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export { SolidSidecarEventSource };
 export default NotificationClient;

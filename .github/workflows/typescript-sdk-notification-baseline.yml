@@ -1,0 +1,72 @@
+name: TypeScript SDK notification baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/clients/notification-client.ts'
+      - 'sdk/ts/test/notification-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-notification-baseline.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdk/ts/src/clients/notification-client.ts'
+      - 'sdk/ts/test/notification-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-notification-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-notification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify notification client baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run strict SDK typecheck and isolate notification diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          if grep -F 'src/clients/notification-client.ts' typecheck.log; then
+            echo 'notification-client.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+          echo 'No notification-client TypeScript diagnostics found.'
+      - name: Run focused notification tests
+        id: focused-tests
+        run: |
+          set +e
+          npx jest --runInBand test/notification-client-baseline.test.ts > notification-jest.log 2>&1
+          status=$?
+          cat notification-jest.log
+          exit "$status"
+      - name: Upload focused test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-jest-log
+          path: sdk/ts/notification-jest.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify lifecycle and security invariants
+        run: |
+          ! grep -Fq 'logger: console' src/clients/notification-client.ts
+          ! grep -Fq 'export { SolidSidecarEventSource };' src/clients/notification-client.ts
+          grep -Fq "url.searchParams.set('cursor', this.lastEventId)" src/clients/notification-client.ts
+          grep -Fq 'dispatchCloseOnce' src/clients/notification-client.ts
+          grep -Fq 'this.controller?.abort()' src/clients/notification-client.ts
