@@ -1,0 +1,38 @@
+name: Apply policy canonical query fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-policy-canonical-query-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Canonicalize policy target queries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('sdk/ts/src/clients/policy-client.ts')
+          text = path.read_text()
+          old = "    resource.hash = '';\n    return resource.toString();"
+          new = "    resource.search = '';\n    resource.hash = '';\n    return resource.toString();"
+          if old not in text:
+              raise SystemExit('resource canonicalization block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sdk/ts/src/clients/policy-client.ts
+          git commit -m 'Canonicalize policy target query and fragment'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
