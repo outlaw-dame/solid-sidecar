@@ -24,21 +24,20 @@ class MockEventSource {
 
   public open(): void {
     this.readyState = MockEventSource.OPEN;
-    this.onopen?.(new Event('open'));
+    this.onopen?.({ type: 'open' } as Event);
   }
 
   public emit(data: object, id = 'event-1'): void {
-    this.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify(data),
-        lastEventId: id,
-      })
-    );
+    this.onmessage?.({
+      data: JSON.stringify(data),
+      lastEventId: id,
+      type: 'message',
+    } as MessageEvent);
   }
 
   public failClosed(): void {
     this.readyState = MockEventSource.CLOSED;
-    this.onerror?.(new Event('error'));
+    this.onerror?.({ type: 'error' } as Event);
   }
 
   public close(): void {
@@ -78,8 +77,7 @@ describe('NotificationClient baseline', () => {
       onClose,
     });
 
-    const source = MockEventSource.instances[0]!;
-    source.emit({
+    MockEventSource.instances[0]!.emit({
       type: 'ResourceUpdated',
       resource: 'https://sidecar.example/api/pod/resource',
       timestamp: '2026-07-14T00:00:00.000Z',
