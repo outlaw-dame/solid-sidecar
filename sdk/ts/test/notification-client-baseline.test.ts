@@ -51,6 +51,10 @@ class MockEventSource {
   }
 }
 
+const httpClientConfig = {
+  baseUrl: 'https://sidecar.example/api/',
+};
+
 describe('NotificationClient baseline', () => {
   const originalEventSource = globalThis.EventSource;
 
@@ -67,7 +71,7 @@ describe('NotificationClient baseline', () => {
     const onEvent = jest.fn();
     const onClose = jest.fn();
     const client = new NotificationClient({
-      baseUrl: 'https://sidecar.example/api/',
+      httpClientConfig,
       enableHeartbeat: false,
     });
     const subscription = await client.subscribe({
@@ -92,7 +96,7 @@ describe('NotificationClient baseline', () => {
 
   it('resumes with the cursor encoded into the replacement EventSource URL', async () => {
     const client = new NotificationClient({
-      baseUrl: 'https://sidecar.example/api/',
+      httpClientConfig,
       enableHeartbeat: false,
       reconnectBaseDelay: 0,
       reconnectMaxDelay: 0,
@@ -115,7 +119,7 @@ describe('NotificationClient baseline', () => {
     const onError = jest.fn();
     const onClose = jest.fn();
     const client = new NotificationClient({
-      baseUrl: 'https://sidecar.example/api/',
+      httpClientConfig,
       enableHeartbeat: false,
       maxReconnectAttempts: 0,
     });
@@ -135,7 +139,7 @@ describe('NotificationClient baseline', () => {
 
   it('rejects resources outside the configured origin and path scope', async () => {
     const client = new NotificationClient({
-      baseUrl: 'https://sidecar.example/api/',
+      httpClientConfig,
       enableHeartbeat: false,
     });
 
