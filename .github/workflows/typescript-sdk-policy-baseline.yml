@@ -1,0 +1,75 @@
+name: TypeScript SDK policy baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/clients/policy-client.ts'
+      - 'sdk/ts/test/policy-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-policy-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ts/src/clients/policy-client.ts'
+      - 'sdk/ts/test/policy-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-policy-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify policy client baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Isolate policy-client TypeScript diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          grep -F 'src/clients/policy-client.ts' typecheck.log > policy-diagnostics.log || true
+          cat policy-diagnostics.log
+          if test -s policy-diagnostics.log; then
+            echo 'policy-client.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+          echo 'No policy-client TypeScript diagnostics found.'
+      - name: Upload policy diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-diagnostics
+          path: sdk/ts/policy-diagnostics.log
+          retention-days: 7
+      - name: Run focused policy tests
+        run: |
+          set +e
+          npx jest --runInBand test/policy-client-baseline.test.ts > policy-jest.log 2>&1
+          status=$?
+          cat policy-jest.log
+          exit $status
+      - name: Upload focused test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-jest-log
+          path: sdk/ts/policy-jest.log
+          retention-days: 7
+      - name: Verify authorization safety invariants
+        run: |
+          ! grep -Fq 'logger: console' src/clients/policy-client.ts
+          ! grep -Fq 'agentMatch = true' src/clients/policy-client.ts
+          ! grep -Fq "error.message.includes('404')" src/clients/policy-client.ts
+          grep -Fq 'error instanceof ResourceNotFoundError' src/clients/policy-client.ts
+          grep -Fq 'ACP appliesTo must equal the target resource' src/clients/policy-client.ts

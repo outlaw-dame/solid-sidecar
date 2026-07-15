@@ -1,1027 +1,581 @@
-/**
- * Solid Sidecar TypeScript SDK - Policy Client
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the PolicyClient for managing WAC and ACP policies.
- *
- * Security Level: CRITICAL
- */
-
 import type {
-  ResourceUri,
-  ContainerUri,
-  PolicyResource,
-  WacPolicy,
-  AcpPolicy,
-  WacAuthorization,
+  AccessControlModel,
   AcpAllowRule,
   AcpDenyRule,
-  HttpHeaders,
-  ResourceMetadata,
-  AccessControlModel,
-  WacMode,
   AcpOperation,
+  AcpPolicy,
+  ContainerUri,
+  HttpHeaders,
+  PolicyResource,
+  ResourceMetadata,
+  ResourceUri,
   SolidSidecarLogger,
+  WacAuthorization,
+  WacMode,
+  WacPolicy,
 } from '../types';
+import { ResourceNotFoundError, ValidationError } from '../types';
+import { nullLogger } from '../utils';
 import { ResourceClient, type ResourceClientConfig } from './resource-client';
-import { ValidationError } from '../types';
-import { getContainerUri, getResourceName } from '../utils';
 
-// ============================================================================
-// Policy Client Configuration
-// ============================================================================
-
-/**
- * Configuration for PolicyClient
- */
 export interface PolicyClientConfig extends ResourceClientConfig {
-  /** Access control model to use (default: 'wac') */
   defaultModel?: AccessControlModel;
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default PolicyClient configuration
- */
-export const DEFAULT_POLICY_CLIENT_CONFIG: Partial<PolicyClientConfig> = {
-  defaultModel: 'wac',
+type PolicyWriteOptions = {
+  contentType?: string;
+  headers?: HttpHeaders;
+  ifMatch?: string | string[];
+  ifNoneMatch?: string | string[];
 };
 
-// ============================================================================
-// Policy Client
-// ============================================================================
+type ResolvedPolicyClientConfig = {
+  defaultModel: AccessControlModel;
+  logger: SolidSidecarLogger;
+};
 
-/**
- * PolicyClient for Solid Sidecar
- * 
- * Features:
- * - Read and write WAC policies
- * - Read and write ACP policies
- * - Policy validation
- * - Policy resource discovery
- * - Access control checking
- * - IDOR prevention
- * - SSRF prevention
- */
+export const DEFAULT_POLICY_CLIENT_CONFIG = {
+  defaultModel: 'wac',
+  logger: nullLogger,
+} satisfies ResolvedPolicyClientConfig;
+
+const ACL = 'http://www.w3.org/ns/auth/acl#';
+const ACP = 'http://www.w3.org/ns/solid/acp#';
+const FOAF_AGENT = 'http://xmlns.com/foaf/0.1/Agent';
+const WAC_MODES = new Set<WacMode>(['Read', 'Write', 'Control', 'Append']);
+const ACP_OPERATIONS = new Set<AcpOperation>([
+  'Read',
+  'Write',
+  'Control',
+  'Append',
+  'Create',
+  'Delete',
+]);
+
+function values(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function getStringField(
+  record: Record<string, string | string[]>,
+  field: string
+): string[] {
+  return values(record[field]);
+}
+
 export class PolicyClient {
-  private readonly config: Required<PolicyClientConfig>;
+  private readonly config: ResolvedPolicyClientConfig;
   private readonly resourceClient: ResourceClient;
-  private readonly logger: SolidSidecarLogger;
 
   constructor(config: PolicyClientConfig = {}) {
-    // Merge with defaults
-    this.config = {
-      ...DEFAULT_POLICY_CLIENT_CONFIG,
-      ...config,
-      logger: config.logger || console,
-    };
-
-    // Initialize resource client
-    this.resourceClient = new ResourceClient(config);
-    this.logger = this.config.logger;
-
-    this.logger.debug('PolicyClient initialized', {
-      defaultModel: this.config.defaultModel,
-    });
-  }
-
-  // ==========================================================================
-  // WAC Policy Operations
-  // ==========================================================================
-
-  /**
-   * Gets the WAC policy for a resource
-   */
-  public async getWacPolicy(
-    resourceUri: ResourceUri
-  ): Promise<WacPolicy | null> {
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Get policy resource URI
-    const policyUri = this.getWacPolicyUri(resourceUri);
-
-    try {
-      const resource = await this.resourceClient.get(policyUri, {}, 'text/turtle');
-      return this.parseWacPolicy(resource.content, resource.uri);
-    } catch (error) {
-      // If resource not found, check for container-level policy
-      if (error instanceof Error && error.message.includes('404')) {
-        const containerUri = getContainerUri(resourceUri);
-        if (containerUri !== resourceUri) {
-          const containerPolicyUri = this.getWacPolicyUri(containerUri);
-          try {
-            const containerResource = await this.resourceClient.get(
-              containerPolicyUri,
-              {},
-              'text/turtle'
-            );
-            return this.parseWacPolicy(containerResource.content, containerPolicyUri);
-          } catch {
-            return null;
-          }
-        }
-        return null;
-      }
-      throw error;
+    const defaultModel = config.defaultModel ?? DEFAULT_POLICY_CLIENT_CONFIG.defaultModel;
+    if (defaultModel !== 'wac' && defaultModel !== 'acp') {
+      throw new ValidationError(
+        `Unsupported access control model: ${defaultModel}`,
+        'defaultModel'
+      );
     }
+    this.config = {
+      defaultModel,
+      logger: config.logger ?? DEFAULT_POLICY_CLIENT_CONFIG.logger,
+    };
+    this.resourceClient = new ResourceClient(config);
   }
 
-  /**
-   * Sets the WAC policy for a resource
-   */
+  public async getWacPolicy(resourceUri: ResourceUri): Promise<WacPolicy | null> {
+    const resource = this.resolveResource(resourceUri);
+    const direct = await this.readPolicy(this.getPolicyUri(resource, 'wac'), 'wac');
+    if (direct) return direct as WacPolicy;
+    const container = this.parentContainer(resource);
+    if (container === resource) return null;
+    return (await this.readPolicy(this.getPolicyUri(container, 'wac'), 'wac')) as
+      | WacPolicy
+      | null;
+  }
+
   public async setWacPolicy(
     resourceUri: ResourceUri,
     policy: WacPolicy,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Get policy resource URI
-    const policyUri = this.getWacPolicyUri(resourceUri);
-
-    // Serialize policy to Turtle
-    const turtle = this.serializeWacPolicy(policy);
-
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: options.contentType || 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/auth/acl#Authorization>; rel="type"',
-    });
+    const resource = this.resolveResource(resourceUri);
+    this.validateWacPolicy(policy, resource);
+    return this.resourceClient.put(
+      this.getPolicyUri(resource, 'wac'),
+      this.serializeWacPolicy(policy),
+      {
+        contentType: options.contentType ?? 'text/turtle',
+        headers: options.headers,
+        ifMatch: options.ifMatch,
+        ifNoneMatch: options.ifNoneMatch,
+        link: `<${ACL}Authorization>; rel="type"`,
+      }
+    );
   }
 
-  /**
-   * Adds an authorization to a WAC policy
-   */
   public async addWacAuthorization(
     resourceUri: ResourceUri,
     authorization: WacAuthorization,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Get existing policy
-    const policy = await this.getWacPolicy(resourceUri);
-    const policyUri = this.getWacPolicyUri(resourceUri);
-
-    // Create new policy with the authorization added
-    const newPolicy: WacPolicy = policy || {
-      '@id': policyUri,
-      authorization: [],
+    const resource = this.resolveResource(resourceUri);
+    const current = await this.getWacPolicy(resource);
+    const next: WacPolicy = {
+      '@id': current?.['@id'] ?? this.getPolicyUri(resource, 'wac'),
+      authorization: [...(current?.authorization ?? []), authorization],
     };
-
-    // Add or update authorization
-    // Note: This is a simple implementation. In production, you might want
-    // to check for existing authorizations and update them instead.
-    newPolicy.authorization.push(authorization);
-
-    // Serialize and update
-    const turtle = this.serializeWacPolicy(newPolicy);
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/auth/acl#Authorization>; rel="type"',
-    });
+    return this.setWacPolicy(resource, next, options);
   }
 
-  /**
-   * Removes an authorization from a WAC policy
-   */
   public async removeWacAuthorization(
     resourceUri: ResourceUri,
     authorizationId: string,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Get existing policy
-    const policy = await this.getWacPolicy(resourceUri);
-    const policyUri = this.getWacPolicyUri(resourceUri);
-
-    if (!policy) {
-      throw new ValidationError(
-        `No WAC policy found for resource: ${resourceUri}`,
-        'resourceUri'
-      );
+    const resource = this.resolveResource(resourceUri);
+    const current = await this.getWacPolicy(resource);
+    if (!current) {
+      throw new ValidationError('No WAC policy found for resource', 'resourceUri');
     }
-
-    // Remove the authorization
-    const newPolicy: WacPolicy = {
-      ...policy,
-      authorization: policy.authorization.filter(
-        auth => auth['@id'] !== authorizationId
-      ),
-    };
-
-    // Serialize and update
-    const turtle = this.serializeWacPolicy(newPolicy);
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/auth/acl#Authorization>; rel="type"',
-    });
+    const authorization = current.authorization.filter(
+      item => item['@id'] !== authorizationId
+    );
+    if (authorization.length === current.authorization.length) {
+      throw new ValidationError('WAC authorization was not found', 'authorizationId');
+    }
+    return this.setWacPolicy(resource, { ...current, authorization }, options);
   }
 
-  // ==========================================================================
-  // ACP Policy Operations
-  // ==========================================================================
-
-  /**
-   * Gets the ACP policy for a resource
-   */
-  public async getAcpPolicy(
-    resourceUri: ResourceUri
-  ): Promise<AcpPolicy | null> {
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Get policy resource URI
-    const policyUri = this.getAcpPolicyUri(resourceUri);
-
-    try {
-      const resource = await this.resourceClient.get(policyUri, {}, 'text/turtle');
-      return this.parseAcpPolicy(resource.content, resource.uri);
-    } catch (error) {
-      // If resource not found, check for container-level policy
-      if (error instanceof Error && error.message.includes('404')) {
-        const containerUri = getContainerUri(resourceUri);
-        if (containerUri !== resourceUri) {
-          const containerPolicyUri = this.getAcpPolicyUri(containerUri);
-          try {
-            const containerResource = await this.resourceClient.get(
-              containerPolicyUri,
-              {},
-              'text/turtle'
-            );
-            return this.parseAcpPolicy(containerResource.content, containerPolicyUri);
-          } catch {
-            return null;
-          }
-        }
-        return null;
-      }
-      throw error;
-    }
+  public async getAcpPolicy(resourceUri: ResourceUri): Promise<AcpPolicy | null> {
+    const resource = this.resolveResource(resourceUri);
+    const direct = await this.readPolicy(this.getPolicyUri(resource, 'acp'), 'acp');
+    if (direct) return direct as AcpPolicy;
+    const container = this.parentContainer(resource);
+    if (container === resource) return null;
+    return (await this.readPolicy(this.getPolicyUri(container, 'acp'), 'acp')) as
+      | AcpPolicy
+      | null;
   }
 
-  /**
-   * Sets the ACP policy for a resource
-   */
   public async setAcpPolicy(
     resourceUri: ResourceUri,
     policy: AcpPolicy,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Get policy resource URI
-    const policyUri = this.getAcpPolicyUri(resourceUri);
-
-    // Serialize policy to Turtle
-    const turtle = this.serializeAcpPolicy(policy);
-
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: options.contentType || 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/solid/acp#AccessPolicy>; rel="type"',
-    });
+    const resource = this.resolveResource(resourceUri);
+    this.validateAcpPolicy(policy, resource);
+    return this.resourceClient.put(
+      this.getPolicyUri(resource, 'acp'),
+      this.serializeAcpPolicy(policy),
+      {
+        contentType: options.contentType ?? 'text/turtle',
+        headers: options.headers,
+        ifMatch: options.ifMatch,
+        ifNoneMatch: options.ifNoneMatch,
+        link: `<${ACP}AccessPolicy>; rel="type"`,
+      }
+    );
   }
 
-  /**
-   * Adds an allow rule to an ACP policy
-   */
   public async addAcpAllowRule(
     resourceUri: ResourceUri,
     rule: AcpAllowRule,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Get existing policy
-    const policy = await this.getAcpPolicy(resourceUri);
-    const policyUri = this.getAcpPolicyUri(resourceUri);
-
-    // Create new policy with the rule added
-    const newPolicy: AcpPolicy = policy || {
-      '@id': policyUri,
-      appliesTo: resourceUri,
-      allow: [],
-      deny: [],
+    const resource = this.resolveResource(resourceUri);
+    const current = await this.getAcpPolicy(resource);
+    const next: AcpPolicy = {
+      '@id': current?.['@id'] ?? this.getPolicyUri(resource, 'acp'),
+      appliesTo: current?.appliesTo ?? resource,
+      allow: [...(current?.allow ?? []), rule],
+      deny: [...(current?.deny ?? [])],
     };
-
-    // Add the rule
-    newPolicy.allow = newPolicy.allow || [];
-    newPolicy.allow.push(rule);
-
-    // Serialize and update
-    const turtle = this.serializeAcpPolicy(newPolicy);
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/solid/acp#AccessPolicy>; rel="type"',
-    });
+    return this.setAcpPolicy(resource, next, options);
   }
 
-  /**
-   * Adds a deny rule to an ACP policy
-   */
   public async addAcpDenyRule(
     resourceUri: ResourceUri,
     rule: AcpDenyRule,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    // Get existing policy
-    const policy = await this.getAcpPolicy(resourceUri);
-    const policyUri = this.getAcpPolicyUri(resourceUri);
-
-    // Create new policy with the rule added
-    const newPolicy: AcpPolicy = policy || {
-      '@id': policyUri,
-      appliesTo: resourceUri,
-      allow: [],
-      deny: [],
+    const resource = this.resolveResource(resourceUri);
+    const current = await this.getAcpPolicy(resource);
+    const next: AcpPolicy = {
+      '@id': current?.['@id'] ?? this.getPolicyUri(resource, 'acp'),
+      appliesTo: current?.appliesTo ?? resource,
+      allow: [...(current?.allow ?? [])],
+      deny: [...(current?.deny ?? []), rule],
     };
-
-    // Add the rule
-    newPolicy.deny = newPolicy.deny || [];
-    newPolicy.deny.push(rule);
-
-    // Serialize and update
-    const turtle = this.serializeAcpPolicy(newPolicy);
-    return this.resourceClient.put(policyUri, turtle, {
-      contentType: 'text/turtle',
-      headers: options.headers,
-      link: '<http://www.w3.org/ns/solid/acp#AccessPolicy>; rel="type"',
-    });
+    return this.setAcpPolicy(resource, next, options);
   }
 
-  // ==========================================================================
-  // Generic Policy Operations
-  // ==========================================================================
-
-  /**
-   * Gets the policy for a resource (WAC or ACP)
-   */
   public async getPolicy(
     resourceUri: ResourceUri,
-    model?: AccessControlModel
+    model: AccessControlModel = this.config.defaultModel
   ): Promise<PolicyResource | null> {
-    const acm = model || this.config.defaultModel;
-
-    switch (acm) {
-      case 'wac':
-        const wacPolicy = await this.getWacPolicy(resourceUri);
-        if (wacPolicy) {
-          return {
-            uri: this.getWacPolicyUri(resourceUri),
-            model: 'wac',
-            policy: wacPolicy,
-          };
-        }
-        return null;
-
-      case 'acp':
-        const acpPolicy = await this.getAcpPolicy(resourceUri);
-        if (acpPolicy) {
-          return {
-            uri: this.getAcpPolicyUri(resourceUri),
-            model: 'acp',
-            policy: acpPolicy,
-          };
-        }
-        return null;
-
-      default:
-        throw new ValidationError(
-          `Unsupported access control model: ${acm}`,
-          'model'
-        );
+    if (model === 'wac') {
+      const policy = await this.getWacPolicy(resourceUri);
+      return policy
+        ? { uri: this.getPolicyUri(this.resolveResource(resourceUri), 'wac'), model, policy }
+        : null;
     }
+    if (model === 'acp') {
+      const policy = await this.getAcpPolicy(resourceUri);
+      return policy
+        ? { uri: this.getPolicyUri(this.resolveResource(resourceUri), 'acp'), model, policy }
+        : null;
+    }
+    throw new ValidationError(`Unsupported access control model: ${model}`, 'model');
   }
 
-  /**
-   * Sets the policy for a resource
-   */
   public async setPolicy(
     resourceUri: ResourceUri,
     policy: WacPolicy | AcpPolicy,
-    model?: AccessControlModel,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    model: AccessControlModel = this.config.defaultModel,
+    options: PolicyWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    const acm = model || this.config.defaultModel;
-
-    switch (acm) {
-      case 'wac':
-        return this.setWacPolicy(resourceUri, policy as WacPolicy, options);
-
-      case 'acp':
-        return this.setAcpPolicy(resourceUri, policy as AcpPolicy, options);
-
-      default:
-        throw new ValidationError(
-          `Unsupported access control model: ${acm}`,
-          'model'
-        );
-    }
+    if (model === 'wac') return this.setWacPolicy(resourceUri, policy as WacPolicy, options);
+    if (model === 'acp') return this.setAcpPolicy(resourceUri, policy as AcpPolicy, options);
+    throw new ValidationError(`Unsupported access control model: ${model}`, 'model');
   }
 
-  // ==========================================================================
-  // Policy Discovery
-  // ==========================================================================
-
-  /**
-   * Discovers the policy URI for a resource
-   */
-  public async discoverPolicyUri(
-    resourceUri: ResourceUri
-  ): Promise<ResourceUri | null> {
-    // Get resource metadata
-    const metadata = await this.resourceClient.head(resourceUri);
-
-    // Look for Link header with rel="acl"
-    const aclLink = metadata.links?.find(
-      link => link.rel.toLowerCase() === 'acl'
-    );
-
-    if (aclLink) {
-      return aclLink.uri;
-    }
-
-    // Default to standard ACL location
-    return this.getWacPolicyUri(resourceUri);
+  public async discoverPolicyUri(resourceUri: ResourceUri): Promise<ResourceUri> {
+    const resource = this.resolveResource(resourceUri);
+    const metadata = await this.resourceClient.head(resource);
+    const acl = metadata.links?.find(link => link.rel.toLowerCase() === 'acl');
+    if (!acl) return this.getPolicyUri(resource, 'wac');
+    return this.assertPolicyUri(new URL(acl.uri, resource).toString());
   }
 
-  // ==========================================================================
-  // Access Control Checking
-  // ==========================================================================
-
-  /**
-   * Checks if an agent has a specific access mode on a resource (WAC)
-   */
   public async checkWacAccess(
     resourceUri: ResourceUri,
     agentWebId: string,
     mode: WacMode
   ): Promise<boolean> {
-    const policy = await this.getWacPolicy(resourceUri);
-    if (!policy) {
-      // No policy means no access
-      return false;
-    }
-
-    for (const auth of policy.authorization) {
-      // Check agent
-      let agentMatch = false;
-      if (auth.agent === agentWebId) {
-        agentMatch = true;
-      } else if (auth.agentClass) {
-        // Check if agent is a member of the class
-        // This is a simplified check - in production, you'd need to query the agent's profile
-        agentMatch = true; // Assume class includes all agents for now
-      } else if (auth.agentGroup) {
-        // Check if agent is a member of the group
-        // This would require group membership lookup
-        agentMatch = false;
-      }
-
-      // Check access to
-      const accessTo = auth.accessTo || resourceUri;
-      const resourceMatch = accessTo === resourceUri ||
-        accessTo === '*' ||
-        (accessTo.endsWith('/') && resourceUri.startsWith(accessTo));
-
-      if (agentMatch && resourceMatch) {
-        const authModes = Array.isArray(auth.mode) ? auth.mode : [auth.mode];
-        if (authModes.includes(mode)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    const resource = this.resolveResource(resourceUri);
+    const agent = this.validateActor(agentWebId, 'agentWebId');
+    if (!WAC_MODES.has(mode)) return false;
+    const policy = await this.getWacPolicy(resource);
+    if (!policy) return false;
+    return policy.authorization.some(auth => {
+      const agentMatch =
+        getStringField(auth, 'agent').includes(agent) ||
+        getStringField(auth, 'agentClass').includes(FOAF_AGENT);
+      return (
+        agentMatch &&
+        this.authorizationCovers(getStringField(auth, 'accessTo'), resource) &&
+        values(auth.mode).includes(mode)
+      );
+    });
   }
 
-  /**
-   * Checks if an agent has a specific operation on a resource (ACP)
-   */
   public async checkAcpAccess(
     resourceUri: ResourceUri,
     agentWebId: string,
     operation: AcpOperation
   ): Promise<boolean> {
-    const policy = await this.getAcpPolicy(resourceUri);
-    if (!policy) {
-      // No policy means no access
-      return false;
-    }
-
-    // Check deny rules first (they take precedence)
-    for (const denyRule of policy.deny || []) {
-      const actorMatch = this.checkAcpActorMatch(denyRule, agentWebId);
-      const operationMatch = this.checkAcpOperationMatch(denyRule, operation);
-      
-      if (actorMatch && operationMatch) {
-        return false;
-      }
-    }
-
-    // Check allow rules
-    for (const allowRule of policy.allow || []) {
-      const actorMatch = this.checkAcpActorMatch(allowRule, agentWebId);
-      const operationMatch = this.checkAcpOperationMatch(allowRule, operation);
-      
-      if (actorMatch && operationMatch) {
-        return true;
-      }
-    }
-
-    return false;
+    const resource = this.resolveResource(resourceUri);
+    const agent = this.validateActor(agentWebId, 'agentWebId');
+    if (!ACP_OPERATIONS.has(operation)) return false;
+    const policy = await this.getAcpPolicy(resource);
+    if (!policy) return false;
+    const matches = (rule: AcpAllowRule | AcpDenyRule): boolean =>
+      (getStringField(rule, 'actor').includes(agent) ||
+        getStringField(rule, 'actorClass').includes(FOAF_AGENT)) &&
+      values(rule.operation).includes(operation);
+    if ((policy.deny ?? []).some(matches)) return false;
+    return (policy.allow ?? []).some(matches);
   }
 
-  // ==========================================================================
-  // Policy Serialization/Deserialization
-  // ==========================================================================
-
-  /**
-   * Parses a WAC policy from Turtle
-   */
-  private parseWacPolicy(turtle: string, policyUri: ResourceUri): WacPolicy {
-    // Simple Turtle parser for WAC policies
-    // In production, use a proper RDF parser
-    const policy: WacPolicy = {
-      '@id': policyUri,
-      authorization: [],
-    };
-
-    const lines = turtle.split('\n');
-    let currentAuth: Partial<WacAuthorization> | null = null;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('@') || trimmed.startsWith('#')) continue;
-
-      // Match subject (authorization URI)
-      const authMatch = trimmed.match(/^<([^>]+)>\s+a\s+<http:\/\/www\.w3\.org\/ns\/auth\/acl#Authorization>/);
-      if (authMatch) {
-        const authUri = authMatch[1];
-        currentAuth = {
-          '@id': authUri,
-          type: 'Authorization',
-        };
-        policy.authorization.push(currentAuth as WacAuthorization);
-        continue;
-      }
-
-      if (!currentAuth) continue;
-
-      // Match accessTo
-      const accessToMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/auth\/acl#accessTo>\s+<([^>]+)>/);
-      if (accessToMatch) {
-        currentAuth.accessTo = accessToMatch[1];
-        continue;
-      }
-
-      // Match agent
-      const agentMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/auth\/acl#agent>\s+<([^>]+)>/);
-      if (agentMatch) {
-        currentAuth.agent = agentMatch[1];
-        continue;
-      }
-
-      // Match agentClass
-      const agentClassMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentClass>\s+<([^>]+)>/);
-      if (agentClassMatch) {
-        currentAuth.agentClass = agentClassMatch[1];
-        continue;
-      }
-
-      // Match agentGroup
-      const agentGroupMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentGroup>\s+<([^>]+)>/);
-      if (agentGroupMatch) {
-        currentAuth.agentGroup = agentGroupMatch[1];
-        continue;
-      }
-
-      // Match mode
-      const modeMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/auth\/acl#mode>\s+<([^>]+)>/);
-      if (modeMatch) {
-        const modeUri = modeMatch[1];
-        const mode = this.uriToWacMode(modeUri);
-        if (mode) {
-          currentAuth.mode = Array.isArray(currentAuth.mode)
-            ? [...currentAuth.mode, mode]
-            : [mode];
-        }
-        continue;
-      }
+  private async readPolicy(
+    policyUri: ResourceUri,
+    model: 'wac' | 'acp'
+  ): Promise<WacPolicy | AcpPolicy | null> {
+    try {
+      const resource = await this.resourceClient.get(policyUri, {}, 'text/turtle');
+      return model === 'wac'
+        ? this.parseWacPolicy(resource.content, resource.uri)
+        : this.parseAcpPolicy(resource.content, resource.uri);
+    } catch (error) {
+      if (error instanceof ResourceNotFoundError) return null;
+      throw error;
     }
-
-    return policy;
   }
 
-  /**
-   * Serializes a WAC policy to Turtle
-   */
-  private serializeWacPolicy(policy: WacPolicy): string {
-    const lines: string[] = [];
-
-    // Add prefix
-    lines.push('@prefix acl: <http://www.w3.org/ns/auth/acl#> .');
-    lines.push('@prefix foaf: <http://xmlns.com/foaf/0.1/> .');
-    lines.push('');
-
-    // Serialize each authorization
-    for (const auth of policy.authorization) {
-      const authId = auth['@id'] || `_:auth${policy.authorization.indexOf(auth)}`;
-      
-      lines.push(`<${authId}> a acl:Authorization;`);
-      
-      if (auth.accessTo) {
-        lines.push(`  acl:accessTo <${auth.accessTo}>;`);
-      }
-
-      if (auth.agent) {
-        lines.push(`  acl:agent <${auth.agent}>;`);
-      }
-      if (auth.agentClass) {
-        lines.push(`  acl:agentClass <${auth.agentClass}>;`);
-      }
-      if (auth.agentGroup) {
-        lines.push(`  acl:agentGroup <${auth.agentGroup}>;`);
-      }
-
-      if (auth.mode) {
-        const modes = Array.isArray(auth.mode) ? auth.mode : [auth.mode];
-        for (const mode of modes) {
-          lines.push(`  acl:mode <${this.wacModeToUri(mode)}>.`);
-        }
-      }
-      
-      lines.push('');
-    }
-
-    return lines.join('\n');
-  }
-
-  /**
-   * Parses an ACP policy from Turtle
-   */
-  private parseAcpPolicy(turtle: string, policyUri: ResourceUri): AcpPolicy {
-    // Simple Turtle parser for ACP policies
-    // In production, use a proper RDF parser
-    const policy: AcpPolicy = {
-      '@id': policyUri,
-      appliesTo: '',
-      allow: [],
-      deny: [],
-    };
-
-    const lines = turtle.split('\n');
-    let inAllow = false;
-    let inDeny = false;
-    let currentRule: Partial<AcpAllowRule | AcpDenyRule> | null = null;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('@') || trimmed.startsWith('#')) continue;
-
-      // Match appliesTo
-      const appliesToMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#appliesTo>\s+<([^>]+)>/);
-      if (appliesToMatch) {
-        policy.appliesTo = appliesToMatch[1];
-        continue;
-      }
-
-      // Match allow
-      const allowMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#allow>\s+\[/);
-      if (allowMatch) {
-        inAllow = true;
-        inDeny = false;
-        currentRule = { type: 'allow' };
-        continue;
-      }
-
-      // Match deny
-      const denyMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#deny>\s+\[/);
-      if (denyMatch) {
-        inDeny = true;
-        inAllow = false;
-        currentRule = { type: 'deny' };
-        continue;
-      }
-
-      // Match closing bracket
-      if (trimmed === '] .' || trimmed === '].') {
-        if (currentRule && inAllow) {
-          policy.allow = policy.allow || [];
-          policy.allow.push(currentRule as AcpAllowRule);
-        } else if (currentRule && inDeny) {
-          policy.deny = policy.deny || [];
-          policy.deny.push(currentRule as AcpDenyRule);
-        }
-        currentRule = null;
-        inAllow = false;
-        inDeny = false;
-        continue;
-      }
-
-      if (!currentRule) continue;
-
-      // Match actor
-      const actorMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#actor>\s+<([^>]+)>/);
-      if (actorMatch) {
-        currentRule.actor = actorMatch[1];
-        continue;
-      }
-
-      // Match actorClass
-      const actorClassMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorClass>\s+<([^>]+)>/);
-      if (actorClassMatch) {
-        currentRule.actorClass = actorClassMatch[1];
-        continue;
-      }
-
-      // Match actorGroup
-      const actorGroupMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorGroup>\s+<([^>]+)>/);
-      if (actorGroupMatch) {
-        currentRule.actorGroup = actorGroupMatch[1];
-        continue;
-      }
-
-      // Match operation
-      const operationMatch = trimmed.match(/<http:\/\/www\.w3\.org\/ns\/solid\/acp#operation>\s+<([^>]+)>/);
-      if (operationMatch) {
-        const operationUri = operationMatch[1];
-        const operation = this.uriToAcpOperation(operationUri);
-        if (operation) {
-          currentRule.operation = Array.isArray(currentRule.operation)
-            ? [...currentRule.operation, operation]
-            : [operation];
-        }
-        continue;
-      }
-    }
-
-    return policy;
-  }
-
-  /**
-   * Serializes an ACP policy to Turtle
-   */
-  private serializeAcpPolicy(policy: AcpPolicy): string {
-    const lines: string[] = [];
-
-    // Add prefix
-    lines.push('@prefix acl: <http://www.w3.org/ns/solid/acp#> .');
-    lines.push('@prefix foaf: <http://xmlns.com/foaf/0.1/> .');
-    lines.push('');
-
-    // Serialize appliesTo
-    lines.push(`<> a acl:AccessPolicy;`);
-    lines.push(`  acl:appliesTo <${policy.appliesTo}>;`);
-
-    // Serialize allow rules
-    if (policy.allow && policy.allow.length > 0) {
-      lines.push('  acl:allow');
-      for (const rule of policy.allow) {
-        lines.push('  [');
-        
-        if (rule.actor) {
-          lines.push(`    acl:actor <${rule.actor}>;`);
-        }
-        if (rule.actorClass) {
-          lines.push(`    acl:actorClass <${rule.actorClass}>;`);
-        }
-        if (rule.actorGroup) {
-          lines.push(`    acl:actorGroup <${rule.actorGroup}>;`);
-        }
-        
-        if (rule.operation) {
-          const operations = Array.isArray(rule.operation) ? rule.operation : [rule.operation];
-          for (const operation of operations) {
-            lines.push(`    acl:operation <${this.acpOperationToUri(operation)}>.`);
-          }
-        }
-        
-        lines.push('  ]');
-      }
-    }
-
-    // Serialize deny rules
-    if (policy.deny && policy.deny.length > 0) {
-      lines.push('  acl:deny');
-      for (const rule of policy.deny) {
-        lines.push('  [');
-        
-        if (rule.actor) {
-          lines.push(`    acl:actor <${rule.actor}>;`);
-        }
-        if (rule.actorClass) {
-          lines.push(`    acl:actorClass <${rule.actorClass}>;`);
-        }
-        if (rule.actorGroup) {
-          lines.push(`    acl:actorGroup <${rule.actorGroup}>;`);
-        }
-        
-        if (rule.operation) {
-          const operations = Array.isArray(rule.operation) ? rule.operation : [rule.operation];
-          for (const operation of operations) {
-            lines.push(`    acl:operation <${this.acpOperationToUri(operation)}>.`);
-          }
-        }
-        
-        lines.push('  ]');
-      }
-    }
-
-    return lines.join('\n');
-  }
-
-  // ==========================================================================
-  // URI Helpers
-  // ==========================================================================
-
-  /**
-   * Gets the WAC policy URI for a resource
-   */
-  private getWacPolicyUri(resourceUri: ResourceUri): ResourceUri {
-    return `${resourceUri}.acl`;
-  }
-
-  /**
-   * Gets the ACP policy URI for a resource
-   */
-  private getAcpPolicyUri(resourceUri: ResourceUri): ResourceUri {
-    return `${resourceUri}.meta`;
-  }
-
-  // ==========================================================================
-  // Validation
-  // ==========================================================================
-
-  /**
-   * Validates a resource URI
-   */
-  private validateResourceUri(resourceUri: ResourceUri): void {
-    if (!resourceUri) {
+  private resolveResource(resourceUri: ResourceUri | ContainerUri): ResourceUri {
+    if (!resourceUri?.trim()) {
       throw new ValidationError('Resource URI is required', 'resourceUri');
     }
-    if (resourceUri.includes('..') || resourceUri.includes('//')) {
-      throw new ValidationError(
-        'Invalid resource URI: path traversal detected',
-        'resourceUri'
-      );
+    const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
+    let resource: URL;
+    try {
+      resource = new URL(resourceUri, base);
+    } catch {
+      throw new ValidationError('Resource URI is invalid', 'resourceUri');
     }
-  }
-
-  // ==========================================================================
-  // WAC Mode Conversions
-  // ==========================================================================
-
-  /**
-   * Converts WAC mode URI to mode enum
-   */
-  private uriToWacMode(uri: string): WacMode | null {
-    const map: Record<string, WacMode> = {
-      'http://www.w3.org/ns/auth/acl#Read': 'Read',
-      'http://www.w3.org/ns/auth/acl#Write': 'Write',
-      'http://www.w3.org/ns/auth/acl#Control': 'Control',
-      'http://www.w3.org/ns/auth/acl#Append': 'Append',
-    };
-    return map[uri] || null;
-  }
-
-  /**
-   * Converts WAC mode to URI
-   */
-  private wacModeToUri(mode: WacMode): string {
-    const map: Record<WacMode, string> = {
-      Read: 'http://www.w3.org/ns/auth/acl#Read',
-      Write: 'http://www.w3.org/ns/auth/acl#Write',
-      Control: 'http://www.w3.org/ns/auth/acl#Control',
-      Append: 'http://www.w3.org/ns/auth/acl#Append',
-    };
-    return map[mode];
-  }
-
-  // ==========================================================================
-  // ACP Operation Conversions
-  // ==========================================================================
-
-  /**
-   * Converts ACP operation URI to operation enum
-   */
-  private uriToAcpOperation(uri: string): AcpOperation | null {
-    const map: Record<string, AcpOperation> = {
-      'http://www.w3.org/ns/solid/acp#Read': 'Read',
-      'http://www.w3.org/ns/solid/acp#Write': 'Write',
-      'http://www.w3.org/ns/solid/acp#Control': 'Control',
-      'http://www.w3.org/ns/solid/acp#Append': 'Append',
-      'http://www.w3.org/ns/solid/acp#Create': 'Create',
-      'http://www.w3.org/ns/solid/acp#Delete': 'Delete',
-    };
-    return map[uri] || null;
-  }
-
-  /**
-   * Converts ACP operation to URI
-   */
-  private acpOperationToUri(operation: AcpOperation): string {
-    const map: Record<AcpOperation, string> = {
-      Read: 'http://www.w3.org/ns/solid/acp#Read',
-      Write: 'http://www.w3.org/ns/solid/acp#Write',
-      Control: 'http://www.w3.org/ns/solid/acp#Control',
-      Append: 'http://www.w3.org/ns/solid/acp#Append',
-      Create: 'http://www.w3.org/ns/solid/acp#Create',
-      Delete: 'http://www.w3.org/ns/solid/acp#Delete',
-    };
-    return map[operation];
-  }
-
-  // ==========================================================================
-  // ACP Rule Matching
-  // ==========================================================================
-
-  /**
-   * Checks if an agent matches an ACP actor specification
-   */
-  private checkAcpActorMatch(
-    rule: AcpAllowRule | AcpDenyRule,
-    agentWebId: string
-  ): boolean {
-    // Check exact agent match
-    if (rule.actor && rule.actor === agentWebId) {
-      return true;
+    if (!['http:', 'https:'].includes(resource.protocol) || resource.username || resource.password) {
+      throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
     }
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const resourcePath = resource.pathname.endsWith('/')
+      ? resource.pathname
+      : `${resource.pathname}/`;
+    if (
+      resource.origin !== base.origin ||
+      (basePath !== '/' && resourcePath !== basePath && !resourcePath.startsWith(basePath))
+    ) {
+      throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
+    }
+    resource.search = '';
+    resource.hash = '';
+    return resource.toString();
+  }
 
-    // Check actor class (foaf:Agent matches any agent)
-    if (rule.actorClass) {
-      if (rule.actorClass === 'http://xmlns.com/foaf/0.1/Agent') {
-        return true;
+  private assertPolicyUri(policyUri: string): ResourceUri {
+    return this.resolveResource(policyUri);
+  }
+
+  private getPolicyUri(resourceUri: ResourceUri, model: 'wac' | 'acp'): ResourceUri {
+    const url = new URL(resourceUri);
+    url.hash = '';
+    url.search = '';
+    url.pathname = `${url.pathname}${model === 'wac' ? '.acl' : '.meta'}`;
+    return this.assertPolicyUri(url.toString());
+  }
+
+  private parentContainer(resourceUri: ResourceUri): ContainerUri {
+    const url = new URL(resourceUri);
+    const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
+    url.search = '';
+    url.hash = '';
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const currentPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+    if (currentPath === basePath) return url.toString();
+    const withoutTrailingSlash = currentPath.slice(0, -1);
+    url.pathname = withoutTrailingSlash.slice(
+      0,
+      withoutTrailingSlash.lastIndexOf('/') + 1
+    );
+    if (!url.pathname.startsWith(basePath)) return base.toString();
+    return url.toString();
+  }
+
+  private authorizationCovers(accessTo: string[], resourceUri: string): boolean {
+    return accessTo.some(candidate => {
+      if (candidate === '*') return false;
+      try {
+        const scope = new URL(candidate, resourceUri);
+        const resource = new URL(resourceUri);
+        if (scope.origin !== resource.origin) return false;
+        if (scope.toString() === resource.toString()) return true;
+        const path = scope.pathname.endsWith('/') ? scope.pathname : `${scope.pathname}/`;
+        return scope.pathname.endsWith('/') && resource.pathname.startsWith(path);
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private validateWacPolicy(policy: WacPolicy, resourceUri: string): void {
+    if (!Array.isArray(policy.authorization)) {
+      throw new ValidationError('WAC authorization must be an array', 'authorization');
+    }
+    for (const auth of policy.authorization) {
+      if (auth.type !== 'Authorization') {
+        throw new ValidationError('Invalid WAC authorization type', 'type');
+      }
+      const subjects = [
+        ...getStringField(auth, 'agent'),
+        ...getStringField(auth, 'agentClass'),
+        ...getStringField(auth, 'agentGroup'),
+      ];
+      if (subjects.length === 0) {
+        throw new ValidationError('WAC authorization requires an agent selector', 'agent');
+      }
+      subjects.forEach(value => this.validateIri(value, 'agent'));
+      const accessTo = getStringField(auth, 'accessTo');
+      if (accessTo.length === 0 || !this.authorizationCovers(accessTo, resourceUri)) {
+        throw new ValidationError('WAC accessTo must cover the target resource', 'accessTo');
+      }
+      const modes = values(auth.mode);
+      if (modes.length === 0 || modes.some(mode => !WAC_MODES.has(mode as WacMode))) {
+        throw new ValidationError('WAC authorization contains an invalid mode', 'mode');
       }
     }
+  }
 
-    // Check actor group (simplified - would need group membership lookup)
-    if (rule.actorGroup) {
-      // For now, return false for group checks
-      // In production, you would check if the agent is a member of the group
-      return false;
+  private validateAcpPolicy(policy: AcpPolicy, resourceUri: string): void {
+    const appliesTo = this.validateIri(policy.appliesTo, 'appliesTo');
+    if (appliesTo !== resourceUri) {
+      throw new ValidationError('ACP appliesTo must equal the target resource', 'appliesTo');
     }
-
-    return false;
+    for (const rule of [...(policy.allow ?? []), ...(policy.deny ?? [])]) {
+      const actors = [
+        ...getStringField(rule, 'actor'),
+        ...getStringField(rule, 'actorClass'),
+        ...getStringField(rule, 'actorGroup'),
+      ];
+      if (actors.length === 0) {
+        throw new ValidationError('ACP rule requires an actor selector', 'actor');
+      }
+      actors.forEach(value => this.validateIri(value, 'actor'));
+      const operations = values(rule.operation);
+      if (
+        operations.length === 0 ||
+        operations.some(operation => !ACP_OPERATIONS.has(operation as AcpOperation))
+      ) {
+        throw new ValidationError('ACP rule contains an invalid operation', 'operation');
+      }
+    }
   }
 
-  /**
-   * Checks if an operation matches an ACP operation specification
-   */
-  private checkAcpOperationMatch(
-    rule: AcpAllowRule | AcpDenyRule,
-    operation: AcpOperation
-  ): boolean {
-    const ruleOperations = Array.isArray(rule.operation) ? rule.operation : [rule.operation];
-    return ruleOperations.includes(operation);
+  private validateActor(value: string, field: string): string {
+    return this.validateIri(value, field);
   }
 
-  // ==========================================================================
-  // Getters
-  // ==========================================================================
+  private validateIri(value: string, field: string): string {
+    if (!value || /[<>\u0000-\u0020]/.test(value)) {
+      throw new ValidationError(`Invalid ${field} IRI`, field);
+    }
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new ValidationError(`Invalid ${field} IRI`, field);
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new ValidationError(`Invalid ${field} IRI`, field);
+    }
+    return url.toString();
+  }
 
-  /**
-   * Gets the resource client
-   */
+  private iri(value: string, field: string): string {
+    return `<${this.validateIri(value, field)}>`;
+  }
+
+  private serializeWacPolicy(policy: WacPolicy): string {
+    const lines = [`@prefix acl: <${ACL}> .`, ''];
+    policy.authorization.forEach((auth, index) => {
+      const subject = auth['@id']
+        ? this.iri(auth['@id'], 'authorizationId')
+        : `_:auth${index}`;
+      const predicates: string[] = ['a acl:Authorization'];
+      getStringField(auth, 'accessTo').forEach(value =>
+        predicates.push(`acl:accessTo ${this.iri(value, 'accessTo')}`)
+      );
+      getStringField(auth, 'agent').forEach(value =>
+        predicates.push(`acl:agent ${this.iri(value, 'agent')}`)
+      );
+      getStringField(auth, 'agentClass').forEach(value =>
+        predicates.push(`acl:agentClass ${this.iri(value, 'agentClass')}`)
+      );
+      getStringField(auth, 'agentGroup').forEach(value =>
+        predicates.push(`acl:agentGroup ${this.iri(value, 'agentGroup')}`)
+      );
+      values(auth.mode).forEach(mode => predicates.push(`acl:mode <${ACL}${mode}>`));
+      lines.push(`${subject} ${predicates.join(' ;\n  ')} .`, '');
+    });
+    return lines.join('\n');
+  }
+
+  private serializeAcpPolicy(policy: AcpPolicy): string {
+    const lines = [`@prefix acp: <${ACP}> .`, ''];
+    const serializeRule = (rule: AcpAllowRule | AcpDenyRule): string => {
+      const predicates: string[] = [];
+      getStringField(rule, 'actor').forEach(value =>
+        predicates.push(`acp:actor ${this.iri(value, 'actor')}`)
+      );
+      getStringField(rule, 'actorClass').forEach(value =>
+        predicates.push(`acp:actorClass ${this.iri(value, 'actorClass')}`)
+      );
+      getStringField(rule, 'actorGroup').forEach(value =>
+        predicates.push(`acp:actorGroup ${this.iri(value, 'actorGroup')}`)
+      );
+      values(rule.operation).forEach(operation =>
+        predicates.push(`acp:operation <${ACP}${operation}>`)
+      );
+      return `[ ${predicates.join(' ; ')} ]`;
+    };
+    const predicates = [`a acp:AccessPolicy`, `acp:appliesTo ${this.iri(policy.appliesTo, 'appliesTo')}`];
+    (policy.allow ?? []).forEach(rule => predicates.push(`acp:allow ${serializeRule(rule)}`));
+    (policy.deny ?? []).forEach(rule => predicates.push(`acp:deny ${serializeRule(rule)}`));
+    lines.push(`<> ${predicates.join(' ;\n  ')} .`, '');
+    return lines.join('\n');
+  }
+
+  private parseWacPolicy(turtle: string, policyUri: ResourceUri): WacPolicy {
+    const authorization: WacAuthorization[] = [];
+    const blocks = turtle.split(/\.\s*(?:\r?\n|$)/);
+    for (const block of blocks) {
+      if (!block.includes('acl:Authorization') && !block.includes(`${ACL}Authorization`)) continue;
+      const subject = block.match(/(?:<([^>]+)>|(_:[A-Za-z][\w-]*))\s+/);
+      const accessTo = [...block.matchAll(/(?:acl:accessTo|<http:\/\/www\.w3\.org\/ns\/auth\/acl#accessTo>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agent = [...block.matchAll(/(?:acl:agent|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agent>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agentClass = [...block.matchAll(/(?:acl:agentClass|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentClass>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const agentGroup = [...block.matchAll(/(?:acl:agentGroup|<http:\/\/www\.w3\.org\/ns\/auth\/acl#agentGroup>)\s+<([^>]+)>/g)].map(m => m[1]!);
+      const mode = [...block.matchAll(/(?:acl:mode|<http:\/\/www\.w3\.org\/ns\/auth\/acl#mode>)\s+<[^>]+#(Read|Write|Control|Append)>/g)].map(
+        m => m[1] as WacMode
+      );
+      if (accessTo.length === 0 || mode.length === 0) continue;
+      authorization.push({
+        ...(subject?.[1] !== undefined && { '@id': subject[1] }),
+        type: 'Authorization',
+        accessTo: accessTo[0]!,
+        ...(agent.length > 0 && { agent: agent.length === 1 ? agent[0]! : agent }),
+        ...(agentClass.length > 0 && {
+          agentClass: agentClass.length === 1 ? agentClass[0]! : agentClass,
+        }),
+        ...(agentGroup.length > 0 && {
+          agentGroup: agentGroup.length === 1 ? agentGroup[0]! : agentGroup,
+        }),
+        mode: mode.length === 1 ? mode[0]! : mode,
+      });
+    }
+    return { '@id': policyUri, authorization };
+  }
+
+  private parseAcpPolicy(turtle: string, policyUri: ResourceUri): AcpPolicy {
+    const appliesTo = turtle.match(/(?:acp:appliesTo|<http:\/\/www\.w3\.org\/ns\/solid\/acp#appliesTo>)\s+<([^>]+)>/)?.[1] ?? '';
+    const parseRules = (predicate: 'allow' | 'deny') =>
+      [...turtle.matchAll(new RegExp(`(?:acp:${predicate}|<http://www\.w3\.org/ns/solid/acp#${predicate}>)\\s+\\[([^\\]]+)\\]`, 'g'))].map(
+        match => {
+          const body = match[1] ?? '';
+          const actor = [...body.matchAll(/(?:acp:actor|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actor>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const actorClass = [...body.matchAll(/(?:acp:actorClass|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorClass>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const actorGroup = [...body.matchAll(/(?:acp:actorGroup|<http:\/\/www\.w3\.org\/ns\/solid\/acp#actorGroup>)\s+<([^>]+)>/g)].map(m => m[1]!);
+          const operation = [...body.matchAll(/(?:acp:operation|<http:\/\/www\.w3\.org\/ns\/solid\/acp#operation>)\s+<[^>]+#(Read|Write|Control|Append|Create|Delete)>/g)].map(
+            m => m[1] as AcpOperation
+          );
+          return {
+            type: predicate,
+            ...(actor.length > 0 && { actor: actor.length === 1 ? actor[0]! : actor }),
+            ...(actorClass.length > 0 && {
+              actorClass: actorClass.length === 1 ? actorClass[0]! : actorClass,
+            }),
+            ...(actorGroup.length > 0 && {
+              actorGroup: actorGroup.length === 1 ? actorGroup[0]! : actorGroup,
+            }),
+            operation: operation.length === 1 ? operation[0]! : operation,
+          };
+        }
+      );
+    return {
+      '@id': policyUri,
+      appliesTo,
+      allow: parseRules('allow') as AcpAllowRule[],
+      deny: parseRules('deny') as AcpDenyRule[],
+    };
+  }
+
   public getResourceClient(): ResourceClient {
     return this.resourceClient;
   }
 
-  /**
-   * Gets the configuration
-   */
-  public getConfig(): Required<PolicyClientConfig> {
+  public getConfig(): ResolvedPolicyClientConfig {
     return { ...this.config };
   }
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
 
 export default PolicyClient;
