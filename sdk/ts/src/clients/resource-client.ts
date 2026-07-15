@@ -87,16 +87,22 @@ export class ResourceClient {
       }
     }
 
-    const nestedHttpConfig = config.httpClientConfig ?? {};
-    const httpLogger =
-      nestedHttpConfig.logger ??
-      config.logger ??
-      DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
-    const httpClientConfig: HttpClientConfig = {
-      ...topLevelHttpConfig,
-      ...nestedHttpConfig,
-      logger: httpLogger,
-    };
+    const nestedHttpConfig: HttpClientConfig = {};
+for (const key of HTTP_CONFIG_KEYS) {
+  const value = config.httpClientConfig?.[key];
+  if (value !== undefined) {
+    (nestedHttpConfig as Record<string, unknown>)[key] = value;
+  }
+}
+const httpLogger =
+  nestedHttpConfig.logger ??
+  config.logger ??
+  DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
+const httpClientConfig: HttpClientConfig = {
+  ...topLevelHttpConfig,
+  ...nestedHttpConfig,
+  logger: httpLogger,
+};
 
     this.config = {
       httpClientConfig,
@@ -285,11 +291,21 @@ export class ResourceClient {
     enforcedHeaders: HttpHeaders = {}
   ): Promise<HttpHeaders> {
     const authHeaders = await this.getAuthHeaders(method, url);
-    return {
-      ...callerHeaders,
-      ...enforcedHeaders,
-      ...authHeaders,
-    };
+const protectedNames = new Set(
+  [...Object.keys(enforcedHeaders), ...Object.keys(authHeaders)].map(name =>
+    name.toLowerCase()
+  )
+);
+const sanitizedCallerHeaders = Object.fromEntries(
+  Object.entries(callerHeaders).filter(
+    ([name]) => !protectedNames.has(name.toLowerCase())
+  )
+);
+return {
+  ...sanitizedCallerHeaders,
+  ...enforcedHeaders,
+  ...authHeaders,
+};
   }
 
   private async getAuthHeaders(method: string, url: string): Promise<HttpHeaders> {

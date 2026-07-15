@@ -25,6 +25,24 @@ describe('ResourceClient baseline', () => {
     expect(client.getHttpClient().getConfig().fetch).toBe(nestedFetch);
   });
 
+  it('ignores undefined nested HTTP overrides', () => {
+  const fetchMock = jest.fn<typeof fetch>();
+  const client = new ResourceClient({
+    baseUrl: 'https://pod.example/storage/',
+    fetch: fetchMock,
+    useDpop: false,
+    httpClientConfig: {
+      baseUrl: undefined,
+      fetch: undefined,
+    } as unknown as import('../src/http-client').HttpClientConfig,
+  });
+
+  expect(client.getHttpClient().getConfig().baseUrl).toBe(
+    'https://pod.example/storage/'
+  );
+  expect(client.getHttpClient().getConfig().fetch).toBe(fetchMock);
+});
+
   it('preserves create wildcard and prevents caller auth spoofing', async () => {
     const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(okResponse({ etag: '"v1"' }));
     const authManager = {
@@ -42,9 +60,9 @@ describe('ResourceClient baseline', () => {
 
     await client.create('/storage/item', 'body', {
       headers: {
-        Authorization: 'Bearer attacker',
-        DPoP: 'attacker-proof',
-        'If-None-Match': 'attacker',
+        authorization: 'Bearer attacker',
+        dpop: 'attacker-proof',
+        'if-none-match': 'attacker',
       },
     });
 
