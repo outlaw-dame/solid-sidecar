@@ -305,14 +305,31 @@ export class PolicyClient {
   }
 
   private resolveResource(resourceUri: ResourceUri | ContainerUri): ResourceUri {
-    return this.resourceClient.getHttpClient().validateResourceUri(
-      resourceUri,
-      [this.resourceClient.getHttpClient().getConfig().baseUrl]
-    )
-      ? new URL(resourceUri, this.resourceClient.getHttpClient().getConfig().baseUrl).toString()
-      : (() => {
-          throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
-        })();
+    if (!resourceUri?.trim()) {
+      throw new ValidationError('Resource URI is required', 'resourceUri');
+    }
+    const base = new URL(this.resourceClient.getHttpClient().getConfig().baseUrl);
+    let resource: URL;
+    try {
+      resource = new URL(resourceUri, base);
+    } catch {
+      throw new ValidationError('Resource URI is invalid', 'resourceUri');
+    }
+    if (!['http:', 'https:'].includes(resource.protocol) || resource.username || resource.password) {
+      throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
+    }
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const resourcePath = resource.pathname.endsWith('/')
+      ? resource.pathname
+      : `${resource.pathname}/`;
+    if (
+      resource.origin !== base.origin ||
+      (basePath !== '/' && resourcePath !== basePath && !resourcePath.startsWith(basePath))
+    ) {
+      throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
+    }
+    resource.hash = '';
+    return resource.toString();
   }
 
   private assertPolicyUri(policyUri: string): ResourceUri {
