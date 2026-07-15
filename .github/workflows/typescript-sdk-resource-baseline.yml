@@ -39,13 +39,27 @@ jobs:
       - name: Isolate resource-client TypeScript diagnostics
         run: |
           npm run typecheck > typecheck.log 2>&1 || true
-          if grep -F 'src/clients/resource-client.ts' typecheck.log; then
+          grep -F 'src/clients/resource-client.ts' typecheck.log > resource-diagnostics.log || true
+          if test -s resource-diagnostics.log; then
+            cat resource-diagnostics.log
             echo 'resource-client.ts still has TypeScript diagnostics' >&2
             exit 1
           fi
           echo 'No resource-client TypeScript diagnostics found.'
-      - name: Run focused resource tests when present
+      - name: Upload resource diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-diagnostics
+          path: sdk/ts/resource-diagnostics.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Run focused resource tests
+        run: npx jest --runInBand test/resource-client-baseline.test.ts
+      - name: Verify security invariants
         run: |
-          if test -f test/resource-client-baseline.test.ts; then
-            npx jest --runInBand test/resource-client-baseline.test.ts
-          fi
+          ! grep -Fq 'logger: console' src/clients/resource-client.ts
+          ! grep -Fq 'Failed to get DPoP authentication' src/clients/resource-client.ts
+          grep -Fq "Authorization: `DPoP ${accessToken}`" src/clients/resource-client.ts
+          grep -Fq "if (trimmed === '*') return '*'" src/clients/resource-client.ts
+          grep -Fq 'resource.origin !== this.baseUrl.origin' src/clients/resource-client.ts
