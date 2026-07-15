@@ -328,6 +328,7 @@ export class PolicyClient {
     ) {
       throw new ValidationError('Resource URI is outside the configured scope', 'resourceUri');
     }
+    resource.search = '';
     resource.hash = '';
     return resource.toString();
   }
