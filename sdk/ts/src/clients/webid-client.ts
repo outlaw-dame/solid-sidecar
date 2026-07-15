@@ -471,7 +471,7 @@ export class WebIdClient {
 
     const source = turtle
       .split(/\r?\n/u)
-      .map(rawLine => rawLine.replace(/(?:^|\s+)#.*$/u, '').trim())
+      .map(rawLine => this.stripTurtleComment(rawLine).trim())
       .filter(line => line && !/^(?:@prefix|PREFIX|@base|BASE)\b/iu.test(line))
       .join(' ');
 
@@ -495,6 +495,32 @@ export class WebIdClient {
     }
     if (current.trim()) statements.push(current.trim());
     return statements;
+  }
+
+  private stripTurtleComment(line: string): string {
+    let clean = '';
+    let inString = false;
+    let escaped = false;
+    let inIri = false;
+
+    for (const char of line) {
+      if (escaped) {
+        clean += char;
+        escaped = false;
+        continue;
+      }
+      if (inString && char === '\\') {
+        clean += char;
+        escaped = true;
+        continue;
+      }
+      if (!inIri && char === '"') inString = !inString;
+      else if (!inString && char === '<') inIri = true;
+      else if (!inString && char === '>') inIri = false;
+      else if (!inString && !inIri && char === '#') break;
+      clean += char;
+    }
+    return clean;
   }
 
   private applyTurtlePredicates(
