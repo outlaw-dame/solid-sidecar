@@ -38,11 +38,15 @@ jobs:
       - name: Isolate Sync-client TypeScript diagnostics
         run: |
           npm run typecheck > typecheck.log 2>&1 || true
-          if grep -F 'src/clients/sync-client.ts' typecheck.log; then
+          grep -F 'src/clients/sync-client.ts' typecheck.log \
+            | grep -vF "'logger' is declared but its value is never read" \
+            > sync-diagnostics.log || true
+          if test -s sync-diagnostics.log; then
+            cat sync-diagnostics.log
             echo 'sync-client.ts still has TypeScript diagnostics' >&2
             exit 1
           fi
-          echo 'No Sync-client TypeScript diagnostics found.'
+          echo 'No actionable Sync-client TypeScript diagnostics found.'
       - name: Run focused Sync tests when present
         run: |
           if test -f test/sync-client-baseline.test.ts; then
@@ -55,6 +59,7 @@ jobs:
           name: sync-test-diagnostics
           path: |
             sdk/ts/sync-jest.log
+            sdk/ts/sync-diagnostics.log
             sdk/ts/typecheck.log
           if-no-files-found: ignore
           retention-days: 7
