@@ -1,4 +1,5 @@
 import { WebIdClient } from '../src/clients/webid-client';
+import type { WebIdClientConfig } from '../src/clients/webid-client';
 
 const WEB_ID = 'https://pod.example/profile/card#me';
 const PROFILE = `
@@ -18,7 +19,10 @@ function profileResponse(body = PROFILE, contentType = 'text/turtle'): Response 
   });
 }
 
-function createClient(fetchMock: typeof fetch, overrides: Record<string, unknown> = {}): WebIdClient {
+function createClient(
+  fetchMock: typeof fetch,
+  overrides: Partial<WebIdClientConfig> = {}
+): WebIdClient {
   return new WebIdClient({
     baseUrl: 'https://pod.example/profile/',
     fetch: fetchMock,
