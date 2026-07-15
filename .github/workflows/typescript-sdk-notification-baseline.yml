@@ -41,15 +41,18 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Run strict SDK typecheck and isolate notification diagnostics
         run: |
-          set -o pipefail
           npm run typecheck > typecheck.log 2>&1 || true
-          cat typecheck.log
-          if grep -Fq 'src/clients/notification-client.ts' typecheck.log; then
+          if grep -F 'src/clients/notification-client.ts' typecheck.log; then
             echo 'notification-client.ts still has TypeScript diagnostics' >&2
             exit 1
           fi
-      - name: Run focused notification tests when present
+          echo 'No notification-client TypeScript diagnostics found.'
+      - name: Run focused notification tests
+        run: npx jest --runInBand test/notification-client-baseline.test.ts
+      - name: Verify lifecycle and security invariants
         run: |
-          if test -f test/notification-client-baseline.test.ts; then
-            npx jest --runInBand test/notification-client-baseline.test.ts
-          fi
+          ! grep -Fq 'logger: console' src/clients/notification-client.ts
+          ! grep -Fq 'export { SolidSidecarEventSource };' src/clients/notification-client.ts
+          grep -Fq "url.searchParams.set('cursor', this.lastEventId)" src/clients/notification-client.ts
+          grep -Fq 'dispatchCloseOnce' src/clients/notification-client.ts
+          grep -Fq 'this.controller?.abort()' src/clients/notification-client.ts
