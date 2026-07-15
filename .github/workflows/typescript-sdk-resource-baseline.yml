@@ -1,0 +1,65 @@
+name: TypeScript SDK resource baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/clients/resource-client.ts'
+      - 'sdk/ts/test/resource-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-resource-baseline.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdk/ts/src/clients/resource-client.ts'
+      - 'sdk/ts/test/resource-client-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-resource-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-resource-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify resource client baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Isolate resource-client TypeScript diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          grep -F 'src/clients/resource-client.ts' typecheck.log > resource-diagnostics.log || true
+          if test -s resource-diagnostics.log; then
+            cat resource-diagnostics.log
+            echo 'resource-client.ts still has TypeScript diagnostics' >&2
+            exit 1
+          fi
+          echo 'No resource-client TypeScript diagnostics found.'
+      - name: Upload resource diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-diagnostics
+          path: sdk/ts/resource-diagnostics.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Run focused resource tests
+        run: npx jest --runInBand test/resource-client-baseline.test.ts
+      - name: Verify security invariants
+        run: |
+          ! grep -Fq 'logger: console' src/clients/resource-client.ts
+          ! grep -Fq 'Failed to get DPoP authentication' src/clients/resource-client.ts
+          grep -Fq "Authorization: `DPoP ${accessToken}`" src/clients/resource-client.ts
+          grep -Fq "if (trimmed === '*') return '*'" src/clients/resource-client.ts
+          grep -Fq 'resource.origin !== this.baseUrl.origin' src/clients/resource-client.ts

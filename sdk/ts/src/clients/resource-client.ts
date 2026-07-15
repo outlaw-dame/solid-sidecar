@@ -1,256 +1,193 @@
-/**
- * Solid Sidecar TypeScript SDK - Resource Client
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the ResourceClient for CRUD operations on Solid resources.
- *
- * Security Level: CRITICAL
- */
-
 import type {
-  Resource,
-  ResourceUri,
-  ContainerUri,
-  ResourceMetadata,
   ContainerListing,
+  ContainerUri,
   ConditionalWriteOptions,
   HttpHeaders,
-  HttpResponse,
-  RdfFormat,
+  Resource,
+  ResourceMetadata,
+  ResourceUri,
   SolidSidecarLogger,
 } from '../types';
+import { ValidationError } from '../types';
 import {
-  ResourceNotFoundError,
-  ConflictError,
-  PreconditionFailedError,
-  ValidationError,
-} from '../types';
-import { SolidSidecarHttpClient, type HttpClientConfig } from '../http-client';
+  SolidSidecarHttpClient,
+  type HttpClientConfig,
+} from '../http-client';
 import { AuthManager } from '../auth/auth-manager';
-import type { DpopProofOptions } from '../types';
-import {
-  resolveUrl,
-  validateUrl,
-  parseETag,
-  etagsMatch,
-  getPreferredRdfContentType,
-  isRdfContentType,
-  parseLinkHeaders,
-  RDF_CONTENT_TYPES,
-} from '../utils';
+import { nullLogger, parseETag, parseLinkHeaders } from '../utils';
 
-// ============================================================================
-// Resource Client Configuration
-// ============================================================================
-
-/**
- * Configuration for ResourceClient
- */
 export interface ResourceClientConfig extends Partial<HttpClientConfig> {
-  /** HTTP client configuration */
   httpClientConfig?: HttpClientConfig;
-  
-  /** Auth manager (optional, for DPoP authentication) */
   authManager?: AuthManager;
-  
-  /** Default content type for PUT/PATCH */
   defaultContentType?: string;
-  
-  /** Whether to use DPoP authentication (default: true if authManager is provided) */
   useDpop?: boolean;
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default ResourceClient configuration
- */
-export const DEFAULT_RESOURCE_CLIENT_CONFIG: Partial<ResourceClientConfig> = {
+interface ResolvedResourceClientConfig {
+  httpClientConfig: HttpClientConfig;
+  authManager: AuthManager | null;
+  defaultContentType: string;
+  useDpop: boolean;
+  logger: SolidSidecarLogger;
+}
+
+export const DEFAULT_RESOURCE_CLIENT_CONFIG = {
   defaultContentType: 'text/turtle',
   useDpop: true,
+  logger: nullLogger,
+} satisfies Pick<
+  ResolvedResourceClientConfig,
+  'defaultContentType' | 'useDpop' | 'logger'
+>;
+
+const HTTP_CONFIG_KEYS = [
+  'baseUrl',
+  'timeout',
+  'maxRetries',
+  'retryDelay',
+  'maxRetryDelay',
+  'fetch',
+  'validateSsl',
+  'logger',
+  'defaultHeaders',
+  'defaultTimeout',
+  'validateUrls',
+  'allowedHosts',
+] as const satisfies readonly (keyof HttpClientConfig)[];
+
+type WriteOptions = {
+  contentType?: string;
+  headers?: HttpHeaders;
+  ifMatch?: string | string[];
+  ifNoneMatch?: string | string[];
+  link?: string;
 };
 
-// ============================================================================
-// Resource Client
-// ============================================================================
+function getHeader(headers: HttpHeaders, name: string): string | undefined {
+  const target = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) return value;
+  }
+  return undefined;
+}
 
-/**
- * ResourceClient for Solid Sidecar
- * 
- * Features:
- * - CRUD operations on resources
- * - Container operations
- * - Conditional writes (ETag/If-Match/If-None-Match)
- * - DPoP authentication
- * - Content-Type negotiation
- * - Automatic retry with exponential backoff
- * - IDOR prevention
- * - SSRF prevention
- */
 export class ResourceClient {
-  private readonly config: Required<ResourceClientConfig>;
+  private readonly config: ResolvedResourceClientConfig;
   private readonly httpClient: SolidSidecarHttpClient;
   private readonly authManager: AuthManager | null;
-  private readonly logger: SolidSidecarLogger;
+  private readonly baseUrl: URL;
 
   constructor(config: ResourceClientConfig = {}) {
-    // Merge with defaults
+    const topLevelHttpConfig: HttpClientConfig = {};
+    for (const key of HTTP_CONFIG_KEYS) {
+      const value = config[key];
+      if (value !== undefined) {
+        (topLevelHttpConfig as Record<string, unknown>)[key] = value;
+      }
+    }
+
+    const nestedHttpConfig: HttpClientConfig = {};
+for (const key of HTTP_CONFIG_KEYS) {
+  const value = config.httpClientConfig?.[key];
+  if (value !== undefined) {
+    (nestedHttpConfig as Record<string, unknown>)[key] = value;
+  }
+}
+const httpLogger =
+  nestedHttpConfig.logger ??
+  config.logger ??
+  DEFAULT_RESOURCE_CLIENT_CONFIG.logger;
+const httpClientConfig: HttpClientConfig = {
+  ...topLevelHttpConfig,
+  ...nestedHttpConfig,
+  logger: httpLogger,
+};
+
     this.config = {
-      ...DEFAULT_RESOURCE_CLIENT_CONFIG,
-      ...config,
-      logger: config.logger || console,
+      httpClientConfig,
+      authManager: config.authManager ?? null,
+      defaultContentType:
+        config.defaultContentType ??
+        DEFAULT_RESOURCE_CLIENT_CONFIG.defaultContentType,
+      useDpop: config.useDpop ?? config.authManager !== undefined,
+      logger: config.logger ?? nestedHttpConfig.logger ?? nullLogger,
     };
+    this.httpClient = new SolidSidecarHttpClient(httpClientConfig);
+    this.authManager = this.config.authManager;
 
-    // Initialize HTTP client
-    this.httpClient = config.httpClientConfig
-      ? new SolidSidecarHttpClient(config.httpClientConfig)
-      : new SolidSidecarHttpClient();
-
-    // Store auth manager
-    this.authManager = config.authManager || null;
-    this.logger = this.config.logger;
-
-    // Log initialization
-    this.logger.debug('ResourceClient initialized', {
-      baseUrl: this.httpClient.getConfig().baseUrl,
-      useDpop: this.config.useDpop && !!this.authManager,
-    });
+    const configuredBaseUrl = this.httpClient.getConfig().baseUrl;
+    try {
+      this.baseUrl = new URL(configuredBaseUrl);
+    } catch {
+      throw new ValidationError(
+        'ResourceClient requires an absolute HTTP(S) baseUrl',
+        'baseUrl'
+      );
+    }
+    if (!['http:', 'https:'].includes(this.baseUrl.protocol)) {
+      throw new ValidationError('baseUrl must use HTTP or HTTPS', 'baseUrl');
+    }
+    if (this.baseUrl.username || this.baseUrl.password) {
+      throw new ValidationError('baseUrl must not contain credentials', 'baseUrl');
+    }
   }
 
-  // ==========================================================================
-  // GET Operations
-  // ==========================================================================
-
-  /**
-   * Gets a resource
-   */
   public async get(
     resourceUri: ResourceUri,
-    headers?: HttpHeaders,
+    headers: HttpHeaders = {},
     accept?: string
   ): Promise<Resource> {
-    // Validate resource URI for IDOR prevention
-    this.validateResourceUri(resourceUri);
-
-    // Resolve URL
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('GET', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-      ...(accept && { Accept: accept }),
-    };
-
-    // Make request
-    const response = await this.httpClient.get(url, mergedHeaders);
-
-    // Parse response
-    const metadata = this.parseResourceMetadata(response.headers, resourceUri);
-
+    const url = this.resolveResourceUrl(resourceUri);
+    const response = await this.httpClient.get<string>(
+      url,
+      await this.buildHeaders('GET', url, headers, {
+        ...(accept !== undefined && { Accept: accept }),
+      })
+    );
     return {
-      uri: resourceUri,
-      metadata,
-      content: response.body as string,
+      uri: url,
+      metadata: this.parseResourceMetadata(response.headers, url),
+      content: response.body,
     };
   }
 
-  /**
-   * Gets resource metadata only (HEAD request)
-   */
   public async head(
     resourceUri: ResourceUri,
-    headers?: HttpHeaders
+    headers: HttpHeaders = {}
   ): Promise<ResourceMetadata> {
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Resolve URL
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('HEAD', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-    };
-
-    // Make request
-    const response = await this.httpClient.head(url, mergedHeaders);
-
-    // Parse metadata
-    return this.parseResourceMetadata(response.headers, resourceUri);
+    const url = this.resolveResourceUrl(resourceUri);
+    const response = await this.httpClient.head(
+      url,
+      await this.buildHeaders('HEAD', url, headers)
+    );
+    return this.parseResourceMetadata(response.headers, url);
   }
 
-  // ==========================================================================
-  // PUT Operations
-  // ==========================================================================
-
-  /**
-   * Creates or replaces a resource
-   */
   public async put(
     resourceUri: ResourceUri,
     content: string | Uint8Array,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-      ifMatch?: string | string[];
-      ifNoneMatch?: string | string[];
-      link?: string;
-    } = {}
+    options: WriteOptions = {}
   ): Promise<ResourceMetadata> {
-    const {
-      contentType = this.config.defaultContentType,
-      headers = {},
-      ifMatch,
-      ifNoneMatch,
-      link,
-    } = options;
-
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Resolve URL
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('PUT', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-      'Content-Type': contentType,
-      ...(ifMatch && { 'If-Match': this.formatEtag(ifMatch) }),
-      ...(ifNoneMatch && { 'If-None-Match': this.formatEtag(ifNoneMatch) }),
-      ...(link && { Link: link }),
+    const url = this.resolveResourceUrl(resourceUri);
+    const enforcedHeaders: HttpHeaders = {
+      'Content-Type': options.contentType ?? this.config.defaultContentType,
+      ...(options.ifMatch !== undefined && {
+        'If-Match': this.formatEtags(options.ifMatch),
+      }),
+      ...(options.ifNoneMatch !== undefined && {
+        'If-None-Match': this.formatEtags(options.ifNoneMatch),
+      }),
+      ...(options.link !== undefined && { Link: options.link }),
     };
-
-    // Make request
-    const response = await this.httpClient.put(url, content, mergedHeaders);
-
-    // Parse metadata from response
-    return this.parseResourceMetadata(response.headers, resourceUri);
+    const response = await this.httpClient.put(
+      url,
+      content,
+      await this.buildHeaders('PUT', url, options.headers ?? {}, enforcedHeaders)
+    );
+    return this.parseResourceMetadata(response.headers, url);
   }
 
-  // ==========================================================================
-  // PATCH Operations
-  // ==========================================================================
-
-  /**
-   * Partially updates a resource (SPARQL Update)
-   */
   public async patch(
     resourceUri: ResourceUri,
     sparqlUpdate: string,
@@ -260,337 +197,233 @@ export class ResourceClient {
       ifMatch?: string | string[];
     } = {}
   ): Promise<ResourceMetadata> {
-    const {
-      contentType = 'application/sparql-update',
-      headers = {},
-      ifMatch,
-    } = options;
-
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Resolve URL
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('PATCH', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-      'Content-Type': contentType,
-      ...(ifMatch && { 'If-Match': this.formatEtag(ifMatch) }),
-    };
-
-    // Make request
-    const response = await this.httpClient.patch(url, sparqlUpdate, mergedHeaders);
-
-    // Parse metadata from response
-    return this.parseResourceMetadata(response.headers, resourceUri);
+    const url = this.resolveResourceUrl(resourceUri);
+    const response = await this.httpClient.patch(
+      url,
+      sparqlUpdate,
+      await this.buildHeaders('PATCH', url, options.headers ?? {}, {
+        'Content-Type': options.contentType ?? 'application/sparql-update',
+        ...(options.ifMatch !== undefined && {
+          'If-Match': this.formatEtags(options.ifMatch),
+        }),
+      })
+    );
+    return this.parseResourceMetadata(response.headers, url);
   }
 
-  // ==========================================================================
-  // DELETE Operations
-  // ==========================================================================
-
-  /**
-   * Deletes a resource
-   */
   public async delete(
     resourceUri: ResourceUri,
-    options: {
-      headers?: HttpHeaders;
-      ifMatch?: string | string[];
-    } = {}
+    options: { headers?: HttpHeaders; ifMatch?: string | string[] } = {}
   ): Promise<void> {
-    const {
-      headers = {},
-      ifMatch,
-    } = options;
-
-    // Validate resource URI
-    this.validateResourceUri(resourceUri);
-
-    // Resolve URL
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('DELETE', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-      ...(ifMatch && { 'If-Match': this.formatEtag(ifMatch) }),
-    };
-
-    // Make request
-    await this.httpClient.delete(url, mergedHeaders);
+    const url = this.resolveResourceUrl(resourceUri);
+    await this.httpClient.delete(
+      url,
+      await this.buildHeaders('DELETE', url, options.headers ?? {}, {
+        ...(options.ifMatch !== undefined && {
+          'If-Match': this.formatEtags(options.ifMatch),
+        }),
+      })
+    );
   }
 
-  // ==========================================================================
-  // Container Operations
-  // ==========================================================================
-
-  /**
-   * Lists resources in a container
-   */
   public async listContainer(
     containerUri: ContainerUri,
-    headers?: HttpHeaders,
+    headers: HttpHeaders = {},
     accept?: string
   ): Promise<ContainerListing> {
-    // Validate container URI
-    this.validateResourceUri(containerUri);
-
-    // Ensure container URI ends with slash
-    const normalizedContainerUri = containerUri.endsWith('/')
-      ? containerUri
-      : `${containerUri}/`;
-
-    // Resolve URL
-    const url = resolveUrl(
-      this.httpClient.getConfig().baseUrl,
-      normalizedContainerUri
+    const resolved = new URL(this.resolveResourceUrl(containerUri));
+    if (!resolved.pathname.endsWith('/')) resolved.pathname += '/';
+    const url = resolved.toString();
+    const response = await this.httpClient.get<string>(
+      url,
+      await this.buildHeaders('GET', url, headers, {
+        ...(accept !== undefined && { Accept: accept }),
+      })
     );
-
-    // Add authentication headers
-    const authHeaders = await this.getAuthHeaders('GET', url);
-
-    // Merge headers
-    const mergedHeaders = {
-      ...authHeaders,
-      ...headers,
-      ...(accept && { Accept: accept }),
-    };
-
-    // Make request
-    const response = await this.httpClient.get(url, mergedHeaders);
-
-    // Parse container listing
     const resources: ResourceUri[] = [];
     const containers: ContainerUri[] = [];
-
-    // Parse the response body to extract resource URIs
-    const body = response.body as string;
-    if (body) {
-      // Simple parsing for Turtle format
-      const lines = body.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('@')) continue;
-
-        // Match resource declarations
-        const match = trimmed.match(/<([^>]+)>\s+/);
-        if (match) {
-          const resourceUri = match[1];
-          // Check if it's a container (ends with /)
-          if (resourceUri.endsWith('/')) {
-            containers.push(resourceUri);
-          } else {
-            resources.push(resourceUri);
-          }
-        }
-      }
+    for (const match of response.body.matchAll(/<([^>]+)>\s+/g)) {
+      const candidate = match[1];
+      if (!candidate) continue;
+      const candidateUrl = new URL(candidate, url).toString();
+      if (candidateUrl.endsWith('/')) containers.push(candidateUrl);
+      else resources.push(candidateUrl);
     }
-
-    // Parse metadata
-    const metadata = this.parseResourceMetadata(response.headers, containerUri);
-
     return {
-      containerUri: normalizedContainerUri,
+      containerUri: url,
       resources,
       containers,
-      metadata,
+      metadata: this.parseResourceMetadata(response.headers, url),
     };
   }
 
-  // ==========================================================================
-  // Conditional Operations
-  // ==========================================================================
-
-  /**
-   * Creates a resource with If-None-Match precondition
-   */
   public async create(
     resourceUri: ResourceUri,
     content: string | Uint8Array,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    options: { contentType?: string; headers?: HttpHeaders } = {}
   ): Promise<ResourceMetadata> {
-    return this.put(resourceUri, content, {
-      ...options,
-      ifNoneMatch: '*',
-    });
+    return this.put(resourceUri, content, { ...options, ifNoneMatch: '*' });
   }
 
-  /**
-   * Updates a resource with If-Match precondition
-   */
   public async update(
     resourceUri: ResourceUri,
     content: string | Uint8Array,
     options: {
       contentType?: string;
       headers?: HttpHeaders;
-      ifMatch: string | string[];
+      ifMatch?: string | string[];
     } & ConditionalWriteOptions = {}
   ): Promise<ResourceMetadata> {
-    if (!options.ifMatch) {
-      // Get current ETag
-      const metadata = await this.head(resourceUri);
-      options.ifMatch = metadata.etag || '*';
+    const ifMatch = options.ifMatch ?? (await this.head(resourceUri)).etag;
+    if (!ifMatch) {
+      throw new ValidationError(
+        'Cannot safely update a resource without an ETag',
+        'ifMatch'
+      );
     }
-
-    return this.put(resourceUri, content, options);
+    return this.put(resourceUri, content, { ...options, ifMatch });
   }
 
-  // ==========================================================================
-  // Metadata Parsing
-  // ==========================================================================
+  private async buildHeaders(
+    method: string,
+    url: string,
+    callerHeaders: HttpHeaders,
+    enforcedHeaders: HttpHeaders = {}
+  ): Promise<HttpHeaders> {
+    const authHeaders = await this.getAuthHeaders(method, url);
+const protectedNames = new Set(
+  [...Object.keys(enforcedHeaders), ...Object.keys(authHeaders)].map(name =>
+    name.toLowerCase()
+  )
+);
+const sanitizedCallerHeaders = Object.fromEntries(
+  Object.entries(callerHeaders).filter(
+    ([name]) => !protectedNames.has(name.toLowerCase())
+  )
+);
+return {
+  ...sanitizedCallerHeaders,
+  ...enforcedHeaders,
+  ...authHeaders,
+};
+  }
 
-  /**
-   * Parses resource metadata from response headers
-   */
+  private async getAuthHeaders(method: string, url: string): Promise<HttpHeaders> {
+    if (!this.config.useDpop) return {};
+    if (!this.authManager) {
+      throw new ValidationError(
+        'DPoP is enabled but no AuthManager was configured',
+        'authManager'
+      );
+    }
+    const { accessToken, dpopProof } = await this.authManager.signRequest(
+      method,
+      url
+    );
+    return {
+      Authorization: `DPoP ${accessToken}`,
+      DPoP: dpopProof,
+    };
+  }
+
+  private resolveResourceUrl(resourceUri: ResourceUri | ContainerUri): string {
+    if (!resourceUri?.trim()) {
+      throw new ValidationError('Resource URI is required', 'resourceUri');
+    }
+    let resource: URL;
+    try {
+      resource = new URL(resourceUri, this.baseUrl);
+    } catch {
+      throw new ValidationError('Resource URI is invalid', 'resourceUri');
+    }
+    if (!['http:', 'https:'].includes(resource.protocol)) {
+      throw new ValidationError('Resource URI must use HTTP or HTTPS', 'resourceUri');
+    }
+    if (resource.username || resource.password) {
+      throw new ValidationError(
+        'Resource URI must not contain credentials',
+        'resourceUri'
+      );
+    }
+    if (resource.origin !== this.baseUrl.origin) {
+      throw new ValidationError(
+        'Resource URI is outside the configured origin',
+        'resourceUri'
+      );
+    }
+    const basePath = this.baseUrl.pathname.endsWith('/')
+      ? this.baseUrl.pathname
+      : `${this.baseUrl.pathname}/`;
+    const resourcePath = resource.pathname.endsWith('/')
+      ? resource.pathname
+      : `${resource.pathname}/`;
+    if (
+      basePath !== '/' &&
+      resourcePath !== basePath &&
+      !resourcePath.startsWith(basePath)
+    ) {
+      throw new ValidationError(
+        'Resource URI is outside the configured path scope',
+        'resourceUri'
+      );
+    }
+    resource.hash = '';
+    return resource.toString();
+  }
+
   private parseResourceMetadata(
     headers: HttpHeaders,
     resourceUri: ResourceUri
   ): ResourceMetadata {
-    const metadata: ResourceMetadata = {
-      uri: resourceUri,
-      exists: true,
-    };
-
-    // Content-Type
-    if (headers['content-type']) {
-      metadata.contentType = headers['content-type'];
+    const metadata: ResourceMetadata = { uri: resourceUri, exists: true };
+    const contentType = getHeader(headers, 'content-type');
+    const contentLength = getHeader(headers, 'content-length');
+    const etag = getHeader(headers, 'etag');
+    const lastModified = getHeader(headers, 'last-modified');
+    if (contentType !== undefined) metadata.contentType = contentType;
+    if (contentLength !== undefined) {
+      const parsed = Number.parseInt(contentLength, 10);
+      if (Number.isFinite(parsed)) metadata.contentLength = parsed;
     }
-
-    // Content-Length
-    if (headers['content-length']) {
-      metadata.contentLength = parseInt(headers['content-length'], 10);
+    if (etag !== undefined) metadata.etag = parseETag(etag);
+    if (lastModified !== undefined) {
+      metadata.lastModified = lastModified;
+      const timestamp = Date.parse(lastModified);
+      if (!Number.isNaN(timestamp)) metadata.lastModifiedAt = timestamp;
     }
-
-    // ETag
-    if (headers['etag']) {
-      metadata.etag = parseETag(headers['etag']);
-    }
-
-    // Last-Modified
-    if (headers['last-modified']) {
-      metadata.lastModified = headers['last-modified'];
-      metadata.lastModifiedAt = new Date(headers['last-modified']).getTime();
-    }
-
-    // Link headers
     metadata.links = parseLinkHeaders(headers);
-
     return metadata;
   }
 
-  // ==========================================================================
-  // Authentication Helpers
-  // ==========================================================================
-
-  /**
-   * Gets authentication headers for a request
-   */
-  private async getAuthHeaders(
-    method: string,
-    url: string
-  ): Promise<HttpHeaders> {
-    const headers: HttpHeaders = {};
-
-    // Add DPoP authentication if enabled
-    if (this.config.useDpop && this.authManager) {
-      try {
-        const { accessToken, dpopProof } = await this.authManager.signRequest(
-          method,
-          url
-        );
-        headers.Authorization = `DPoP ${accessToken}`;
-        headers.DPoP = dpopProof;
-      } catch (error) {
-        this.logger.warn('Failed to get DPoP authentication', { error });
-      }
+  private formatEtags(etags: string | string[]): string {
+    const values = Array.isArray(etags) ? etags : [etags];
+    if (values.length === 0) {
+      throw new ValidationError('At least one ETag is required', 'etag');
     }
-
-    return headers;
+    return values
+      .map(value => {
+        const trimmed = value.trim();
+        if (trimmed === '*') return '*';
+        if (/^(W\/)?".*"$/.test(trimmed)) return trimmed;
+        return `"${trimmed.replace(/"/g, '')}"`;
+      })
+      .join(', ');
   }
 
-  // ==========================================================================
-  // Validation Helpers
-  // ==========================================================================
-
-  /**
-   * Validates a resource URI for IDOR prevention
-   */
-  private validateResourceUri(resourceUri: ResourceUri): void {
-    // Basic URL validation
-    if (!resourceUri) {
-      throw new ValidationError('Resource URI is required', 'resourceUri');
-    }
-
-    // Check for path traversal
-    if (resourceUri.includes('..') || resourceUri.includes('//')) {
-      throw new ValidationError(
-        'Invalid resource URI: path traversal detected',
-        'resourceUri'
-      );
-    }
-
-    // Resolve URL and validate
-    const url = resolveUrl(this.httpClient.getConfig().baseUrl, resourceUri);
-    if (!validateUrl(url)) {
-      throw new ValidationError('Invalid resource URI', 'resourceUri');
-    }
-  }
-
-  // ==========================================================================
-  // ETag Formatting
-  // ==========================================================================
-
-  /**
-   * Formats ETag(s) for If-Match/If-None-Match headers
-   */
-  private formatEtag(etag: string | string[]): string {
-    if (Array.isArray(etag)) {
-      return etag.map(e => `"${e}"`).join(', ');
-    }
-    return `"${etag}"`;
-  }
-
-  // ==========================================================================
-  // Getters
-  // ==========================================================================
-
-  /**
-   * Gets the HTTP client
-   */
   public getHttpClient(): SolidSidecarHttpClient {
     return this.httpClient;
   }
 
-  /**
-   * Gets the auth manager
-   */
   public getAuthManager(): AuthManager | null {
     return this.authManager;
   }
 
-  /**
-   * Gets the configuration
-   */
-  public getConfig(): Required<ResourceClientConfig> {
-    return { ...this.config };
+  public getConfig(): ResolvedResourceClientConfig {
+    return {
+      ...this.config,
+      httpClientConfig: { ...this.config.httpClientConfig },
+    };
   }
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
 
 export default ResourceClient;
