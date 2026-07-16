@@ -1,160 +1,115 @@
 # solid-sidecar
 
-Go/Rust sidecar for Community Solid Server. The sidecar runs in front of CSS and provides a comprehensive Solid protocol implementation with shadow observation, production gateway capabilities, and advanced authorization infrastructure.
+Go/Rust sidecar for Community Solid Server (CSS), with Solid HTTP, authentication, authorization-shadow, SDK, storage, runtime, comparison, and transport foundations.
 
-**Current Version: v0.1.0-alpha** | **Phase: Post-Phase 40 - Versioned Product Development**
+> **Start with [`docs/canonical-status.md`](docs/canonical-status.md).** It is the authoritative reference for implementation state and production readiness. Historical phase reports and release notes do not override it.
 
-CSS remains the Solid protocol and access-control authority. The sidecar provides comprehensive Solid protocol support with configurable enforcement capabilities. The platform has evolved significantly beyond the original "CSS-front-door plus shadow shell" baseline.
+## Current release and development state
 
-## Version Badge
+- Release documentation present: `v0.1.0-alpha`
+- Matching published tag/release: not independently confirmed here; the alpha notes say the tag was still to be created
+- Current development track: `v0.2.0-beta` preparation
+- Current production status: **not production-ready**
+- Current authority: CSS
+- Default safe mode: CSS proxy/shadow; enforcement and native authority disabled
 
-```markdown
-[![Version](https://img.shields.io/badge/version-v0.1.0--alpha-blue.svg)](https://github.com/outlaw-dame/solid-sidecar/releases)
+The immediate target is:
+
+```text
+Native or PWA client
+  -> Solid HTTP / Solid-OIDC / DPoP
+  -> solid-sidecar
+  -> CSS remains the compatibility, authorization, and rollback authority
 ```
 
-## Current Implementation Overview
+The later native-authority target begins only after the CSS-proxy production candidate is complete.
 
-The project has advanced through **40 phases** of development with substantial implementation across all major Solid protocol areas:
+## What exists today
 
-### Core Infrastructure ✅
-- Go sidecar entrypoint with comprehensive configuration
-- Production-grade HTTP server with graceful shutdown
-- Reverse proxying to CSS with advanced request handling
-- Request IDs, structured logging, and distributed tracing
-- Request body limits and security headers
-- Per-IP fixed-window rate limiting
-- Comprehensive health and readiness endpoints
+Substantial implementation exists across:
 
-### Authentication & Identity ✅
-- DPoP-shaped preflight checks with key binding
-- Identity claim parsing with validation
-- Issuer discovery with bounded HTTP fetches
-- Issuer metadata cache with TTL controls
-- JWKS fetch and cache with copy-safe records
-- RS256 JWT signature verification
-- WebID URI validation with fragment preservation
-- AgentIdentity with WebID, DID, issuer, client ID binding
-- DID resolver with SSRF protection (disabled by default)
+- Go HTTP gateway, CSS reverse proxy, limits, request safety, health/readiness, rate limiting, and observability;
+- issuer discovery, JWKS/JWT verification, WebID identity, DPoP validation and key binding;
+- live WAC/ACP policy discovery, parsing, evaluation, decision caching, and shadow comparison;
+- enforcement and runtime gates that remain disabled or non-authoritative by default;
+- storage abstractions and local/S3/SSH-related backends, conditional operations, quotas, tombstones, backup/restore and integrity foundations;
+- CSS comparison, HTTP compatibility, container, CORS, compression, and conformance foundations;
+- TypeScript and Go SDK foundations;
+- TypeScript SDK clients for authentication, DPoP, resources, policies, WebID, RDF, synchronization, and notifications;
+- experimental DID, SAI, notification, indexing, multi-tenant, hybrid, and native-runtime work.
 
-### Authorization ✅
-- Authorization shadow contracts and middleware
-- Local shadow evaluator for WAC/ACP
-- External evaluator boundary with timeouts
-- Aggregate authz metrics and audit hashing
-- Policy metadata, fixture, artifact infrastructure
-- Enforcement gate scaffolding with canary controls
-- Policy decision caching with smart invalidation
+Code presence does not imply production readiness. See the component-by-component status and remaining evidence in [`docs/canonical-status.md`](docs/canonical-status.md).
 
-### Solid Protocol Support ✅
-- Full Solid Protocol 2023 specification support
-- Web Access Control (WAC) parser and evaluator
-- Access Control Policy (ACP) parser and evaluator
-- Solid Application Interoperability (SAI) service implementation
-- Content negotiation for RDF formats (Turtle, JSON-LD, N-Triples)
-- CORS compatibility with preflight support
-- Container and resource metadata handling
+## Critical safety boundaries
 
-### Storage & Runtime ✅
-- Storage abstraction layer with multiple backends
-- Local filesystem backend
-- S3 backend with AWS SDK v2 integration
-- SSH/SFTP backend with transport security
-- Runtime modes: css_proxy, hybrid, native
-- Fixture distribution infrastructure
+- CSS remains authoritative until the CSS-proxy production candidate is approved.
+- `did:solid` identity never grants resource access by itself.
+- SAI registrations and grants do not bypass WAC/ACP.
+- Parse or policy failures never become authoritative allow decisions.
+- Native and enforcement modes remain disabled by default.
+- Notifications are change hints and require resource revalidation.
+- Tokens, DPoP proofs, credentials, private keys, PKCE verifiers, private bodies, and raw policies must not be logged.
+- Unsafe client URLs must not become arbitrary outbound requests.
+- Automatic retries must not duplicate non-idempotent writes.
+- Private resource existence and identifiers must not leak through errors, logs, metrics, caches, notifications, or indexes.
 
-### Observability & Monitoring ✅
-- OpenTelemetry integration (traces, metrics, logs)
-- Distributed tracing across all components
-- Structured logging with privacy-safe redaction
-- Custom metrics for authorization decisions
-- Production dashboards and alert rules
-- Comprehensive health check suite
+## Current readiness priorities
 
-### Advanced Features ✅
-- Load testing infrastructure (Phase 17)
-- Migration tooling and CSS comparison harness
-- Multi-tenant platform scaffolding
-- Notification system with live updates
-- Indexing and query layer foundations
-- Compression support (Gzip, Zstd)
+1. Reconcile all status and readiness claims.
+2. Finish complete TypeScript SDK install/typecheck/lint/test/build/package gates.
+3. Add secure DPoP signer abstractions for browser and native clients.
+4. Verify and harden the Go SDK.
+5. Complete formal CSS/direct/proxy/hybrid/native conformance artifacts.
+6. Prove browser/PWA and existing Solid JavaScript client compatibility.
+7. Complete enforcement-default, isolation, formal security, storage-failure, and consolidated release gates.
+8. Build and validate a native reference client and staging soak profile.
 
-## Documentation & Roadmap
+See [`docs/native-pwa-production-readiness.md`](docs/native-pwa-production-readiness.md) for execution order and Definition of Done.
 
-**Start here for current status:**
+## Documentation
 
-- `docs/v1-product-roadmap.md` - **v1.0 Product Roadmap** (Versioned development transition)
-- `docs/release-notes-v0.1.0-alpha.md` - **v0.1.0 Alpha Release Notes**
-- `docs/repository-audit-2026-07-02.md` - **REQUIRED READING** Latest reconciliation of implementation vs documentation
-- `docs/implementation-status.md` - Current done/missing audit (being updated in Phase 40)
-- `docs/production-implementation-plan.md` - Production readiness roadmap
-- `docs/solid-runtime-roadmap-index.md` - Expanded roadmap documentation index
-- `docs/solid-runtime-phase-roadmap.md` - Go/Rust Solid runtime roadmap through Phase 17
-- `docs/solid-platform-maturity-phases.md` - Platform maturity phases 18-31
-- `docs/phase-39-continued-platform-maturity.md` - Continued maturity phases 39.1-39.5
-- `docs/phase-40-status-reconciliation.md` - **COMPLETED** Status reconciliation and cleanup (97% complete)
+### Authoritative current state
 
-**Protocol Specifications:**
+- [`docs/canonical-status.md`](docs/canonical-status.md) — canonical component and phase status
+- [`docs/native-pwa-production-readiness.md`](docs/native-pwa-production-readiness.md) — native/PWA production-readiness plan
 
-- `docs/did-solid-method.md` - Project-defined `did:solid` method design
-- `docs/compression-compatibility.md` - Gzip/Zstd compatibility rules
+### Historical and supporting material
 
-**Operations:**
+- [`docs/v1-product-roadmap.md`](docs/v1-product-roadmap.md)
+- [`docs/release-notes-v0.1.0-alpha.md`](docs/release-notes-v0.1.0-alpha.md)
+- [`docs/repository-audit-2026-07-02.md`](docs/repository-audit-2026-07-02.md)
+- [`docs/solid-runtime-roadmap-index.md`](docs/solid-runtime-roadmap-index.md)
+- [`docs/solid-runtime-phase-roadmap.md`](docs/solid-runtime-phase-roadmap.md)
+- [`docs/solid-platform-maturity-phases.md`](docs/solid-platform-maturity-phases.md)
+- [`docs/did-solid-method.md`](docs/did-solid-method.md)
+- [`docs/compression-compatibility.md`](docs/compression-compatibility.md)
 
-- `docs/runbook-local.md` - Local CSS-through-sidecar runbook
-- `docs/runbook-staging.md` - Staging rollout and rollback procedures
-- `docs/authn-identity.md` - Authentication identity/JWT status
-- `docs/ci.md` - CI and e2e verification
+### Operations
 
-## ⚠️ Important Notes
-
-**Production Readiness:** This is an **ALPHA release** (v0.1.0-alpha). While substantial implementation exists, several areas require additional hardening and verification before production use:
-
-- **Authorization Enforcement:** Enforcement gates exist but run in shadow mode; enforcement requires comparison thresholds and canary controls
-- **Native Runtime Mode:** Native mode is gated and requires explicit readiness verification and comparison evidence
-- **SAI Implementation:** SAI Application Interoperability service exists; **SAI Authorization Enforcement is explicitly deferred**
-- **Transport Security:** S3/SSH transports are implemented with security hardening; additional verification pending
-- **Known Limitations:** See `docs/release-notes-v0.1.0-alpha.md` for complete list
-
-**Safety Boundary:** CSS remains the compatibility oracle. Every enforcement or native-runtime replacement must have rollback controls. `did:solid` does not grant access by itself.
-
-**Alpha Status:** This release is suitable for development and testing but NOT for production deployment.
-
-## Recent Production-Readiness Work
-
-- Docker-backed CSS-through-sidecar e2e script
-- Explicit `scripts/verify.sh e2e` target
-- Failure-time CSS and sidecar log dumping for e2e runs
-- Local and staging runbooks
-- Issuer discovery and JWKS cache hardening
-- RS256 JWT verification against JWKS
-- Discovery-backed JWT verification restricted to explicitly allowed issuers
-- Enhanced Observability with OpenTelemetry integration
-- Comprehensive health endpoints and debugging tools
-- Solid protocol test suite integration
-- Community feedback incorporation mechanisms
+- [`docs/runbook-local.md`](docs/runbook-local.md)
+- [`docs/runbook-staging.md`](docs/runbook-staging.md)
+- [`docs/authn-identity.md`](docs/authn-identity.md)
+- [`docs/ci.md`](docs/ci.md)
 
 ## Project structure
 
-- `cmd/solid-sidecar/`: Go service entrypoint.
-- `internal/config/`: config defaults, file loading, env overrides, validation.
-- `internal/gateway/`: HTTP server, routing, graceful shutdown shell, evaluator selection, and metrics snapshot wiring.
-- `internal/proxy/`: CSS reverse proxy and body limits.
-- `internal/health/`: liveness and CSS readiness probe.
-- `internal/observability/`: structured logging and request IDs.
-- `internal/safety/`: request validation, security headers, optional Origin policy.
-- `internal/ratelimit/`: per-IP fixed-window rate limiter.
-- `internal/authn/`: OAuth/DPoP preflight, identity claim validation, issuer discovery, JWKS cache, and JWT verification scaffolding.
-- `internal/authz/`: contracts, validators, shadow evaluator, external evaluator wrapper, fixture metadata, artifact metadata, export metadata, release metadata, marker metadata, metrics, audit hashing, and non-enforcing middleware.
-- `contracts/`: JSON schemas and shared fixtures.
-- `rust/`: Rust workspace for deterministic internal kernels.
-- `docs/`: implementation status, architecture, phase notes, `did:solid`, compression compatibility, platform maturity phases, repository audit, and runbooks.
-- `scripts/`: local/CI verification scripts.
+- `cmd/solid-sidecar/` — Go service entrypoint
+- `internal/config/` — configuration
+- `internal/gateway/` — server, routing, evaluator and metrics wiring
+- `internal/proxy/` — CSS reverse proxy and body limits
+- `internal/authn/` — Solid-OIDC, JWT, WebID, DPoP, DID identity foundations
+- `internal/authz/` — policy discovery, parsing/evaluation, cache, comparison and gates
+- `internal/runtime/` — storage/runtime/native/notification/index foundations
+- `sdk/ts/` — TypeScript SDK
+- `sdk/go/` — Go SDK
+- `rust/` — deterministic Rust policy/parser kernels
+- `contracts/` — schemas and fixtures
+- `scripts/` — verification and operations scripts
+- `docs/` — architecture, status, roadmap, security and runbooks
 
 ## Run locally
 
-See `docs/runbook-local.md` for the full local runbook.
-
-Start CSS on port 3000, then run:
+Follow [`docs/runbook-local.md`](docs/runbook-local.md). With CSS on port 3000:
 
 ```sh
 go run ./cmd/solid-sidecar -config configs/sidecar.example.yaml
@@ -167,58 +122,31 @@ curl http://localhost:8443/healthz
 curl http://localhost:8443/readyz
 ```
 
-## Docker Compose
+Docker development profile:
 
 ```sh
 docker compose -f deploy/compose/docker-compose.dev.yml up --build
 ```
 
-## Test
-
-Run normal Go and Rust checks:
+## Verification
 
 ```sh
 bash scripts/verify.sh all
-```
-
-Run one side of the stack:
-
-```sh
 bash scripts/verify.sh go
 bash scripts/verify.sh rust
 ```
 
-Run the Docker-backed CSS-through-sidecar e2e harness explicitly:
+Run the Docker-backed CSS-through-sidecar harness explicitly:
 
 ```sh
 bash scripts/verify.sh e2e
 ```
 
-The e2e target is intentionally not part of `all` because it requires Docker and starts CSS.
+The e2e target is separate because it requires Docker and starts CSS.
 
----
+## Support and security
 
-## Version History
-
-| Version | Date | Status | Notes |
-|---------|------|--------|-------|
-| v0.1.0-alpha | 2026-07-07 | Current | First public alpha release (Phase 40 transition) |
-
-**Note**: This is the first versioned release. Previous development versions were tracked via phase completions (Phases 1-40).
-
----
-
-## Release Information
-
-- **Latest Release Notes**: See `docs/release-notes-v0.1.0-alpha.md`
-- **Product Roadmap**: See `docs/v1-product-roadmap.md`
-- **Phase Status**: See `docs/phase-40-status-reconciliation.md` (97% complete)
-
----
-
-## Support
-
-- **Documentation**: Comprehensive documentation in `docs/` directory
-- **Issues**: Report on GitHub Issues
-- **Discussions**: GitHub Discussions for non-bug questions
-- **Security**: See `docs/VULNERABILITY-DISCLOSURE.md`
+- Documentation: `docs/`
+- Bugs: GitHub Issues
+- Design discussion: GitHub Discussions
+- Security reporting: use the repository’s vulnerability-disclosure documentation; the production-readiness roadmap still requires consolidation into a canonical `SECURITY.md` workflow.
