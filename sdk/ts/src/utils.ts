@@ -1,414 +1,202 @@
-/**
- * Solid Sidecar TypeScript SDK - Utilities
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains utility functions for the SDK.
- */
+import { createHash, randomBytes } from 'node:crypto';
+import type { HttpStatusCode, RetryOptions, SolidSidecarLogger } from './types';
+import { DEFAULT_RETRY_OPTIONS } from './types';
 
-import { DEFAULT_RETRY_OPTIONS, HttpStatusCode, RetryOptions } from './types';
-
-// ============================================================================
-// URL Utilities
-// ============================================================================
-
-/**
- * Resolves a resource URI relative to a base URL
- * @param baseUrl - The base URL of the Solid Sidecar instance
- * @param resourceUri - The resource URI (can be absolute or relative)
- * @returns The resolved absolute URL
- */
 export function resolveUrl(baseUrl: string, resourceUri: string): string {
-  // If resourceUri is already an absolute URL, return it
-  if (/^https?:\/\//i.test(resourceUri)) {
-    return resourceUri;
-  }
-
-  // Remove trailing slash from base URL
-  const base = baseUrl.replace(/\/+$/, '');
-
-  // If resourceUri starts with a slash, concatenate directly
-  if (resourceUri.startsWith('/')) {
-    return `${base}${resourceUri}`;
-  }
-
-  // Otherwise, add a slash between
-  return `${base}/${resourceUri}`;
-}
-
-/**
- * Normalizes a URL by removing query parameters and fragments
- * @param url - The URL to normalize
- * @returns The normalized URL (without query or fragment)
- */
-export function normalizeUrl(url: string): string {
-  return url.split('?')[0].split('#')[0];
-}
-
-/**
- * Validates a URL to prevent SSRF attacks
- * @param url - The URL to validate
- * @param allowedHosts - Optional list of allowed hosts
- * @returns true if the URL is valid and safe
- */
-export function validateUrl(url: string, allowedHosts?: string[]): boolean {
+  if (!resourceUri?.trim()) throw new TypeError('resourceUri is required');
   try {
-    // Basic URL validation
-    if (!/^https?:\/\/[a-zA-Z0-9.-]+(:[0-9]+)?(\/[^\s]*)?$/i.test(url)) {
-      return false;
-    }
+    if (/^https?:\/\//i.test(resourceUri)) return new URL(resourceUri).toString();
+    if (!baseUrl?.trim()) throw new TypeError('baseUrl is required for relative URLs');
+    return new URL(resourceUri, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+  } catch (error) {
+    throw new TypeError(`Invalid URL: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
+export function normalizeUrl(url: string): string {
+  const parsed = new URL(url);
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
+}
+
+function isPrivateHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^169\.254\./.test(host) || /^192\.168\./.test(host)) return true;
+  const match = host.match(/^172\.(\d{1,3})\./);
+  if (match) {
+    const second = Number(match[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+}
+
+export function validateUrl(url: string, allowedHosts: string[] = []): boolean {
+  try {
     const parsed = new URL(url);
-
-    // Only allow http and https schemes
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return false;
-    }
-
-    // Check for credentials in URL (not allowed)
-    if (parsed.username || parsed.password) {
-      return false;
-    }
-
-    // If allowed hosts are specified, check against them
-    if (allowedHosts && allowedHosts.length > 0) {
-      const host = parsed.hostname.toLowerCase();
-      if (!allowedHosts.some(h => h.toLowerCase() === host)) {
-        return false;
-      }
-    }
-
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    if (parsed.username || parsed.password) return false;
+    if (!parsed.hostname || /[\s\0]/.test(url)) return false;
+    const normalizedAllowed = allowedHosts.map(host => host.trim().toLowerCase()).filter(Boolean);
+    if (normalizedAllowed.length > 0 && !normalizedAllowed.includes(parsed.hostname.toLowerCase())) return false;
+    if (normalizedAllowed.length === 0 && isPrivateHostname(parsed.hostname)) return false;
     return true;
   } catch {
     return false;
   }
 }
 
-/**
- * Checks if a URL is within the same origin as the base URL
- * @param baseUrl - The base URL
- * @param url - The URL to check
- * @returns true if the URLs share the same origin
- */
 export function isSameOrigin(baseUrl: string, url: string): boolean {
   try {
-    const base = new URL(baseUrl);
-    const target = new URL(url);
-    
-    return (
-      base.protocol === target.protocol &&
-      base.hostname === target.hostname &&
-      base.port === target.port
-    );
+    return new URL(baseUrl).origin === new URL(url).origin;
   } catch {
     return false;
   }
 }
 
-// ============================================================================
-// Base64 URL Encoding
-// ============================================================================
-
-/**
- * Encodes a string or buffer to Base64Url without padding
- * @param input - The string or buffer to encode
- * @returns The Base64Url encoded string
- */
-export function base64UrlEncode(input: string | Uint8Array | Buffer): string {
-  const str = typeof input === 'string' ? input : Buffer.from(input).toString('utf8');
-  const base64 = Buffer.from(str, 'utf8').toString('base64');
-  return base64
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+function toBytes(input: string | Uint8Array | Buffer | ArrayBuffer): Uint8Array {
+  if (typeof input === 'string') return new TextEncoder().encode(input);
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
 }
 
-/**
- * Decodes a Base64Url string
- * @param input - The Base64Url string to decode
- * @returns The decoded string
- */
+export function base64UrlEncode(input: string | Uint8Array | Buffer | ArrayBuffer): string {
+  return Buffer.from(toBytes(input)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
 export function base64UrlDecode(input: string): string {
-  // Add padding if needed
-  const base64 = input
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  
-  const padLength = (4 - (base64.length % 4)) % 4;
-  const padded = base64 + '='.repeat(padLength);
-  
+  if (!/^[A-Za-z0-9_-]*$/.test(input)) throw new TypeError('Invalid Base64URL input');
+  const base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
   return Buffer.from(padded, 'base64').toString('utf8');
 }
 
-// ============================================================================
-// SHA-256 Hashing
-// ============================================================================
-
-/**
- * Computes SHA-256 hash of a string and returns as Base64Url
- * @param input - The string to hash
- * @returns The SHA-256 hash as Base64Url string
- */
 export async function sha256Base64Url(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return base64UrlEncode(hashBuffer);
+  const data = new TextEncoder().encode(input);
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) return base64UrlEncode(await subtle.digest('SHA-256', data));
+  return sha256Base64UrlSync(input);
 }
 
-/**
- * Computes SHA-256 hash of a string synchronously (Node.js only)
- * @param input - The string to hash
- * @returns The SHA-256 hash as Base64Url string
- */
 export function sha256Base64UrlSync(input: string): string {
-  const hash = crypto
-    .createHash('sha256')
-    .update(input, 'utf8')
-    .digest();
-  return base64UrlEncode(hash);
+  return base64UrlEncode(createHash('sha256').update(input, 'utf8').digest());
 }
 
-// ============================================================================
-// UUID Generation
-// ============================================================================
-
-/**
- * Generates a cryptographically secure UUID v4
- * @returns A UUID v4 string
- */
 export function generateUuid(): string {
-  // Use crypto.randomUUID if available
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-
-  // Fallback for older environments
-  const bytes = new Uint8Array(16);
-  
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    // Node.js fallback
-    require('crypto').randomBytes(16).copy(bytes);
-  }
-
-  // Set version (4) in the 7th byte (bits 6-7)
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  
-  // Set variant (RFC 4122) in the 9th byte (bits 6-7)
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  // Convert to hex string
-  const hex = Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}`;
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(randomBytes(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-// ============================================================================
-// Exponential Backoff
-// ============================================================================
-
-/**
- * Sleeps for a specified number of milliseconds
- * @param ms - Milliseconds to sleep
- * @returns Promise that resolves after the delay
- */
 export function sleep(ms: number): Promise<void> {
+  if (!Number.isFinite(ms) || ms < 0) return Promise.reject(new RangeError('ms must be a non-negative finite number'));
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Calculates the delay for exponential backoff with jitter
- * @param retryCount - The current retry count (0-indexed)
- * @param options - Retry options
- * @returns The delay in milliseconds
- */
-export function calculateBackoffDelay(
-  retryCount: number,
-  options: Partial<RetryOptions> = {}
-): number {
-  const {
-    baseDelay = DEFAULT_RETRY_OPTIONS.baseDelay,
-    maxDelay = DEFAULT_RETRY_OPTIONS.maxDelay,
-    jitterFactor = DEFAULT_RETRY_OPTIONS.jitterFactor,
-  } = options;
-
-  // Calculate exponential delay
-  const delay = baseDelay * Math.pow(2, retryCount);
-
-  // Apply max delay cap
-  const cappedDelay = Math.min(delay, maxDelay);
-
-  // Apply jitter (random value between 0 and jitterFactor * cappedDelay)
-  const jitter = cappedDelay * jitterFactor * Math.random();
-
-  return Math.floor(cappedDelay + jitter);
+export function calculateBackoffDelay(retryCount: number, options: Partial<RetryOptions> = {}): number {
+  if (!Number.isInteger(retryCount) || retryCount < 0) throw new RangeError('retryCount must be a non-negative integer');
+  const baseDelay = options.baseDelay ?? DEFAULT_RETRY_OPTIONS.baseDelay;
+  const maxDelay = options.maxDelay ?? DEFAULT_RETRY_OPTIONS.maxDelay;
+  const jitterFactor = options.jitterFactor ?? DEFAULT_RETRY_OPTIONS.jitterFactor;
+  if (!Number.isFinite(baseDelay) || baseDelay < 0) throw new RangeError('baseDelay must be non-negative');
+  if (!Number.isFinite(maxDelay) || maxDelay < baseDelay) throw new RangeError('maxDelay must be >= baseDelay');
+  if (!Number.isFinite(jitterFactor) || jitterFactor < 0 || jitterFactor > 1) throw new RangeError('jitterFactor must be between 0 and 1');
+  const capped = Math.min(maxDelay, baseDelay * 2 ** Math.min(retryCount, 52));
+  return Math.min(maxDelay, Math.floor(capped + capped * jitterFactor * Math.random()));
 }
 
-/**
- * Checks if a status code is retryable
- * @param statusCode - The HTTP status code
- * @param options - Retry options
- * @returns true if the status code should be retried
- */
-export function isRetryableStatus(
-  statusCode: HttpStatusCode,
-  options: Partial<RetryOptions> = {}
-): boolean {
-  const {
-    retryOn4xx = DEFAULT_RETRY_OPTIONS.retryOn4xx,
-    retryableStatuses = DEFAULT_RETRY_OPTIONS.retryableStatuses,
-  } = options;
-
-  // 5xx errors are generally retryable
-  if (statusCode >= 500 && statusCode < 600) {
-    return true;
-  }
-
-  // 429 Too Many Requests is always retryable
-  if (statusCode === 429) {
-    return true;
-  }
-
-  // Check if 4xx errors should be retried
-  if (retryOn4xx && statusCode >= 400 && statusCode < 500) {
-    return true;
-  }
-
-  // Check against specific retryable statuses
-  if (retryableStatuses && retryableStatuses.includes(statusCode)) {
-    return true;
-  }
-
-  return false;
+export function isRetryableStatus(statusCode: HttpStatusCode, options: Partial<RetryOptions> = {}): boolean {
+  if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) return false;
+  const retryOn4xx = options.retryOn4xx ?? DEFAULT_RETRY_OPTIONS.retryOn4xx;
+  const retryableStatuses = options.retryableStatuses ?? DEFAULT_RETRY_OPTIONS.retryableStatuses;
+  if (retryableStatuses.includes(statusCode)) return true;
+  if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) return true;
+  return retryOn4xx && statusCode >= 400 && statusCode < 500;
 }
 
-// ============================================================================
-// Error Handling
-// ============================================================================
+function safeString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.slice(0, 4096) : fallback;
+}
 
-/**
- * Extracts error details from a response
- * @param response - The HTTP response
- * @param defaultMessage - Default error message
- * @returns Parsed error details
- */
 export async function parseErrorResponse(
   response: Response,
-  defaultMessage: string = 'Request failed'
+  defaultMessage = 'Request failed'
 ): Promise<{ message: string; code?: string; details?: unknown; statusCode: number }> {
   const statusCode = response.status;
-  
   try {
-    const contentType = response.headers.get('content-type');
-    
-    if (contentType && contentType.includes('application/json')) {
-      const body = await response.json();
-      return {
-        message: body.message || body.error || defaultMessage,
-        code: body.code,
-        details: body.details || body,
-        statusCode,
-      };
-    } else {
-      const text = await response.text();
-      return {
-        message: text || defaultMessage,
-        statusCode,
-      };
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType.includes('json')) {
+      const body: unknown = await response.json();
+      if (body && typeof body === 'object' && !Array.isArray(body)) {
+        const record = body as Record<string, unknown>;
+        return {
+          message: safeString(record.message ?? record.error, defaultMessage),
+          ...(typeof record.code === 'string' && { code: record.code.slice(0, 256) }),
+          ...(record.details !== undefined && { details: record.details }),
+          statusCode,
+        };
+      }
     }
+    const text = await response.text();
+    return { message: safeString(text, defaultMessage), statusCode };
   } catch {
-    return {
-      message: defaultMessage,
-      statusCode,
-    };
+    return { message: defaultMessage, statusCode };
   }
 }
 
-// ============================================================================
-// IDOR Prevention
-// ============================================================================
-
-/**
- * Validates that a resource URI is within the allowed scope
- * @param resourceUri - The resource URI to validate
- * @param allowedScopes - List of allowed scope patterns (e.g., 'https://example.com/', '/container/')
- * @returns true if the URI is within an allowed scope
- */
-export function validateResourceScope(
-  resourceUri: string,
-  allowedScopes: string[]
-): boolean {
-  // Normalize the resource URI
-  const normalizedUri = resourceUri.endsWith('/') 
-    ? resourceUri 
-    : `${resourceUri}/`;
-
-  for (const scope of allowedScopes) {
-    const normalizedScope = scope.endsWith('/') 
-      ? scope 
-      : `${scope}/`;
-    
-    // Check if the URI starts with the scope
-    if (normalizedUri.startsWith(normalizedScope)) {
-      return true;
-    }
-    
-    // Check if the URI exactly matches the scope
-    if (normalizedUri === normalizedScope) {
-      return true;
-    }
+function canonicalScope(scope: string, base?: URL): URL | null {
+  try {
+    const parsed = base ? new URL(scope, base) : new URL(scope);
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed;
+  } catch {
+    return null;
   }
-
-  return false;
 }
 
-/**
- * Extracts the container from a resource URI
- * @param resourceUri - The resource URI
- * @returns The container URI
- */
+export function validateResourceScope(resourceUri: string, allowedScopes: string[]): boolean {
+  if (allowedScopes.length === 0) return false;
+  const resource = canonicalScope(resourceUri);
+  if (!resource) return false;
+  return allowedScopes.some(scope => {
+    const allowed = canonicalScope(scope, resource);
+    if (!allowed || resource.origin !== allowed.origin) return false;
+    const path = allowed.pathname.endsWith('/') ? allowed.pathname : `${allowed.pathname}/`;
+    const resourcePath = resource.pathname.endsWith('/') ? resource.pathname : `${resource.pathname}/`;
+    return resourcePath === path || resourcePath.startsWith(path);
+  });
+}
+
 export function getContainerUri(resourceUri: string): string {
-  // Remove trailing slash
-  const trimmed = resourceUri.replace(/\/+$/, '');
-  
-  // Find the last slash
-  const lastSlash = trimmed.lastIndexOf('/');
-  
-  if (lastSlash === -1) {
-    return '/';
+  try {
+    const url = new URL(resourceUri);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    url.pathname = pathname.slice(0, pathname.lastIndexOf('/') + 1) || '/';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    const trimmed = resourceUri.replace(/\/+$/, '');
+    const index = trimmed.lastIndexOf('/');
+    return index < 0 ? '/' : trimmed.slice(0, index + 1) || '/';
   }
-  
-  // Extract container path
-  const containerPath = trimmed.substring(0, lastSlash + 1);
-  
-  return containerPath || '/';
 }
 
-/**
- * Extracts the resource name from a resource URI
- * @param resourceUri - The resource URI
- * @returns The resource name (filename)
- */
 export function getResourceName(resourceUri: string): string {
-  const trimmed = resourceUri.replace(/\/+$/, '');
-  const lastSlash = trimmed.lastIndexOf('/');
-  return lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
+  try {
+    const path = new URL(resourceUri).pathname.replace(/\/+$/, '');
+    return decodeURIComponent(path.slice(path.lastIndexOf('/') + 1));
+  } catch {
+    const trimmed = resourceUri.replace(/\/+$/, '');
+    return trimmed.slice(trimmed.lastIndexOf('/') + 1);
+  }
 }
 
-// ============================================================================
-// Content-Type Utilities
-// ============================================================================
-
-/**
- * RDF content types
- */
 export const RDF_CONTENT_TYPES = {
   TURTLE: 'text/turtle',
   JSON_LD: 'application/ld+json',
@@ -416,190 +204,65 @@ export const RDF_CONTENT_TYPES = {
   RDF_XML: 'application/rdf+xml',
 } as const;
 
-/**
- * Non-RDF content types
- */
 export const NON_RDF_CONTENT_TYPES = {
   PLAIN: 'text/plain',
   OCTET_STREAM: 'application/octet-stream',
   JSON: 'application/json',
 } as const;
 
-/**
- * All supported content types
- */
-export const CONTENT_TYPES = {
-  ...RDF_CONTENT_TYPES,
-  ...NON_RDF_CONTENT_TYPES,
-} as const;
+export const CONTENT_TYPES = { ...RDF_CONTENT_TYPES, ...NON_RDF_CONTENT_TYPES } as const;
 
-/**
- * Checks if a content type is RDF
- * @param contentType - The content type to check
- * @returns true if the content type is an RDF format
- */
 export function isRdfContentType(contentType: string): boolean {
-  const normalized = contentType.toLowerCase();
-  return Object.values(RDF_CONTENT_TYPES).some(
-    ct => normalized === ct.toLowerCase()
-  );
+  const normalized = contentType.split(';', 1)[0]?.trim().toLowerCase();
+  return Object.values(RDF_CONTENT_TYPES).some(value => value === normalized);
 }
 
-/**
- * Gets the preferred content type for RDF operations
- * @returns The preferred RDF content type
- */
 export function getPreferredRdfContentType(): string {
   return RDF_CONTENT_TYPES.TURTLE;
 }
 
-// ============================================================================
-// Link Header Parsing
-// ============================================================================
-
-/**
- * Link relation types
- */
 export const LINK_RELATIONS = {
-  TYPE: 'type',
-  ACL: 'acl',
-  META: 'meta',
-  ITEMS: 'items',
-  CONTAINS: 'contains',
+  TYPE: 'type', ACL: 'acl', META: 'meta', ITEMS: 'items', CONTAINS: 'contains',
 } as const;
 
-/**
- * Parses Link headers from response
- * @param headers - The response headers
- * @returns Array of link objects
- */
-export function parseLinkHeaders(headers: Headers | Record<string, string>): Array<{
-  uri: string;
-  rel: string;
-}> {
+export function parseLinkHeaders(headers: Headers | Record<string, string>): Array<{ uri: string; rel: string }> {
+  const header = headers instanceof Headers ? headers.get('link') ?? '' : headers.link ?? headers.Link ?? '';
   const links: Array<{ uri: string; rel: string }> = [];
-  
-  // Get Link header
-  let linkHeader = '';
-  
-  if (headers instanceof Headers) {
-    linkHeader = headers.get('link') || '';
-  } else {
-    linkHeader = headers.link || headers.Link || '';
+  for (const part of header.split(/,(?=\s*<)/)) {
+    const uri = part.match(/<([^>]+)>/)?.[1];
+    const rel = part.match(/(?:^|;)\s*rel\s*=\s*"?([^";]+)"?/i)?.[1];
+    if (uri && rel) links.push({ uri, rel: rel.trim() });
   }
-  
-  if (!linkHeader) {
-    return links;
-  }
-  
-  // Parse Link header
-  // Format: <uri>; rel="type", <uri>; rel="type"
-  const linkParts = linkHeader.split(',').map(p => p.trim());
-  
-  for (const part of linkParts) {
-    if (!part) continue;
-    
-    const uriMatch = part.match(/<([^>]+)>/);
-    const relMatch = part.match(/rel="([^"]+)"/i);
-    
-    if (uriMatch && relMatch) {
-      links.push({
-        uri: uriMatch[1],
-        rel: relMatch[1],
-      });
-    }
-  }
-  
   return links;
 }
 
-// ============================================================================
-// ETag Utilities
-// ============================================================================
-
-/**
- * Parses ETag header value
- * @param etag - The ETag header value
- * @returns The ETag value without weak indicator
- */
 export function parseETag(etag: string): string {
-  if (!etag) return '';
-  
-  // Remove weak indicator (W/)
-  return etag.replace(/^W\//, '');
+  return etag.trim().replace(/^W\//i, '');
 }
 
-/**
- * Checks if two ETags match
- * @param etag1 - First ETag
- * @param etag2 - Second ETag
- * @returns true if the ETags match
- */
 export function etagsMatch(etag1: string, etag2: string): boolean {
-  const normalized1 = parseETag(etag1);
-  const normalized2 = parseETag(etag2);
-  
-  // Weak comparison: strip quotes and compare
-  const clean1 = normalized1.replace(/^["']|["']$/g, '');
-  const clean2 = normalized2.replace(/^["']|["']$/g, '');
-  
-  return clean1 === clean2;
+  const clean = (value: string) => parseETag(value).replace(/^"|"$/g, '');
+  return clean(etag1) === clean(etag2);
 }
 
-// ============================================================================
-// Environment Detection
-// ============================================================================
-
-/**
- * Detects the runtime environment
- */
-export const environment = ((): {
-  isNode: boolean;
-  isBrowser: boolean;
-  isDeno: boolean;
-  isBun: boolean;
-} => {
-  const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
-  const isDeno = typeof Deno !== 'undefined';
-  const isBun = typeof Bun !== 'undefined';
-  const isBrowser = !isNode && !isDeno && !isBun && typeof window !== 'undefined';
-  
-  return {
-    isNode,
-    isBrowser,
-    isDeno,
-    isBun,
-  };
-})();
-
-// ============================================================================
-// Default Logger
-// ============================================================================
-
-/**
- * Default console-based logger
- */
-export const defaultLogger: import('./types').SolidSidecarLogger = {
-  debug: (message: string, ...args: unknown[]) => {
-    console.debug(`[SOLID-SIDECAR:DEBUG] ${message}`, ...args);
-  },
-  info: (message: string, ...args: unknown[]) => {
-    console.info(`[SOLID-SIDECAR:INFO] ${message}`, ...args);
-  },
-  warn: (message: string, ...args: unknown[]) => {
-    console.warn(`[SOLID-SIDECAR:WARN] ${message}`, ...args);
-  },
-  error: (message: string, ...args: unknown[]) => {
-    console.error(`[SOLID-SIDECAR:ERROR] ${message}`, ...args);
-  },
+const runtime = globalThis as typeof globalThis & { Deno?: unknown; Bun?: unknown };
+export const environment = {
+  isNode: typeof process !== 'undefined' && Boolean(process.versions?.node),
+  isBrowser: typeof window !== 'undefined' && typeof document !== 'undefined',
+  isDeno: runtime.Deno !== undefined,
+  isBun: runtime.Bun !== undefined,
 };
 
-/**
- * Null logger (no output)
- */
-export const nullLogger: import('./types').SolidSidecarLogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
+export const defaultLogger: SolidSidecarLogger = {
+  debug: (message, ...args) => console.debug(`[SOLID-SIDECAR:DEBUG] ${message}`, ...args),
+  info: (message, ...args) => console.info(`[SOLID-SIDECAR:INFO] ${message}`, ...args),
+  warn: (message, ...args) => console.warn(`[SOLID-SIDECAR:WARN] ${message}`, ...args),
+  error: (message, ...args) => console.error(`[SOLID-SIDECAR:ERROR] ${message}`, ...args),
+};
+
+export const nullLogger: SolidSidecarLogger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
 };
