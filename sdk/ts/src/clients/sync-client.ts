@@ -1,243 +1,120 @@
 /**
  * Solid Sidecar TypeScript SDK - Sync/Reconciliation Client
- * Phase: 27 - SDK/Client Compatibility Layer
- * Version: v1.0.0
- * Created: 2026-07-07
- * Author: Mistral Vibe
- * License: MIT
- *
- * This file contains the SyncClient for offline-first operations with
- * conflict detection, ETag handling, and reconciliation.
- *
- * Security Level: CRITICAL - Handles data synchronization and conflict resolution
+ * Fail-closed queueing, synchronization, and reconciliation.
  */
 
-import type {
-  ResourceUri,
-  Resource,
-  ResourceMetadata,
-  HttpHeaders,
-  ConditionalWriteOptions,
-  SolidSidecarLogger,
-} from '../types';
-import {
-  ConflictError,
-  PreconditionFailedError,
-  ValidationError,
-} from '../types';
+import type { HttpHeaders, ResourceUri, SolidSidecarLogger } from '../types';
+import { ConflictError, PreconditionFailedError, ValidationError } from '../types';
+import { nullLogger, sleep } from '../utils';
 import { ResourceClient, type ResourceClientConfig } from './resource-client';
-import {
-  calculateBackoffDelay,
-  sleep,
-  DEFAULT_RETRY_OPTIONS,
-} from '../utils';
 
-// ============================================================================
-// Sync Types
-// ============================================================================
-
-/** Sync status for a resource */
 export type SyncStatus = 'synced' | 'pending' | 'conflict' | 'error' | 'deleted';
-
-/** Change type */
 export type ChangeType = 'create' | 'update' | 'delete' | 'patch';
 
-/** Local change record */
 export interface LocalChange {
-  /** Unique change identifier */
   id: string;
-  
-  /** Resource URI */
   resourceUri: ResourceUri;
-  
-  /** Change type */
   type: ChangeType;
-  
-  /** Content for create/update */
   content?: string;
-  
-  /** Content type */
   contentType?: string;
-  
-  /** ETag of the local version */
   localEtag?: string;
-  
-  /** ETag of the remote version at time of change */
   baseEtag?: string;
-  
-  /** Timestamp when change was made */
   timestamp: number;
-  
-  /** Number of retry attempts */
   retryCount: number;
-  
-  /** Last error message */
   lastError?: string;
-  
-  /** Custom headers */
   headers?: HttpHeaders;
-  
-  /** If-Match header value for conditional writes */
   ifMatch?: string | string[];
-  
-  /** If-None-Match header value */
   ifNoneMatch?: string | string[];
 }
 
-/** Remote change information */
 export interface RemoteChange {
-  /** Resource URI */
   resourceUri: ResourceUri;
-  
-  /** Current ETag on server */
   etag: string;
-  
-  /** Last modified timestamp */
   lastModified?: string;
-  
-  /** Content length */
   contentLength?: number;
-  
-  /** Whether the resource exists */
   exists: boolean;
 }
 
-/** Sync result for a single resource */
 export interface SyncResult {
-  /** Resource URI */
   resourceUri: ResourceUri;
-  
-  /** Sync status */
   status: SyncStatus;
-  
-  /** Local change ID if applicable */
   localChangeId?: string;
-  
-  /** New ETag after sync */
   newEtag?: string;
-  
-  /** Server's last modified timestamp */
   serverLastModified?: string;
-  
-  /** Number of retries performed */
   retryCount: number;
-  
-  /** Error message if status is 'error' or 'conflict' */
   error?: string;
-  
-  /** Conflict resolution strategy used */
   resolutionStrategy?: ConflictResolutionStrategy;
-  
-  /** The winning content (for conflicts resolved to client or server) */
   winningContent?: string;
-  
-  /** Whether a retry is suggested */
   suggestRetry: boolean;
 }
 
-/** Overall sync summary */
 export interface SyncSummary {
-  /** Total number of resources synced */
   total: number;
-  
-  /** Number of successful syncs */
   synced: number;
-  
-  /** Number of conflicts */
   conflicts: number;
-  
-  /** Number of errors */
   errors: number;
-  
-  /** Number of pending changes */
   pending: number;
-  
-  /** Number of deleted resources */
   deleted: number;
-  
-  /** Individual results */
   results: SyncResult[];
-  
-  /** Start timestamp */
   startedAt: number;
-  
-  /** End timestamp */
   endedAt: number;
-  
-  /** Total duration in milliseconds */
   duration: number;
 }
 
-/** Conflict resolution strategy */
-export type ConflictResolutionStrategy = 
+export type ConflictResolutionStrategy =
   | 'server-wins'
   | 'client-wins'
   | 'manual'
   | 'merge'
   | 'latest-wins';
 
-/** Sync configuration */
 export interface SyncConfig {
-  /** Conflict resolution strategy (default: 'manual') */
   conflictResolution?: ConflictResolutionStrategy;
-  
-  /** Maximum number of retries per resource (default: 3) */
   maxRetries?: number;
-  
-  /** Base delay for exponential backoff in milliseconds (default: 1000) */
   baseRetryDelay?: number;
-  
-  /** Maximum delay for exponential backoff in milliseconds (default: 30000) */
   maxRetryDelay?: number;
-  
-  /** Batch size for sync operations (default: 10) */
   batchSize?: number;
-  
-  /** Whether to validate ETags before sync (default: true) */
   validateETags?: boolean;
-  
-  /** Whether to auto-resolve conflicts (default: false) */
   autoResolveConflicts?: boolean;
-  
-  /** Custom conflict resolver function */
   conflictResolver?: (
     localChange: LocalChange,
     remoteChange: RemoteChange
   ) => Promise<ConflictResolutionStrategy | string>;
 }
 
-/** Sync progress callback */
 export type SyncProgressCallback = (
   current: number,
   total: number,
   result: SyncResult
 ) => void;
 
-/** Conflict callback */
 export type ConflictCallback = (
   localChange: LocalChange,
   remoteChange: RemoteChange
 ) => Promise<ConflictResolutionStrategy | string | void>;
 
-// ============================================================================
-// Sync Client Configuration
-// ============================================================================
-
-/**
- * Configuration for SyncClient
- */
 export interface SyncClientConfig extends ResourceClientConfig {
-  /** Sync configuration */
   syncConfig?: SyncConfig;
-  
-  /** Custom logger */
   logger?: SolidSidecarLogger;
 }
 
-/**
- * Default SyncClient configuration
- */
-export const DEFAULT_SYNC_CLIENT_CONFIG: Partial<SyncClientConfig> = {
+interface ResolvedSyncConfig {
+  conflictResolution: ConflictResolutionStrategy;
+  maxRetries: number;
+  baseRetryDelay: number;
+  maxRetryDelay: number;
+  batchSize: number;
+  validateETags: boolean;
+  autoResolveConflicts: boolean;
+  conflictResolver?: SyncConfig['conflictResolver'];
+}
+
+interface ResolvedSyncClientConfig {
+  syncConfig: ResolvedSyncConfig;
+  logger: SolidSidecarLogger;
+}
+
+export const DEFAULT_SYNC_CLIENT_CONFIG = {
   syncConfig: {
     conflictResolution: 'manual',
     maxRetries: 3,
@@ -247,264 +124,220 @@ export const DEFAULT_SYNC_CLIENT_CONFIG: Partial<SyncClientConfig> = {
     validateETags: true,
     autoResolveConflicts: false,
   },
-};
+  logger: nullLogger,
+} satisfies ResolvedSyncClientConfig;
 
-// ============================================================================
-// Sync Client
-// ============================================================================
+function cloneChange(change: LocalChange): LocalChange {
+  return {
+    ...change,
+    ...(change.headers !== undefined && { headers: { ...change.headers } }),
+    ...(Array.isArray(change.ifMatch) && { ifMatch: [...change.ifMatch] }),
+    ...(Array.isArray(change.ifNoneMatch) && {
+      ifNoneMatch: [...change.ifNoneMatch],
+    }),
+  };
+}
 
-/**
- * SyncClient for Solid Sidecar
- * 
- * Features:
- * - Offline-first sync with local change queue
- * - ETag-based conflict detection
- * - Exponential backoff and retry logic
- * - Configurable conflict resolution strategies
- * - Batch sync operations
- * - Progress callbacks
- * - Self-healing with retry and reconciliation
- * - IDOR prevention
- * - SSRF prevention
- */
+function validateInteger(name: string, value: number, minimum: number): number {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new ValidationError(`${name} must be an integer >= ${minimum}`, name);
+  }
+  return value;
+}
+
+function isStrategy(value: string): value is ConflictResolutionStrategy {
+  return (
+    value === 'server-wins' ||
+    value === 'client-wins' ||
+    value === 'manual' ||
+    value === 'merge' ||
+    value === 'latest-wins'
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class SyncClient {
-  private readonly config: Required<SyncClientConfig>;
+  private readonly config: ResolvedSyncClientConfig;
   private readonly resourceClient: ResourceClient;
   private readonly logger: SolidSidecarLogger;
-  
-  // Local change queue
-  private readonly changeQueue: Map<string, LocalChange> = new Map();
-  
-  // Pending sync operations
-  private readonly pendingSyncs: Map<string, Promise<SyncResult>> = new Map();
-  
-  // Sync state tracking
+  private readonly changeQueue = new Map<string, LocalChange>();
+  private readonly pendingSyncs = new Map<string, Promise<SyncResult>>();
   private isSyncing = false;
   private syncCancelled = false;
-  
+  private changeSequence = 0;
+
   constructor(config: SyncClientConfig = {}) {
-    // Merge with defaults
+    const requested = config.syncConfig ?? {};
+    const maxRetries = validateInteger(
+      'maxRetries',
+      requested.maxRetries ?? DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.maxRetries,
+      0
+    );
+    const baseRetryDelay = validateInteger(
+      'baseRetryDelay',
+      requested.baseRetryDelay ??
+        DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.baseRetryDelay,
+      0
+    );
+    const maxRetryDelay = validateInteger(
+      'maxRetryDelay',
+      requested.maxRetryDelay ?? DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.maxRetryDelay,
+      0
+    );
+    if (maxRetryDelay < baseRetryDelay) {
+      throw new ValidationError(
+        'maxRetryDelay must be greater than or equal to baseRetryDelay',
+        'maxRetryDelay'
+      );
+    }
+
     this.config = {
-      ...DEFAULT_SYNC_CLIENT_CONFIG,
-      ...config,
-      logger: config.logger || console,
+      logger: config.logger ?? nullLogger,
       syncConfig: {
-        ...DEFAULT_SYNC_CLIENT_CONFIG.syncConfig,
-        ...config.syncConfig,
+        conflictResolution:
+          requested.conflictResolution ??
+          DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.conflictResolution,
+        maxRetries,
+        baseRetryDelay,
+        maxRetryDelay,
+        batchSize: validateInteger(
+          'batchSize',
+          requested.batchSize ?? DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.batchSize,
+          1
+        ),
+        validateETags:
+          requested.validateETags ??
+          DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.validateETags,
+        autoResolveConflicts:
+          requested.autoResolveConflicts ??
+          DEFAULT_SYNC_CLIENT_CONFIG.syncConfig.autoResolveConflicts,
+        ...(requested.conflictResolver !== undefined && {
+          conflictResolver: requested.conflictResolver,
+        }),
       },
     };
-
-    // Initialize resource client
-    this.resourceClient = new ResourceClient(config);
-    this.logger = this.config.logger;
-
-    this.logger.debug('SyncClient initialized', {
-      conflictResolution: this.config.syncConfig.conflictResolution,
-      maxRetries: this.config.syncConfig.maxRetries,
-      batchSize: this.config.syncConfig.batchSize,
+    this.resourceClient = new ResourceClient({
+      ...config,
+      logger: config.logger ?? nullLogger,
     });
+    this.logger = this.config.logger;
   }
 
-  // ==========================================================================
-  // Queue Management
-  // ==========================================================================
-
-  /**
-   * Queues a create operation
-   * 
-   * @param resourceUri - The resource URI
-   * @param content - The content to create
-   * @param options - Additional options
-   * @returns The change ID
-   */
   public async queueCreate(
     resourceUri: ResourceUri,
     content: string,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    options: { contentType?: string; headers?: HttpHeaders } = {}
   ): Promise<string> {
     return this.queueChange({
       type: 'create',
       resourceUri,
       content,
-      contentType: options.contentType,
-      headers: options.headers,
+      ...(options.contentType !== undefined && {
+        contentType: options.contentType,
+      }),
+      ...(options.headers !== undefined && { headers: { ...options.headers } }),
       ifNoneMatch: '*',
     });
   }
 
-  /**
-   * Queues an update operation
-   * 
-   * @param resourceUri - The resource URI
-   * @param content - The updated content
-   * @param baseEtag - The ETag the update is based on
-   * @param options - Additional options
-   * @returns The change ID
-   */
   public async queueUpdate(
     resourceUri: ResourceUri,
     content: string,
     baseEtag: string,
-    options: {
-      contentType?: string;
-      headers?: HttpHeaders;
-    } = {}
+    options: { contentType?: string; headers?: HttpHeaders } = {}
   ): Promise<string> {
-    // Get current metadata to validate base ETag
+    this.requireEtag(baseEtag);
     if (this.config.syncConfig.validateETags) {
-      try {
-        const metadata = await this.resourceClient.head(resourceUri);
-        if (!metadata.etag) {
-          throw new ValidationError(
-            'Cannot queue update: resource has no ETag',
-            'resourceUri'
-          );
-        }
-      } catch (error) {
-        this.logger.warn('Failed to validate ETag for update', {
-          resourceUri,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      const metadata = await this.resourceClient.head(resourceUri);
+      if (!metadata.etag) {
+        throw new ValidationError(
+          'Cannot queue update: resource has no ETag',
+          'resourceUri'
+        );
+      }
+      if (metadata.etag !== baseEtag) {
+        throw new PreconditionFailedError('Cannot queue update: base ETag is stale');
       }
     }
-
     return this.queueChange({
       type: 'update',
       resourceUri,
       content,
-      contentType: options.contentType,
-      headers: options.headers,
       baseEtag,
       ifMatch: baseEtag,
+      ...(options.contentType !== undefined && {
+        contentType: options.contentType,
+      }),
+      ...(options.headers !== undefined && { headers: { ...options.headers } }),
     });
   }
 
-  /**
-   * Queues a delete operation
-   * 
-   * @param resourceUri - The resource URI
-   * @param baseEtag - The ETag the delete is based on
-   * @param options - Additional options
-   * @returns The change ID
-   */
   public async queueDelete(
     resourceUri: ResourceUri,
     baseEtag: string,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: { headers?: HttpHeaders } = {}
   ): Promise<string> {
+    this.requireEtag(baseEtag);
     return this.queueChange({
       type: 'delete',
       resourceUri,
       baseEtag,
-      headers: options.headers,
       ifMatch: baseEtag,
+      ...(options.headers !== undefined && { headers: { ...options.headers } }),
     });
   }
 
-  /**
-   * Queues a PATCH operation (SPARQL Update)
-   * 
-   * @param resourceUri - The resource URI
-   * @param sparqlUpdate - The SPARQL Update query
-   * @param baseEtag - The ETag the patch is based on
-   * @param options - Additional options
-   * @returns The change ID
-   */
   public async queuePatch(
     resourceUri: ResourceUri,
     sparqlUpdate: string,
     baseEtag: string,
-    options: {
-      headers?: HttpHeaders;
-    } = {}
+    options: { headers?: HttpHeaders } = {}
   ): Promise<string> {
+    this.requireEtag(baseEtag);
     return this.queueChange({
       type: 'patch',
       resourceUri,
       content: sparqlUpdate,
-      baseEtag,
-      headers: options.headers,
-      ifMatch: baseEtag,
       contentType: 'application/sparql-update',
+      baseEtag,
+      ifMatch: baseEtag,
+      ...(options.headers !== undefined && { headers: { ...options.headers } }),
     });
   }
 
-  /**
-   * Queues a change
-   */
-  private queueChange(change: Omit<LocalChange, 'id' | 'timestamp' | 'retryCount' | 'lastError'>): string {
-    const id = this.generateChangeId();
-    
-    const newChange: LocalChange = {
-      id,
-      timestamp: Date.now(),
-      retryCount: 0,
-      ...change,
-    };
-    
-    this.changeQueue.set(id, newChange);
-    this.logger.debug('Change queued', {
-      id,
-      type: change.type,
-      resourceUri: change.resourceUri,
-    });
-    
-    return id;
-  }
-
-  /**
-   * Gets a queued change
-   */
   public getChange(changeId: string): LocalChange | null {
-    return this.changeQueue.get(changeId) || null;
+    const change = this.changeQueue.get(changeId);
+    return change === undefined ? null : cloneChange(change);
   }
 
-  /**
-   * Lists all queued changes
-   */
   public listChanges(): LocalChange[] {
-    return Array.from(this.changeQueue.values())
-      .sort((a, b) => a.timestamp - b.timestamp);
+    return [...this.changeQueue.values()]
+      .sort(
+        (left, right) =>
+          left.timestamp - right.timestamp || left.id.localeCompare(right.id)
+      )
+      .map(cloneChange);
   }
 
-  /**
-   * Removes a change from the queue
-   */
   public removeChange(changeId: string): boolean {
+    if (this.pendingSyncs.has(changeId)) return false;
     return this.changeQueue.delete(changeId);
   }
 
-  /**
-   * Clears all queued changes
-   */
   public clearQueue(): void {
+    if (this.pendingSyncs.size > 0) {
+      throw new ConflictError('Cannot clear queue while changes are syncing');
+    }
     this.changeQueue.clear();
-    this.logger.info('Change queue cleared');
   }
 
-  /**
-   * Gets the number of queued changes
-   */
   public getQueueSize(): number {
     return this.changeQueue.size;
   }
 
-  // ==========================================================================
-  // Sync Operations
-  // ==========================================================================
-
-  /**
-   * Syncs a single change
-   * 
-   * @param changeId - The change ID to sync
-   * @param options - Sync options
-   * @returns Sync result
-   */
   public async syncChange(
     changeId: string,
     options: {
@@ -512,33 +345,26 @@ export class SyncClient {
       onConflict?: ConflictCallback;
     } = {}
   ): Promise<SyncResult> {
-    const change = this.changeQueue.get(changeId);
-    if (!change) {
+    const existing = this.pendingSyncs.get(changeId);
+    if (existing !== undefined) return existing;
+
+    const stored = this.changeQueue.get(changeId);
+    if (stored === undefined) {
       throw new ValidationError(`Change not found: ${changeId}`, 'changeId');
     }
-
-    // Check if already syncing
-    if (this.pendingSyncs.has(changeId)) {
-      return this.pendingSyncs.get(changeId)!;
-    }
-
-    const syncPromise = this.syncSingleChange(change, options);
-    this.pendingSyncs.set(changeId, syncPromise);
-    
+    const promise = this.syncSingleChange(stored, options);
+    this.pendingSyncs.set(changeId, promise);
     try {
-      const result = await syncPromise;
+      const result = await promise;
+      if (result.status === 'synced' || result.status === 'deleted') {
+        this.changeQueue.delete(changeId);
+      }
       return result;
     } finally {
       this.pendingSyncs.delete(changeId);
     }
   }
 
-  /**
-   * Syncs all queued changes
-   * 
-   * @param options - Sync options
-   * @returns Sync summary
-   */
   public async syncAll(
     options: {
       batchSize?: number;
@@ -547,178 +373,89 @@ export class SyncClient {
     } = {}
   ): Promise<SyncSummary> {
     if (this.isSyncing) {
-      throw new Error('Sync already in progress');
+      throw new ConflictError('Sync already in progress');
     }
-
-    const batchSize = options.batchSize || this.config.syncConfig.batchSize;
-    const startTime = Date.now();
-    const results: SyncResult[] = [];
-    
+    const batchSize = validateInteger(
+      'batchSize',
+      options.batchSize ?? this.config.syncConfig.batchSize,
+      1
+    );
+    const startedAt = Date.now();
+    const changes = this.listChanges();
+    const results: Array<SyncResult | undefined> = new Array(changes.length);
     this.isSyncing = true;
     this.syncCancelled = false;
-    
+
     try {
-      // Get all changes sorted by timestamp
-      const changes = this.listChanges();
-      const total = changes.length;
-      
-      this.logger.info('Starting sync', { total, batchSize });
-      
-      // Process in batches
-      for (let i = 0; i < changes.length && !this.syncCancelled; i += batchSize) {
-        const batch = changes.slice(i, i + batchSize);
-        
-        // Process batch concurrently
-        const batchPromises = batch.map(async (change, batchIndex) => {
-          try {
-            const result = await this.syncSingleChange(change, {
-              onProgress: options.onProgress
-                ? (current, batchTotal, batchResult) => {
-                    options.onProgress!(i + current, total, batchResult);
-                  }
-                : undefined,
-              onConflict: options.onConflict,
-            });
-            
-            results.push(result);
-            
-            // Remove successful change from queue
-            if (result.status === 'synced' || result.status === 'deleted') {
-              this.changeQueue.delete(change.id);
+      for (
+        let offset = 0;
+        offset < changes.length && !this.syncCancelled;
+        offset += batchSize
+      ) {
+        const batch = changes.slice(offset, offset + batchSize);
+        const settled = await Promise.all(
+          batch.map(async (change, index) => {
+            try {
+              const result = await this.syncChange(change.id, {
+                onConflict: options.onConflict,
+              });
+              return { index: offset + index, result };
+            } catch (error) {
+              return {
+                index: offset + index,
+                result: this.errorResult(change, error),
+              };
             }
-            
-            return result;
-          } catch (error) {
-            this.logger.error('Failed to sync change', {
-              changeId: change.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            
-            // Create error result
-            const errorResult: SyncResult = {
-              resourceUri: change.resourceUri,
-              status: 'error',
-              localChangeId: change.id,
-              retryCount: change.retryCount,
-              error: error instanceof Error ? error.message : String(error),
-              suggestRetry: true,
-            };
-            
-            results.push(errorResult);
-            return errorResult;
-          }
-        });
-        
-        // Wait for batch to complete
-        await Promise.all(batchPromises);
-        
-        // Add delay between batches to prevent overwhelming server
-        if (i + batchSize < changes.length && batchSize > 0) {
-          await sleep(100); // 100ms delay between batches
+          })
+        );
+        for (const entry of settled) {
+          results[entry.index] = entry.result;
+          options.onProgress?.(entry.index + 1, changes.length, entry.result);
+        }
+        if (offset + batchSize < changes.length && !this.syncCancelled) {
+          await sleep(100);
         }
       }
-      
-      // Calculate summary
-      const summary: SyncSummary = {
-        total,
-        synced: results.filter(r => r.status === 'synced').length,
-        conflicts: results.filter(r => r.status === 'conflict').length,
-        errors: results.filter(r => r.status === 'error').length,
-        pending: results.filter(r => r.status === 'pending').length,
-        deleted: results.filter(r => r.status === 'deleted').length,
-        results,
-        startedAt: startTime,
-        endedAt: Date.now(),
-        duration: Date.now() - startTime,
-      };
-      
-      this.logger.info('Sync completed', summary);
-      return summary;
-      
+
+      const completed = results.filter(
+        (result): result is SyncResult => result !== undefined
+      );
+      return this.summarize(changes.length, completed, startedAt);
     } finally {
       this.isSyncing = false;
     }
   }
 
-  /**
-   * Cancels the current sync operation
-   */
   public cancelSync(): void {
     this.syncCancelled = true;
-    this.logger.warn('Sync cancelled by user');
   }
 
-  /**
-   * Checks if sync is in progress
-   */
   public isSyncInProgress(): boolean {
     return this.isSyncing;
   }
 
-  // ==========================================================================
-  // Conflict Resolution
-  // ==========================================================================
-
-  /**
-   * Resolves a conflict manually
-   * 
-   * @param changeId - The change ID with conflict
-   * @param strategy - The resolution strategy
-   * @param options - Additional options
-   * @returns Sync result
-   */
   public async resolveConflict(
     changeId: string,
     strategy: ConflictResolutionStrategy | string,
-    options: {
-      winningContent?: string;
-    } = {}
+    options: { winningContent?: string } = {}
   ): Promise<SyncResult> {
     const change = this.changeQueue.get(changeId);
-    if (!change) {
+    if (change === undefined) {
       throw new ValidationError(`Change not found: ${changeId}`, 'changeId');
     }
-
-    // Get current remote state
-    const remoteChange = await this.getRemoteChange(change.resourceUri);
-    
-    // Apply resolution strategy
+    const remote = await this.getRemoteChange(change.resourceUri);
     const result = await this.applyResolutionStrategy(
       change,
-      remoteChange,
+      remote,
       strategy,
       options.winningContent
     );
-    
-    // Update change with resolution
-    change.retryCount++;
-    
-    if (result.status === 'synced') {
+    if (result.status === 'synced' || result.status === 'deleted') {
       this.changeQueue.delete(changeId);
-    } else {
-      this.changeQueue.set(changeId, change);
     }
-    
-    this.logger.info('Conflict resolved', {
-      changeId,
-      strategy,
-      status: result.status,
-    });
-    
     return result;
   }
 
-  // ==========================================================================
-  // State Reconciliation
-  // ==========================================================================
-
-  /**
-   * Performs full state reconciliation between local and remote
-   * 
-   * @param containerUri - The container to reconcile
-   * @param options - Reconciliation options
-   * @returns Sync summary
-   */
   public async reconcileContainer(
     containerUri: string,
     options: {
@@ -726,144 +463,65 @@ export class SyncClient {
       onConflict?: ConflictCallback;
     } = {}
   ): Promise<SyncSummary> {
-    this.logger.info('Starting container reconciliation', { containerUri });
-    
-    const startTime = Date.now();
-    const results: SyncResult[] = [];
-    
+    if (this.isSyncing) {
+      throw new ConflictError('Sync already in progress');
+    }
+    const container = this.canonicalContainer(containerUri);
+    const startedAt = Date.now();
+    this.isSyncing = true;
+    this.syncCancelled = false;
     try {
-      // Get remote container listing
-      const remoteListing = await this.resourceClient.listContainer(containerUri);
-      const remoteResources = [
-        ...remoteListing.resources,
-        ...remoteListing.containers,
-      ];
-      
-      // Get local changes for this container
-      const localChanges = this.listChanges()
-        .filter(change => change.resourceUri.startsWith(containerUri));
-      
-      // Create map of local changes by resource
-      const localByResource = new Map<string, LocalChange[]>();
-      for (const change of localChanges) {
-        if (!localByResource.has(change.resourceUri)) {
-          localByResource.set(change.resourceUri, []);
-        }
-        localByResource.get(change.resourceUri)?.push(change);
-      }
-      
-      // For each remote resource, check if we have local changes
-      let processed = 0;
-      const total = remoteResources.length + localChanges.length;
-      
-      for (const resourceUri of remoteResources) {
+      await this.resourceClient.listContainer(container);
+      const changes = this.listChanges().filter(change =>
+        this.isWithinContainer(container, change.resourceUri)
+      );
+      const results: SyncResult[] = [];
+      for (const change of changes) {
         if (this.syncCancelled) break;
-        
-        const localChangesForResource = localByResource.get(resourceUri) || [];
-        
-        for (const change of localChangesForResource) {
-          try {
-            const result = await this.syncSingleChange(change, {
-              onProgress: options.onProgress
-                ? (current, batchTotal, batchResult) => {
-                    options.onProgress!(processed + current, total, batchResult);
-                  }
-                : undefined,
+        try {
+          results.push(
+            await this.syncChange(change.id, {
               onConflict: options.onConflict,
-            });
-            
-            results.push(result);
-            processed++;
-            
-            if (result.status === 'synced' || result.status === 'deleted') {
-              this.changeQueue.delete(change.id);
-            }
-          } catch (error) {
-            results.push({
-              resourceUri: change.resourceUri,
-              status: 'error',
-              localChangeId: change.id,
-              retryCount: change.retryCount,
-              error: error instanceof Error ? error.message : String(error),
-              suggestRetry: true,
-            });
-            processed++;
-          }
+            })
+          );
+        } catch (error) {
+          results.push(this.errorResult(change, error));
+        }
+        const latest = results[results.length - 1];
+        if (latest !== undefined) {
+          options.onProgress?.(results.length, changes.length, latest);
         }
       }
-      
-      // Handle resources that exist locally but not remotely (pending creates)
-      for (const [resourceUri, changes] of localByResource) {
-        if (this.syncCancelled) break;
-        
-        if (!remoteResources.includes(resourceUri)) {
-          for (const change of changes) {
-            if (change.type === 'create' || change.type === 'update') {
-              try {
-                const result = await this.syncSingleChange(change, {
-                  onProgress: options.onProgress
-                    ? (current, batchTotal, batchResult) => {
-                        options.onProgress!(processed + current, total, batchResult);
-                      }
-                    : undefined,
-                  onConflict: options.onConflict,
-                });
-                
-                results.push(result);
-                processed++;
-                
-                if (result.status === 'synced' || result.status === 'deleted') {
-                  this.changeQueue.delete(change.id);
-                }
-              } catch (error) {
-                results.push({
-                  resourceUri: change.resourceUri,
-                  status: 'error',
-                  localChangeId: change.id,
-                  retryCount: change.retryCount,
-                  error: error instanceof Error ? error.message : String(error),
-                  suggestRetry: true,
-                });
-                processed++;
-              }
-            }
-          }
-        }
-      }
-      
-      // Calculate summary
-      const summary: SyncSummary = {
-        total: results.length,
-        synced: results.filter(r => r.status === 'synced').length,
-        conflicts: results.filter(r => r.status === 'conflict').length,
-        errors: results.filter(r => r.status === 'error').length,
-        pending: results.filter(r => r.status === 'pending').length,
-        deleted: results.filter(r => r.status === 'deleted').length,
-        results,
-        startedAt: startTime,
-        endedAt: Date.now(),
-        duration: Date.now() - startTime,
-      };
-      
-      this.logger.info('Container reconciliation completed', {
-        containerUri,
-        ...summary,
-      });
-      
-      return summary;
-      
+      return this.summarize(changes.length, results, startedAt);
     } finally {
       this.isSyncing = false;
     }
   }
 
-  // ==========================================================================
-  // Private Methods
-  // ==========================================================================
+  public getConfig(): ResolvedSyncClientConfig {
+    return {
+      logger: this.config.logger,
+      syncConfig: { ...this.config.syncConfig },
+    };
+  }
 
-  /**
-   * Syncs a single change
-   */
+  private queueChange(
+    change: Omit<
+      LocalChange,
+      'id' | 'timestamp' | 'retryCount' | 'lastError'
+    >
+  ): string {
+    const id = `${Date.now().toString(36)}-${(++this.changeSequence).toString(36)}`;
+    this.changeQueue.set(id, {
+      ...change,
+      id,
+      timestamp: Date.now(),
+      retryCount: 0,
+      ...(change.headers !== undefined && { headers: { ...change.headers } }),
+    });
+    return id;
+  }
+
   private async syncSingleChange(
     change: LocalChange,
     options: {
@@ -871,475 +529,336 @@ export class SyncClient {
       onConflict?: ConflictCallback;
     }
   ): Promise<SyncResult> {
-    this.logger.debug('Syncing change', {
-      id: change.id,
-      type: change.type,
-      resourceUri: change.resourceUri,
-    });
+    let current = this.changeQueue.get(change.id);
+    if (current === undefined) {
+      throw new ValidationError(`Change not found: ${change.id}`, 'changeId');
+    }
 
-    try {
-      // Get current remote state
-      const remoteChange = await this.getRemoteChange(change.resourceUri);
-      
-      // Check for conflict
-      const conflict = this.detectConflict(change, remoteChange);
-      
-      if (conflict) {
-        if (this.config.syncConfig.autoResolveConflicts) {
-          // Auto-resolve conflict
-          const strategy = this.config.syncConfig.conflictResolver
-            ? await this.config.syncConfig.conflictResolver(change, remoteChange)
-            : this.config.syncConfig.conflictResolution!;
-          
-          return this.applyResolutionStrategy(change, remoteChange, strategy);
-        } else {
-          // Conflict detected, need manual resolution
-          if (options.onConflict) {
-            const customStrategy = await options.onConflict(change, remoteChange);
-            if (customStrategy) {
-              return this.applyResolutionStrategy(change, remoteChange, customStrategy);
-            }
-          }
-          
-          return {
-            resourceUri: change.resourceUri,
-            status: 'conflict',
-            localChangeId: change.id,
-            retryCount: change.retryCount,
-            error: 'Conflict detected - manual resolution required',
-            suggestRetry: false,
-          };
-        }
+    for (;;) {
+      if (this.syncCancelled) {
+        return {
+          resourceUri: current.resourceUri,
+          status: 'pending',
+          localChangeId: current.id,
+          retryCount: current.retryCount,
+          error: 'Sync cancelled',
+          suggestRetry: true,
+        };
       }
-      
-      // No conflict, apply the change
-      return this.applyChange(change, remoteChange);
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      // Check if it's a retryable error
-      const shouldRetry = this.isRetryableError(error);
-      
-      // Update change retry count
-      change.retryCount++;
-      change.lastError = errorMessage;
-      this.changeQueue.set(change.id, change);
-      
+
+      try {
+        const remote = await this.getRemoteChange(current.resourceUri);
+        if (this.detectConflict(current, remote)) {
+          return await this.handleConflict(current, remote, options);
+        }
+        const result = await this.applyChange(current);
+        options.onProgress?.(1, 1, result);
+        return result;
+      } catch (error) {
+        if (
+          error instanceof PreconditionFailedError ||
+          error instanceof ConflictError
+        ) {
+          const remote = await this.getRemoteChange(current.resourceUri);
+          return this.handleConflict(current, remote, options);
+        }
+        if (current.retryCount >= this.config.syncConfig.maxRetries) {
+          const failed = {
+            ...current,
+            lastError: errorMessage(error),
+          };
+          this.changeQueue.set(current.id, failed);
+          return this.errorResult(failed, error);
+        }
+        current = {
+          ...current,
+          retryCount: current.retryCount + 1,
+          lastError: errorMessage(error),
+        };
+        this.changeQueue.set(current.id, current);
+        await sleep(this.backoffDelay(current.retryCount));
+      }
+    }
+  }
+
+  private async applyChange(change: LocalChange): Promise<SyncResult> {
+    if (change.type === 'delete') {
+      await this.resourceClient.delete(change.resourceUri, {
+        ...(change.headers !== undefined && { headers: change.headers }),
+        ...(change.ifMatch !== undefined && { ifMatch: change.ifMatch }),
+      });
       return {
         resourceUri: change.resourceUri,
-        status: 'error',
+        status: 'deleted',
         localChangeId: change.id,
         retryCount: change.retryCount,
-        error: errorMessage,
-        suggestRetry: shouldRetry && change.retryCount < this.config.syncConfig.maxRetries,
+        suggestRetry: false,
       };
     }
-  }
 
-  /**
-   * Gets the current state of a resource from the server
-   */
-  private async getRemoteChange(resourceUri: ResourceUri): Promise<RemoteChange> {
-    try {
-      const metadata = await this.resourceClient.head(resourceUri);
-      
-      return {
-        resourceUri,
-        etag: metadata.etag || '',
-        lastModified: metadata.lastModified,
-        contentLength: metadata.contentLength,
-        exists: metadata.exists,
-      };
-    } catch (error) {
-      // Resource doesn't exist or is inaccessible
-      return {
-        resourceUri,
-        etag: '',
-        exists: false,
-      };
+    if (change.content === undefined) {
+      throw new ValidationError(
+        `${change.type} change requires content`,
+        'content'
+      );
     }
-  }
 
-  /**
-   * Detects if there's a conflict between local change and remote state
-   */
-  private detectConflict(
-    localChange: LocalChange,
-    remoteChange: RemoteChange
-  ): boolean {
-    // No conflict if resource doesn't exist and we're creating
-    if (!remoteChange.exists && localChange.type === 'create') {
-      return false;
-    }
-    
-    // Conflict if:
-    // 1. We're creating but resource already exists
-    if (localChange.type === 'create' && remoteChange.exists) {
-      return true;
-    }
-    
-    // 2. We're updating/deleting but the remote ETag doesn't match our base
-    if (localChange.baseEtag && localChange.baseEtag !== remoteChange.etag) {
-      return true;
-    }
-    
-    // 3. Resource doesn't exist but we're updating or deleting
-    if (!remoteChange.exists && (localChange.type === 'update' || localChange.type === 'delete')) {
-      return true;
-    }
-    
-    return false;
-  }
+    const metadata =
+      change.type === 'patch'
+        ? await this.resourceClient.patch(change.resourceUri, change.content, {
+            ...(change.contentType !== undefined && {
+              contentType: change.contentType,
+            }),
+            ...(change.headers !== undefined && { headers: change.headers }),
+            ...(change.ifMatch !== undefined && { ifMatch: change.ifMatch }),
+          })
+        : await this.resourceClient.put(change.resourceUri, change.content, {
+            ...(change.contentType !== undefined && {
+              contentType: change.contentType,
+            }),
+            ...(change.headers !== undefined && { headers: change.headers }),
+            ...(change.ifMatch !== undefined && { ifMatch: change.ifMatch }),
+            ...(change.ifNoneMatch !== undefined && {
+              ifNoneMatch: change.ifNoneMatch,
+            }),
+          });
 
-  /**
-   * Applies a resolution strategy to a conflict
-   */
-  private async applyResolutionStrategy(
-    localChange: LocalChange,
-    remoteChange: RemoteChange,
-    strategy: ConflictResolutionStrategy | string,
-    winningContent?: string
-  ): Promise<SyncResult> {
-    switch (strategy) {
-      case 'server-wins':
-        // Accept server's version, discard local change
-        this.changeQueue.delete(localChange.id);
-        return {
-          resourceUri: localChange.resourceUri,
-          status: 'synced',
-          localChangeId: localChange.id,
-          newEtag: remoteChange.etag,
-          serverLastModified: remoteChange.lastModified,
-          retryCount: localChange.retryCount,
-          resolutionStrategy: 'server-wins',
-          suggestRetry: false,
-        };
-
-      case 'client-wins':
-        // Force apply local change, overwrite server
-        if (winningContent || localChange.content) {
-          try {
-            const metadata = await this.resourceClient.put(
-              localChange.resourceUri,
-              winningContent || localChange.content!,
-              {
-                contentType: localChange.contentType,
-                headers: localChange.headers,
-                ifNoneMatch: '*', // Force overwrite
-              }
-            );
-            
-            this.changeQueue.delete(localChange.id);
-            return {
-              resourceUri: localChange.resourceUri,
-              status: 'synced',
-              localChangeId: localChange.id,
-              newEtag: metadata.etag,
-              serverLastModified: metadata.lastModified,
-              retryCount: localChange.retryCount,
-              resolutionStrategy: 'client-wins',
-              winningContent: winningContent || localChange.content,
-              suggestRetry: false,
-            };
-          } catch (error) {
-            return {
-              resourceUri: localChange.resourceUri,
-              status: 'error',
-              localChangeId: localChange.id,
-              retryCount: localChange.retryCount,
-              error: error instanceof Error ? error.message : String(error),
-              resolutionStrategy: 'client-wins',
-              suggestRetry: true,
-            };
-          }
-        }
-        break;
-
-      case 'merge':
-        // Attempt to merge changes (for RDF resources)
-        if (localChange.type === 'update' || localChange.type === 'patch') {
-          try {
-            // Get current remote content
-            const remoteResource = await this.resourceClient.get(localChange.resourceUri);
-            
-            // For now, simple merge: just apply local change
-            // In a real implementation, this would parse both RDF graphs and merge them
-            const metadata = await this.resourceClient.put(
-              localChange.resourceUri,
-              localChange.content!,
-              {
-                contentType: localChange.contentType,
-                headers: localChange.headers,
-                ifMatch: localChange.ifMatch,
-              }
-            );
-            
-            this.changeQueue.delete(localChange.id);
-            return {
-              resourceUri: localChange.resourceUri,
-              status: 'synced',
-              localChangeId: localChange.id,
-              newEtag: metadata.etag,
-              serverLastModified: metadata.lastModified,
-              retryCount: localChange.retryCount,
-              resolutionStrategy: 'merge',
-              suggestRetry: false,
-            };
-          } catch (error) {
-            return {
-              resourceUri: localChange.resourceUri,
-              status: 'error',
-              localChangeId: localChange.id,
-              retryCount: localChange.retryCount,
-              error: error instanceof Error ? error.message : String(error),
-              resolutionStrategy: 'merge',
-              suggestRetry: true,
-            };
-          }
-        }
-        break;
-
-      case 'latest-wins':
-        // The most recent change wins (compare timestamps)
-        // For simplicity, we'll assume local change is newer
-        // In a real implementation, you'd compare the actual timestamps
-        return this.applyResolutionStrategy(localChange, remoteChange, 'client-wins', winningContent);
-
-      case 'manual':
-      default:
-        // Manual resolution or unknown strategy
-        return {
-          resourceUri: localChange.resourceUri,
-          status: 'conflict',
-          localChangeId: localChange.id,
-          retryCount: localChange.retryCount,
-          error: 'Manual resolution required',
-          resolutionStrategy: typeof strategy === 'string' ? strategy : 'manual',
-          suggestRetry: false,
-        };
-    }
-    
-    // Unknown strategy
     return {
-      resourceUri: localChange.resourceUri,
-      status: 'conflict',
-      localChangeId: localChange.id,
-      retryCount: localChange.retryCount,
-      error: `Unknown resolution strategy: ${strategy}`,
-      resolutionStrategy: typeof strategy === 'string' ? strategy : 'manual',
+      resourceUri: change.resourceUri,
+      status: 'synced',
+      localChangeId: change.id,
+      ...(metadata.etag !== undefined && { newEtag: metadata.etag }),
+      ...(metadata.lastModified !== undefined && {
+        serverLastModified: metadata.lastModified,
+      }),
+      retryCount: change.retryCount,
       suggestRetry: false,
     };
   }
 
-  /**
-   * Applies a change to the server
-   */
-  private async applyChange(
+  private async handleConflict(
     change: LocalChange,
-    remoteChange: RemoteChange
+    remote: RemoteChange,
+    options: { onConflict?: ConflictCallback }
   ): Promise<SyncResult> {
+    const callbackChoice = await options.onConflict?.(
+      cloneChange(change),
+      { ...remote }
+    );
+    const configuredChoice = this.config.syncConfig.conflictResolver
+      ? await this.config.syncConfig.conflictResolver(
+          cloneChange(change),
+          { ...remote }
+        )
+      : undefined;
+    const requested =
+      callbackChoice ??
+      configuredChoice ??
+      (this.config.syncConfig.autoResolveConflicts
+        ? this.config.syncConfig.conflictResolution
+        : 'manual');
+
+    return this.applyResolutionStrategy(change, remote, requested);
+  }
+
+  private async applyResolutionStrategy(
+    change: LocalChange,
+    remote: RemoteChange,
+    strategyOrContent: ConflictResolutionStrategy | string,
+    winningContent?: string
+  ): Promise<SyncResult> {
+    const strategy = isStrategy(strategyOrContent)
+      ? strategyOrContent
+      : winningContent !== undefined
+        ? 'merge'
+        : 'manual';
+
+    if (strategy === 'manual') {
+      return {
+        resourceUri: change.resourceUri,
+        status: 'conflict',
+        localChangeId: change.id,
+        retryCount: change.retryCount,
+        error: 'Manual conflict resolution required',
+        resolutionStrategy: strategy,
+        suggestRetry: false,
+      };
+    }
+
+    if (strategy === 'server-wins') {
+      return {
+        resourceUri: change.resourceUri,
+        status: 'synced',
+        localChangeId: change.id,
+        retryCount: change.retryCount,
+        resolutionStrategy: strategy,
+        suggestRetry: false,
+      };
+    }
+
+    if (strategy === 'latest-wins') {
+      const remoteTimestamp =
+        remote.lastModified === undefined ? Number.NaN : Date.parse(remote.lastModified);
+      const localIsLater =
+        Number.isNaN(remoteTimestamp) || change.timestamp > remoteTimestamp;
+      return this.applyResolutionStrategy(
+        change,
+        remote,
+        localIsLater ? 'client-wins' : 'server-wins',
+        winningContent
+      );
+    }
+
+    const content =
+      winningContent ??
+      (isStrategy(strategyOrContent) ? change.content : strategyOrContent);
+    if (content === undefined) {
+      throw new ValidationError(
+        `${strategy} resolution requires winning content`,
+        'winningContent'
+      );
+    }
+    const metadata = await this.resourceClient.put(change.resourceUri, content, {
+      ...(change.contentType !== undefined && {
+        contentType: change.contentType,
+      }),
+      ...(change.headers !== undefined && { headers: change.headers }),
+      ...(remote.exists && remote.etag !== '' && { ifMatch: remote.etag }),
+      ...(!remote.exists && { ifNoneMatch: '*' }),
+    });
+    return {
+      resourceUri: change.resourceUri,
+      status: 'synced',
+      localChangeId: change.id,
+      ...(metadata.etag !== undefined && { newEtag: metadata.etag }),
+      retryCount: change.retryCount,
+      resolutionStrategy: strategy,
+      winningContent: content,
+      suggestRetry: false,
+    };
+  }
+
+  private async getRemoteChange(resourceUri: ResourceUri): Promise<RemoteChange> {
     try {
-      switch (change.type) {
-        case 'create':
-          return this.applyCreate(change);
-        case 'update':
-          return this.applyUpdate(change);
-        case 'delete':
-          return this.applyDelete(change);
-        case 'patch':
-          return this.applyPatch(change);
-        default:
-          throw new ValidationError(`Unknown change type: ${change.type}`, 'type');
-      }
+      const metadata = await this.resourceClient.head(resourceUri);
+      return {
+        resourceUri,
+        etag: metadata.etag ?? '',
+        ...(metadata.lastModified !== undefined && {
+          lastModified: metadata.lastModified,
+        }),
+        ...(metadata.contentLength !== undefined && {
+          contentLength: metadata.contentLength,
+        }),
+        exists: true,
+      };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      // Check for specific error types
-      if (error instanceof PreconditionFailedError || error instanceof ConflictError) {
-        return {
-          resourceUri: change.resourceUri,
-          status: 'conflict',
-          localChangeId: change.id,
-          retryCount: change.retryCount,
-          error: errorMessage,
-          suggestRetry: false,
-        };
+      const statusCode =
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        typeof error.statusCode === 'number'
+          ? error.statusCode
+          : undefined;
+      if (statusCode === 404) {
+        return { resourceUri, etag: '', exists: false };
       }
-      
       throw error;
     }
   }
 
-  /**
-   * Applies a create change
-   */
-  private async applyCreate(change: LocalChange): Promise<SyncResult> {
-    const metadata = await this.resourceClient.create(
-      change.resourceUri,
-      change.content!,
-      {
-        contentType: change.contentType,
-        headers: change.headers,
-      }
+  private detectConflict(change: LocalChange, remote: RemoteChange): boolean {
+    if (change.type === 'create') return remote.exists;
+    if (!remote.exists) return change.type !== 'delete';
+    return (
+      change.baseEtag !== undefined &&
+      remote.etag !== '' &&
+      change.baseEtag !== remote.etag
     );
-    
-    this.changeQueue.delete(change.id);
-    
+  }
+
+  private backoffDelay(attempt: number): number {
+    const exponential =
+      this.config.syncConfig.baseRetryDelay * 2 ** Math.max(0, attempt - 1);
+    return Math.min(exponential, this.config.syncConfig.maxRetryDelay);
+  }
+
+  private errorResult(change: LocalChange, error: unknown): SyncResult {
     return {
       resourceUri: change.resourceUri,
-      status: 'synced',
+      status: 'error',
       localChangeId: change.id,
-      newEtag: metadata.etag,
-      serverLastModified: metadata.lastModified,
       retryCount: change.retryCount,
-      suggestRetry: false,
+      error: errorMessage(error),
+      suggestRetry: change.retryCount < this.config.syncConfig.maxRetries,
     };
   }
 
-  /**
-   * Applies an update change
-   */
-  private async applyUpdate(change: LocalChange): Promise<SyncResult> {
-    const metadata = await this.resourceClient.put(
-      change.resourceUri,
-      change.content!,
-      {
-        contentType: change.contentType,
-        headers: change.headers,
-        ifMatch: change.ifMatch,
-      }
-    );
-    
-    this.changeQueue.delete(change.id);
-    
+  private summarize(
+    total: number,
+    results: SyncResult[],
+    startedAt: number
+  ): SyncSummary {
+    const endedAt = Date.now();
     return {
-      resourceUri: change.resourceUri,
-      status: 'synced',
-      localChangeId: change.id,
-      newEtag: metadata.etag,
-      serverLastModified: metadata.lastModified,
-      retryCount: change.retryCount,
-      suggestRetry: false,
+      total,
+      synced: results.filter(result => result.status === 'synced').length,
+      conflicts: results.filter(result => result.status === 'conflict').length,
+      errors: results.filter(result => result.status === 'error').length,
+      pending: results.filter(result => result.status === 'pending').length,
+      deleted: results.filter(result => result.status === 'deleted').length,
+      results: [...results],
+      startedAt,
+      endedAt,
+      duration: endedAt - startedAt,
     };
   }
 
-  /**
-   * Applies a delete change
-   */
-  private async applyDelete(change: LocalChange): Promise<SyncResult> {
-    await this.resourceClient.delete(change.resourceUri, {
-      headers: change.headers,
-      ifMatch: change.ifMatch,
-    });
-    
-    this.changeQueue.delete(change.id);
-    
-    return {
-      resourceUri: change.resourceUri,
-      status: 'deleted',
-      localChangeId: change.id,
-      retryCount: change.retryCount,
-      suggestRetry: false,
-    };
-  }
-
-  /**
-   * Applies a patch change
-   */
-  private async applyPatch(change: LocalChange): Promise<SyncResult> {
-    const metadata = await this.resourceClient.patch(
-      change.resourceUri,
-      change.content!,
-      {
-        contentType: change.contentType,
-        headers: change.headers,
-        ifMatch: change.ifMatch,
-      }
-    );
-    
-    this.changeQueue.delete(change.id);
-    
-    return {
-      resourceUri: change.resourceUri,
-      status: 'synced',
-      localChangeId: change.id,
-      newEtag: metadata.etag,
-      serverLastModified: metadata.lastModified,
-      retryCount: change.retryCount,
-      suggestRetry: false,
-    };
-  }
-
-  /**
-   * Generates a unique change ID
-   */
-  private generateChangeId(): string {
-    return `change-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-  }
-
-  /**
-   * Checks if an error is retryable
-   */
-  private isRetryableError(error: unknown): boolean {
-    if (error instanceof ConflictError || error instanceof PreconditionFailedError) {
-      return false; // These require manual resolution
+  private canonicalContainer(containerUri: string): string {
+    let url: URL;
+    try {
+      url = new URL(containerUri);
+    } catch {
+      throw new ValidationError(
+        'Container URI must be an absolute URL',
+        'containerUri'
+      );
     }
-    
-    if (error instanceof Error) {
-      // Network errors are retryable
-      if (error.name === 'NetworkError' || error.name === 'TypeError') {
-        return true;
-      }
-      
-      // Rate limit errors are retryable
-      if (error.message.includes('429') || error.message.includes('rate limit')) {
-        return true;
-      }
-      
-      // Server errors are retryable
-      if (error.message.includes('500') || error.message.includes('502') || 
-          error.message.includes('503') || error.message.includes('504')) {
-        return true;
-      }
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new ValidationError(
+        'Container URI must use HTTP or HTTPS',
+        'containerUri'
+      );
     }
-    
-    return false;
+    if (url.username || url.password) {
+      throw new ValidationError(
+        'Container URI must not contain credentials',
+        'containerUri'
+      );
+    }
+    url.hash = '';
+    if (!url.pathname.endsWith('/')) url.pathname += '/';
+    return url.toString();
   }
 
-  // ==========================================================================
-  // Getters
-  // ==========================================================================
-
-  /**
-   * Gets the resource client
-   */
-  public getResourceClient(): ResourceClient {
-    return this.resourceClient;
+  private isWithinContainer(containerUri: string, resourceUri: string): boolean {
+    try {
+      const container = new URL(containerUri);
+      const resource = new URL(resourceUri);
+      return (
+        resource.origin === container.origin &&
+        resource.pathname.startsWith(container.pathname)
+      );
+    } catch {
+      return false;
+    }
   }
 
-  /**
-   * Gets the configuration
-   */
-  public getConfig(): Required<SyncClientConfig> {
-    return { ...this.config };
+  private requireEtag(etag: string): void {
+    if (!etag.trim()) {
+      throw new ValidationError('ETag is required', 'baseEtag');
+    }
   }
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
 export default SyncClient;
-export type {
-  SyncStatus,
-  ChangeType,
-  LocalChange,
-  RemoteChange,
-  SyncResult,
-  SyncSummary,
-  ConflictResolutionStrategy,
-  SyncConfig,
-  SyncProgressCallback,
-  ConflictCallback,
-};
