@@ -1,0 +1,62 @@
+name: TypeScript SDK HTTP utilities baseline
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ts/src/http-client.ts'
+      - 'sdk/ts/src/utils.ts'
+      - 'sdk/ts/test/http-utils-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-http-utils-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ts/src/http-client.ts'
+      - 'sdk/ts/src/utils.ts'
+      - 'sdk/ts/test/http-utils-baseline.test.ts'
+      - '.github/workflows/typescript-sdk-http-utils-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-sdk-http-utils-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify HTTP utilities baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Isolate HTTP utility TypeScript diagnostics
+        run: |
+          npm run typecheck > typecheck.log 2>&1 || true
+          if grep -E 'src/(http-client|utils)\.ts' typecheck.log; then
+            echo 'HTTP client or utility TypeScript diagnostics remain' >&2
+            exit 1
+          fi
+          echo 'No HTTP client or utility TypeScript diagnostics found.'
+      - name: Run focused HTTP utility tests when present
+        run: |
+          if test -f test/http-utils-baseline.test.ts; then
+            npx jest --runInBand test/http-utils-baseline.test.ts 2>&1 | tee http-utils-jest.log
+          fi
+      - name: Upload HTTP utility diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: http-utils-test-diagnostics
+          path: |
+            sdk/ts/http-utils-jest.log
+            sdk/ts/typecheck.log
+          if-no-files-found: ignore
+          retention-days: 7
